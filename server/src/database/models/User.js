@@ -13,12 +13,15 @@ const UserSchema = new mongoose.Schema(
 
     },
     email: { type: String, required: true, unique: true, lowercase: true },
-    password: { type: String, required: true, select: false },
+    passwordHash: { type: String, required: true, select: false },
     friends: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     blockedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     createdAt: { type: Date, default: Date.now },
+    status: { type: String, enum: ['online', 'offline'], default: 'offline' },
 });
 
+
+// To be expanded
 const SettingsSchema = new mongoose.Schema(
 {
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
