@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { apiPost } from "../lib/api";
 
-type RegisterResponse = {
+type RegisterResponse =
+{
   ok: boolean;
   user?: {
     id: string;
@@ -12,11 +13,13 @@ type RegisterResponse = {
   error?: string;
 };
 
-function validateEmail(email: string) {
+function validateEmail(email: string)
+{
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
 }
 
-function passwordIssues(password: string) {
+function validatePassword(password: string)
+{
   const p = password || "";
   const issues: string[] = [];
   if (p.length < 10) issues.push("At least 10 characters");
@@ -25,7 +28,8 @@ function passwordIssues(password: string) {
   return issues;
 }
 
-export default function RegisterPage() {
+export default function RegisterPage()
+{
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -36,7 +40,7 @@ export default function RegisterPage() {
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   const emailOk = useMemo(() => validateEmail(email), [email]);
-  const issues = useMemo(() => passwordIssues(password), [password]);
+  const issues = useMemo(() => validatePassword(password), [password]);
   const matches = confirm.length === 0 ? true : password === confirm;
 
   const canSubmit =
@@ -46,7 +50,8 @@ export default function RegisterPage() {
     password === confirm &&
     !loading;
 
-  async function onSubmit(e: React.FormEvent) {
+  async function onSubmit(e: React.FormEvent)
+  {
     e.preventDefault();
     setServerError(null);
     setSuccessMsg(null);
@@ -54,19 +59,22 @@ export default function RegisterPage() {
     if (!canSubmit) return;
 
     setLoading(true);
-    const result = await apiPost<RegisterResponse>("/api/auth/register", {
+    const result = await apiPost<RegisterResponse>("/api/auth/register",
+    {
       username: username.trim(),
       email: email.trim(),
       password,
     });
     setLoading(false);
 
-    if (!result.ok) {
+    if (!result.ok)
+    {
       setServerError(result.error);
       return;
     }
 
-    if (!result.data.ok) {
+    if (!result.data.ok)
+    {
       setServerError(result.data.error || "Registration failed.");
       return;
     }
@@ -77,25 +85,31 @@ export default function RegisterPage() {
   }
 
   const ReqItem = ({ label, ok }: { label: string; ok: boolean }) => (
-    <li className={ok ? "text-cyan-300" : "text-red-300"}>{label}</li>
+    <li className={ok ? "text-teal-300" : "text-gray-300"}>{label}</li>
   );
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 grid place-items-center px-6">
-      <div className="w-full max-w-md rounded-2xl border border-white/10 bg-slate-900/60 backdrop-blur p-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Create account</h1>
-        <p className="mt-2 text-sm text-slate-300">
-          Minimal starter form. We will refine the look later.
-        </p>
+    <div className="min-h-screen text-slate-100 grid place-items-center px-6 bg-slate-950 relative">
+      <div className="absolute inset-0 -z-10 overflow-hidden">
+        <div className="absolute left-1/2 top-1/3 h-[520px] w-[520px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-emerald-500/10 blur-3xl" />
+        <div className="absolute left-1/3 top-2/3 h-[520px] w-[520px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-teal-500/10 blur-3xl" />
+      </div>
+
+      <div className="w-full max-w-md rounded-2xl border border-teal-400/25 bg-slate-900/70 backdrop-blur p-6 shadow-[0_0_0_1px_rgba(45,212,191,0.14),0_22px_90px_-28px_rgba(0,0,0,0.85)]">
+        <h1 className="text-2xl font-semibold tracking-tight text-center">
+          <span className="bg-gradient-to-r from-emerald-300 via-teal-300 to-cyan-200 bg-clip-text text-transparent">
+            Create Account
+          </span>
+        </h1>
 
         {serverError && (
-          <div className="mt-4 rounded-xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+          <div className="mt-4 rounded-xl border border-red-400/45 bg-red-500/15 px-4 py-3 text-sm text-red-100">
             {serverError}
           </div>
         )}
 
         {successMsg && (
-          <div className="mt-4 rounded-xl border border-cyan-400/30 bg-cyan-500/10 px-4 py-3 text-sm text-cyan-100">
+          <div className="mt-4 rounded-xl border border-teal-400/40 bg-teal-500/10 px-4 py-3 text-sm text-teal-100">
             {successMsg}
           </div>
         )}
@@ -104,18 +118,20 @@ export default function RegisterPage() {
           <label className="block">
             <span className="text-xs text-slate-300">Username</span>
             <input
-              className="mt-1 w-full rounded-xl border border-white/10 bg-slate-950/40 px-3 py-2 text-sm outline-none focus:border-purple-400/60 focus:ring-4 focus:ring-cyan-400/10"
+              className="mt-1 w-full rounded-xl border border-white/10 bg-slate-950/50 px-3 py-2 text-sm outline-none
+                         focus:border-teal-300/80 focus:ring-4 focus:ring-emerald-400/20"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               autoComplete="username"
-              placeholder="estepcj"
+              placeholder="JohnnyGamer123"
             />
           </label>
 
           <label className="block">
             <span className="text-xs text-slate-300">Email</span>
             <input
-              className="mt-1 w-full rounded-xl border border-white/10 bg-slate-950/40 px-3 py-2 text-sm outline-none focus:border-purple-400/60 focus:ring-4 focus:ring-cyan-400/10"
+              className="mt-1 w-full rounded-xl border border-white/10 bg-slate-950/50 px-3 py-2 text-sm outline-none
+                         focus:border-teal-300/80 focus:ring-4 focus:ring-emerald-400/20"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               autoComplete="email"
@@ -129,7 +145,8 @@ export default function RegisterPage() {
           <label className="block">
             <span className="text-xs text-slate-300">Password</span>
             <input
-              className="mt-1 w-full rounded-xl border border-white/10 bg-slate-950/40 px-3 py-2 text-sm outline-none focus:border-purple-400/60 focus:ring-4 focus:ring-cyan-400/10"
+              className="mt-1 w-full rounded-xl border border-white/10 bg-slate-950/50 px-3 py-2 text-sm outline-none
+                         focus:border-teal-300/80 focus:ring-4 focus:ring-emerald-400/20"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               type="password"
@@ -141,7 +158,8 @@ export default function RegisterPage() {
           <label className="block">
             <span className="text-xs text-slate-300">Confirm password</span>
             <input
-              className="mt-1 w-full rounded-xl border border-white/10 bg-slate-950/40 px-3 py-2 text-sm outline-none focus:border-purple-400/60 focus:ring-4 focus:ring-cyan-400/10"
+              className="mt-1 w-full rounded-xl border border-white/10 bg-slate-950/50 px-3 py-2 text-sm outline-none
+                         focus:border-teal-300/80 focus:ring-4 focus:ring-emerald-400/20"
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}
               type="password"
@@ -153,7 +171,7 @@ export default function RegisterPage() {
             )}
           </label>
 
-          <div className="rounded-xl border border-white/10 bg-slate-950/30 px-4 py-3">
+          <div className="rounded-xl border border-teal-400/25 bg-slate-950/35 px-4 py-3">
             <div className="text-xs text-slate-300">Password requirements</div>
             <ul className="mt-2 list-disc pl-5 text-sm">
               <ReqItem label="At least 10 characters" ok={!issues.includes("At least 10 characters")} />
@@ -167,7 +185,13 @@ export default function RegisterPage() {
           </div>
 
           <button
-            className="w-full rounded-xl border border-purple-400/40 bg-purple-500/10 px-4 py-2.5 text-sm font-medium hover:bg-purple-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full rounded-xl border border-teal-300/60 bg-gradient-to-r from-emerald-400/25 via-teal-400/20 to-cyan-300/20
+                       px-4 py-2.5 text-sm font-medium text-slate-100
+                       hover:bg-teal-300 hover:border-teal-200 hover:text-slate-900
+                       hover:shadow-lg hover:shadow-teal-400/25
+                       transition-colors transition-shadow duration-150
+                       focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-teal-300/20
+                       disabled:opacity-50 disabled:cursor-not-allowed"
             disabled={!canSubmit}
           >
             {loading ? "Creating..." : "Create account"}
@@ -175,7 +199,7 @@ export default function RegisterPage() {
 
           <div className="text-center text-sm text-slate-300">
             Already have an account?{" "}
-            <a className="text-sky-300 hover:underline" href="/login">
+            <a className="text-teal-300 hover:text-emerald-300 hover:underline" href="/login">
               Log in
             </a>
           </div>
