@@ -5,7 +5,8 @@ const { UserModel } = require("../../database/models/User");
 
 router.get("/", (req, res) => res.json({ ok: true, route: "auth" }));
 
-router.post("/register", async (req, res) => {
+router.post("/register", async (req, res) => 
+{
   try 
   {
     const { username, email, password } = req.body;
@@ -78,7 +79,7 @@ router.post("/login", async (req, res) =>
             return res.status(401).json({ ok: false, error: "Invalid username or password." });
         }
 
-        const passwordMatch = bcrypt.compare(req.body.password, user.passwordHash);
+        const passwordMatch = await bcrypt.compare(req.body.password, user.passwordHash);
 
         if (!passwordMatch)
         {
