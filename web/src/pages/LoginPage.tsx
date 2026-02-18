@@ -58,6 +58,7 @@ export default function LoginPage()
       return;
     }
 
+    setSuccessMsg("Logged in successfully!");
     navigate("/lobby");
   }
 

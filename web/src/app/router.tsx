@@ -7,9 +7,9 @@ import NotFoundPage from "../pages/NotFoundPage";
 
 
 export const router = createBrowserRouter([
-  { path: "/", element: <LobbyPage /> },
-  { path: "*", element: <NotFoundPage /> },
+  {path: "*", element: <NotFoundPage /> },
   {path: "/room", element: <RoomPage />},
+  {path: "/lobby", element: <LobbyPage /> },
   {path: "/login", element: <LoginPage />},
   {path: "/register", element: <RegisterPage />},
 ]);
