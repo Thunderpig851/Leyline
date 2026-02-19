@@ -17,13 +17,13 @@ export default function NotFoundPage()
         <div className="mt-6 flex justify-center gap-3">
           <a
             href="/lobby"
-            className="rounded-xl border border-teal-300/30 bg-teal-500/10 px-4 py-2 text-sm hover:bg-teal-500/20"
+            className="rounded-xl border border-teal-300/30 bg-teal-500/10 px-4 py-2 text-sm hover:bg-teal-200/20"
           >
             Go home
           </a>
           <a
             href="/login"
-            className="rounded-xl border border-white/10 bg-slate-950/40 px-4 py-2 text-sm hover:bg-white/5"
+            className="rounded-xl border border-teal-300/30 bg-teal-500/10 px-4 py-2 text-sm hover:bg-teal-200/20"
           >
             Log in
           </a>

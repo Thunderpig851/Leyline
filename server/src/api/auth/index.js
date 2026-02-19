@@ -1,5 +1,7 @@
+require('dotenv').config();
 const router = require("express").Router();
 const bcrypt = require('bcrypt');
+const jwt = require("jsonwebtoken");
 
 const { UserModel } = require("../../database/models/User");
 
@@ -89,9 +91,12 @@ router.post("/login", async (req, res) =>
         user.status = 'online';
         await user.save();
 
+        const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET);
+
         return res.json({
             ok: true,
             user: {
+                token,
                 id: user._id,
                 username: user.username,
                 email: user.email,
@@ -99,9 +104,7 @@ router.post("/login", async (req, res) =>
                 status: user.status
             }
         });
-     
-    }
-
+    } 
     catch (err)
     {
         console.error("Error during login:", err);
@@ -153,6 +156,8 @@ function validateEmail(email)
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   return emailRegex.test(email);
 }
+
+
 
 async function hashPassword(password) 
 {

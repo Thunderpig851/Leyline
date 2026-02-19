@@ -6,6 +6,7 @@ type LoginResponse =
 {
   ok: boolean;
   user?: {
+    jwt: string;
     id: string;
     username: string;
     email: string;
