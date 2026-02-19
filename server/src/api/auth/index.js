@@ -91,12 +91,17 @@ router.post("/login", async (req, res) =>
         user.status = 'online';
         await user.save();
 
-        const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET);
+        const token = jwt.sign
+        (
+          { userId: user._id }, 
+          process.env.JWT_SECRET,
+          { expiresIn: '3h' }
+        );
 
         return res.json({
             ok: true,
+            token,
             user: {
-                token,
                 id: user._id,
                 username: user.username,
                 email: user.email,
@@ -132,7 +137,8 @@ router.post("/logout", async (req, res) =>
 
         user.status = 'offline';
         await user.save();
-
+        clearAccessToken(res);
+        
         return res.json({ ok: true, message: "User logged out successfully." });
     } 
     catch (err) 

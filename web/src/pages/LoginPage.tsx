@@ -1,12 +1,12 @@
 import { useMemo, useState } from "react";
-import { apiPost } from "../lib/api";
+import { apiPost, setAccessToken } from "../lib/api";
 import { useNavigate } from "react-router-dom";
 
 type LoginResponse =
 {
   ok: boolean;
+  token?: string;
   user?: {
-    jwt: string;
     id: string;
     username: string;
     email: string;
@@ -59,6 +59,15 @@ export default function LoginPage()
       return;
     }
 
+    const { token } = result.data;
+  
+    if (!token)
+    {
+      setServerError("No token received from server.");
+      return;
+    }
+    
+    setAccessToken(token);
     setSuccessMsg("Logged in successfully!");
     navigate("/lobby");
   }
