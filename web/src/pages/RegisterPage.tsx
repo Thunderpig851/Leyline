@@ -4,7 +4,8 @@ import { apiPost } from "../lib/api";
 type RegisterResponse =
 {
   ok: boolean;
-  user?: {
+  user?: 
+  {
     id: string;
     username: string;
     email: string;
@@ -50,7 +51,7 @@ export default function RegisterPage()
     password === confirm &&
     !loading;
 
-  async function onSubmit(e: React.FormEvent)
+async function onSubmit(e: React.SubmitEvent)
   {
     e.preventDefault();
     setServerError(null);
@@ -138,7 +139,7 @@ export default function RegisterPage()
               placeholder="you@example.com"
             />
             {!emailOk && email.length > 0 && (
-              <div className="mt-1 text-xs text-red-300">Email looks invalid.</div>
+              <div className="mt-1 text-xs text-red-300">Invalid Email.</div>
             )}
           </label>
 
