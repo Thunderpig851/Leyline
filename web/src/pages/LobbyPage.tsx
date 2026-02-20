@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { apiPost } from "../lib/api";
 import CreateGamePopUp from "../components/CreateGamePopUp";
 
 export default function LobbyPage()
@@ -29,7 +28,7 @@ export default function LobbyPage()
 
       {openCreate && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <CreateGamePopUp openCreate={openCreate} onClose={() => setOpenCreate(false)} />
+          <CreateGamePopUp onClose={() => setOpenCreate(false)} />
         </div>
       )}
 

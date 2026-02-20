@@ -12,17 +12,23 @@ type CreateGameResponse =
   error?: string;
 };
 
-export default function CreateGamePopUp({ onClose }: { openCreate: boolean, onClose: () => void })
+type CreateGamePopUpProps =
+{
+  onClose: () => void;
+};
+
+export default function CreateGamePopUp({ onClose }: CreateGamePopUpProps)
 {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [visiblity, setVisiblity] = useState("public");
+  const [visibility, setVisibility] = useState("public");
   const [settings, setSettings] = useState(
-{
+  {
     format: "",
     bracket: "",
     allowSpectators: false
   });
+
 
   const [loading, setLoading] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
@@ -36,12 +42,23 @@ export default function CreateGamePopUp({ onClose }: { openCreate: boolean, onCl
 
     setLoading(true);
 
-    // const result = await apiPost<CreateGameResponse>("/api/rooms/create", {
-    //   title,
-    //   description,
-    //   visibility: visiblity,
-    //   settings
-    // });
+    const result = await apiPost<CreateGameResponse>("/api/rooms/create", 
+    {
+      title,
+      description,
+      visibility,
+      settings
+    });
+
+    if (!result.ok)
+    {
+      setServerError(result.error || "Failed to create game");
+    }
+    else
+    {
+      setSuccessMsg("Game created successfully!");
+      setTimeout(() => onClose(), 1500);
+    }
 
     setLoading(false);
   }
@@ -110,8 +127,8 @@ export default function CreateGamePopUp({ onClose }: { openCreate: boolean, onCl
               <select
                 className="mt-1 w-full rounded-xl border border-white/10 bg-slate-950/50 px-3 py-2 text-sm text-slate-100 outline-none
                            focus:border-teal-300/80 focus:ring-4 focus:ring-emerald-400/20"
-                value={visiblity}
-                onChange={(e) => setVisiblity(e.target.value)}
+                value={visibility}
+                onChange={(e) => setVisibility(e.target.value)}
               >
                 <option value="public">Public</option>
                 <option value="private">Private</option>
