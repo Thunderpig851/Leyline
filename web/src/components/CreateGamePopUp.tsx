@@ -34,7 +34,7 @@ export default function CreateGamePopUp({ onClose }: CreateGamePopUpProps)
   const [serverError, setServerError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  async function onSubmit(e: React.FormEvent<HTMLFormElement>)
+  async function onSubmit(e: React.SubmitEvent)
   {
     e.preventDefault();
     setServerError(null);
