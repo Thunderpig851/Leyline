@@ -57,6 +57,7 @@ export default function CreateGamePopUp({ onClose }: CreateGamePopUpProps)
     else
     {
       setSuccessMsg("Game created successfully!");
+      // force host into game
       setTimeout(() => onClose(), 1500);
     }
 

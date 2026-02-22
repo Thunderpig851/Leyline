@@ -15,14 +15,11 @@ const RoomMemberSchema = new mongoose.Schema(
 
 const RoomSettingsSchema = new mongoose.Schema(
 {
-    format: 
-    {
+    bracket: {
         type: String,
-        enum: ['standard', 'commander'], //Placeholder
-        default: 'commander',
+        enum: ['1', '2', '3', '4', '5'],
+        required: true,
     },
-    bracket: {type: Number, min: 1, max: 5},
-    description: { type: String, maxlength: 200 },
     allowSpectators: { type: Boolean, default: false },
 },
     { _id: false}
@@ -30,7 +27,6 @@ const RoomSettingsSchema = new mongoose.Schema(
 
 const RoomSchema = new mongoose.Schema(
 {
-    // code: { type: String, required: true, unique: true, index: true },
     title: { type: String, required: true, maxlength: 50 },
     description: { type: String, maxlength: 500 },
     host: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },

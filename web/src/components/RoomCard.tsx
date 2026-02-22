@@ -16,7 +16,7 @@ type RoomCardProps =
 {
   room: RoomCardData;
 
-  // wire later
+  // for later
   onOpen?: (roomId: string) => void;
   onJoin?: (roomId: string) => void;
 };
@@ -26,7 +26,7 @@ export default function RoomCard({ room, onOpen, onJoin }: RoomCardProps)
   const {
     id,
     title,
-    hostName,
+    hostName = "Host",
     visibility = "public",
     status = "open",
     playersCount = 0,

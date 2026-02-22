@@ -28,13 +28,14 @@ function createApp() {
     res.status(200).json({ ok: true });
   });
 
-  app.use("/api/auth", authRoutes); //pulbic routes
-  app.use("/api/account", requireAuth, accountRoutes); //protected routes
-  app.use("/api/rooms", requireAuth, roomsRoutes); //protected routes
+  app.use("/api/auth", authRoutes);
+  app.use("/api/account", requireAuth, accountRoutes);
+  app.use("/api/rooms", roomsRoutes); 
   app.use("/api/lfg", lfgRoutes);
   app.use("/api/lobby", lobbyRoutes);
 
-  app.use((req, res) => {
+  app.use((req, res) => 
+  {
     res.status(404).json({ error: "Not found" });
   });
 
