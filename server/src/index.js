@@ -4,17 +4,18 @@ const http = require("http");
 const { Server } = require("socket.io");
 const { createApp } = require("./app");
 
-async function start() {
+async function start()
+{
   const port = process.env.PORT || 3001;
   const mongoURI = process.env.MONGO_URI;
 
-  if (!mongoURI) 
+  if (!mongoURI)
   {
     console.error("MONGO_URI is not defined in environment variables");
     process.exit(1);
   }
 
-  try 
+  try
   {
     await mongoose.connect(mongoURI);
     console.log("Connected to MongoDB");
@@ -22,33 +23,33 @@ async function start() {
     const app = createApp();
     const server = http.createServer(app);
 
-    const io = new Server(server, 
+    const io = new Server(server,
     {
-      cors: 
+      cors:
       {
         origin: process.env.CLIENT_ORIGIN || "http://localhost:5173",
         credentials: true,
       },
-    })
+    });
 
-    io.on("connection", (socket) => 
+    io.on("connection", (socket) =>
     {
       console.log("socket connected:", socket.id);
 
-      socket.on("disconnect", () => 
+      socket.on("disconnect", () =>
       {
-        console.log("socket disconnected:", socket.id)
+        console.log("socket disconnected:", socket.id);
       });
     });
 
-    app.set("io", io)
+    app.set("io", io);
 
-    app.listen(port, () => 
+    server.listen(port, () =>
     {
       console.log(`Server is running on port ${port}`);
     });
-  } 
-  catch (error) 
+  }
+  catch (error)
   {
     console.error("Failed to start server:", error);
     process.exit(1);

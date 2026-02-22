@@ -26,7 +26,7 @@ export async function apiPost<T>(
   try
   {
     const token = sessionStorage.getItem("accessToken");
-    console.log("Current token:", token);
+    
     const res = await fetch(`${API_BASE}${path}`, {
       method: "POST",
       headers: {

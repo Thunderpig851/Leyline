@@ -25,7 +25,7 @@ export default function CreateGamePopUp({ onClose }: CreateGamePopUpProps)
   const [settings, setSettings] = useState(
   {
     format: "",
-    bracket: "",
+    bracket: "1",
     allowSpectators: false
   });
 
@@ -33,36 +33,43 @@ export default function CreateGamePopUp({ onClose }: CreateGamePopUpProps)
   const [loading, setLoading] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [loginPrompt, setLoginPrompt] = useState<string | null>(null);
 
   async function onSubmit(e: React.SubmitEvent)
+{
+  e.preventDefault();
+  setServerError(null);
+  setLoginPrompt(null);
+  setSuccessMsg(null);
+
+  setLoading(true);
+
+  const result = await apiPost<CreateGameResponse>("/api/rooms/create", {
+    title,
+    description,
+    visibility,
+    settings,
+  });
+
+  if (!result.ok)
   {
-    e.preventDefault();
-    setServerError(null);
-    setSuccessMsg(null);
-
-    setLoading(true);
-
-    const result = await apiPost<CreateGameResponse>("/api/rooms/create", 
+    if (result.error === "Invalid token: jwt expired")
     {
-      title,
-      description,
-      visibility,
-      settings
-    });
-
-    if (!result.ok)
-    {
-      setServerError(result.error || "Failed to create game");
+      setLoginPrompt("Your session expired. Want to log in again?");
     }
     else
     {
-      setSuccessMsg("Game created successfully!");
-      // force host into game
-      setTimeout(() => onClose(), 1500);
+      setServerError(result.error || "Failed to create game");
     }
-
-    setLoading(false);
   }
+  else
+  {
+    setSuccessMsg("Game created successfully!");
+    setTimeout(() => onClose(), 1500);
+  }
+
+  setLoading(false);
+}
 
   return (
     <div className="fixed inset-0 z-50">
@@ -87,11 +94,26 @@ export default function CreateGamePopUp({ onClose }: CreateGamePopUpProps)
             </div>
           )}
 
-          {successMsg && (
+          {loginPrompt && (
             <div className="mt-4 rounded-xl border border-teal-400/40 bg-teal-500/10 px-4 py-3 text-sm text-teal-100">
-              {successMsg}
+              <div className="flex items-center justify-between gap-3">
+                <div>{loginPrompt}</div>
+
+                <a
+                  href="/login"
+                  className="shrink-0 rounded-lg border border-white/10 bg-slate-950/40 px-3 py-1.5 text-xs font-medium text-slate-100 hover:bg-white/5"
+                >
+                  Log in
+                </a>
+              </div>
             </div>
           )}
+
+          {successMsg && ( 
+            <div className="mt-4 rounded-xl border border-teal-400/40 
+                            bg-teal-500/10 px-4 py-3 text-sm text-teal-100"> 
+              {successMsg} 
+            </div> )}
 
           <form onSubmit={onSubmit} className="mt-5 space-y-4">
             <label className="block">

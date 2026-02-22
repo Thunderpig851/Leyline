@@ -1,13 +1,68 @@
 import { useState, useEffect } from "react";
 import CreateGamePopUp from "../components/CreateGamePopUp";
 import GamesGrid from "../components/GamesGrid";
+import { socket } from "../lib/socket";
+
+type Room = 
+{
+  _id: string;
+  title: string;
+  visible: "public" | "private";
+  status: "open" | "full";
+}
 
 export default function LobbyPage()
 {
   const [openCreate, setOpenCreate] = useState(false);
-  const [games, setGames] = useState([])
 
- 
+  const [rooms, setRooms] = useState<Room[]>([])
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function loadRooms()
+  {
+    setLoading(true);
+    setError(null);
+
+    try
+    {
+      const res = await fetch("http://localhost:3001/api/rooms/all");
+      const data = await res.json();
+
+      if (!data.ok)
+      {
+        setError(data.error || "Failed to load rooms.");
+        setRooms([]);
+        return;
+      }
+
+      setRooms(data.rooms);
+    }
+    catch (err)
+    {
+      console.error("Failed to load rooms:", err);
+      setError("Failed to load rooms. Please try again.");
+    }
+    finally
+    {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() =>
+  {
+    loadRooms();
+
+    socket.on("rooms:changed", loadRooms);
+
+
+    return () =>
+    {
+      socket.off("rooms:changed");
+      socket.disconnect();
+    };
+  }, []);
+  
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
@@ -34,7 +89,12 @@ export default function LobbyPage()
 
       {openCreate && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <CreateGamePopUp onClose={() => setOpenCreate(false)} />
+          <CreateGamePopUp
+            rooms={rooms}
+            loading={loading}
+            error={error}
+            onClose={() => setOpenCreate(false)} 
+          />
         </div>
       )}
 
