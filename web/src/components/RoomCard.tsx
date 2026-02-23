@@ -26,8 +26,8 @@ export default function RoomCard({ room, onOpen, onJoin }: RoomCardProps)
   const {
     id,
     title,
-    hostName = "Host",
-    visibility = "public",
+    hostName,
+    visibility,
     status = "open",
     playersCount = 0,
     maxPlayers = 4,
@@ -65,7 +65,9 @@ export default function RoomCard({ room, onOpen, onJoin }: RoomCardProps)
         <button
           type="button"
           onClick={() => onOpen?.(id)}
-          className="flex-1 rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-200 hover:bg-white/5"
+          className="flex-1 rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-200 
+                     hover:bg-teal-300 hover:border-teal-200 hover:text-slate-900
+                     hover:shadow-lg hover:shadow-teal-400/25 transition-colors transition-shadow duration-150"
         >
           View
         </button>

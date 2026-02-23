@@ -13,13 +13,14 @@ router.post("/create", requireAuth ,async (req, res) =>
   {
     const { title, description, visibility, settings } = req.body;
 
-    const hostId = req.userId;
+    const hostId = req.user._id;
 
     const room = await RoomModel.create({
       title: title.trim(),
       description: typeof description === "string" ? description.trim() : undefined,
 
-      host: hostId,
+      hostID: hostId,
+      hostName: req.user.username,
       createdBy: hostId,
 
       visibility: visibility,

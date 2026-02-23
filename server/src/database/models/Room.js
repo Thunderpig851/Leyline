@@ -29,7 +29,8 @@ const RoomSchema = new mongoose.Schema(
 {
     title: { type: String, required: true, maxlength: 50 },
     description: { type: String, maxlength: 500 },
-    host: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    hostID: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    hostName: { type: String, required: true },
     
     visibility: 
     {

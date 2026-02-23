@@ -1,4 +1,5 @@
 const jwt = require("jsonwebtoken");
+const { UserModel } = require("../database/models/User");
 
 function getToken(req)
 {
@@ -10,7 +11,7 @@ function getToken(req)
   return null;
 }
 
-module.exports = function requireAuth(req, res, next)
+module.exports = async function requireAuth(req, res, next)
 {
   try
   {
@@ -19,12 +20,25 @@ module.exports = function requireAuth(req, res, next)
 
     const payload = jwt.verify(token, process.env.JWT_SECRET);
 
-    req.userId = payload.userId;
+    const userId = payload.sub || payload.userId;
+    if (!userId) return res.status(401).json({ ok: false, error: "Invalid token: missing user id" });
+
+    req.userId = userId;
+
+    const user = await UserModel.findById(userId).select("_id username").lean();
+    if (!user) return res.status(401).json({ ok: false, error: "Invalid token: user not found" });
+
+    req.user = user;
 
     return next();
   }
   catch (err)
   {
+    if (err && err.name === "TokenExpiredError")
+    {
+      return res.status(401).json({ ok: false, error: "Invalid token: jwt expired" });
+    }
+
     return res.status(401).json({ ok: false, error: `Invalid token: ${err.message}` });
   }
 };
