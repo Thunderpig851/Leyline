@@ -1,25 +1,33 @@
-import { useState, useEffect } from "react";
+// web/src/pages/LobbyPage.tsx
+import { useState, useEffect, useCallback } from "react";
 import CreateGamePopUp from "../components/CreateGamePopUp";
 import GamesGrid from "../components/GamesGrid";
 import { socket } from "../lib/socket";
 
-type Room = 
+type Room =
 {
   _id: string;
   title: string;
   visible: "public" | "private";
   status: "open" | "full";
-}
+};
+
+type RoomsAllResponse =
+{
+  ok: boolean;
+  rooms?: Room[];
+  error?: string;
+};
 
 export default function LobbyPage()
 {
   const [openCreate, setOpenCreate] = useState(false);
 
-  const [rooms, setRooms] = useState<Room[]>([])
-  const [loading, setLoading] = useState(false);
+  const [rooms, setRooms] = useState<Room[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  async function loadRooms()
+  const loadRooms = useCallback(async () =>
   {
     setLoading(true);
     setError(null);
@@ -27,7 +35,7 @@ export default function LobbyPage()
     try
     {
       const res = await fetch("http://localhost:3001/api/rooms/all");
-      const data = await res.json();
+      const data: RoomsAllResponse = await res.json();
 
       if (!data.ok)
       {
@@ -36,18 +44,19 @@ export default function LobbyPage()
         return;
       }
 
-      setRooms(data.rooms);
+      setRooms(data.rooms ?? []);
     }
     catch (err)
     {
       console.error("Failed to load rooms:", err);
       setError("Failed to load rooms. Please try again.");
+      setRooms([]);
     }
     finally
     {
       setLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() =>
   {
@@ -55,14 +64,11 @@ export default function LobbyPage()
 
     socket.on("rooms:changed", loadRooms);
 
-
     return () =>
     {
-      socket.off("rooms:changed");
-      socket.disconnect();
+      socket.off("rooms:changed", loadRooms);
     };
-  }, []);
-  
+  }, [loadRooms]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
@@ -74,31 +80,35 @@ export default function LobbyPage()
         </h1>
 
         <div className="mt-6 flex flex-wrap gap-3">
-          <button className="rounded-xl border border-teal-300/30 bg-teal-500/10 px-4 py-2 text-sm 
-                             hover:bg-teal-300 hover:border-teal-200 hover:text-slate-900
-                             hover:shadow-lg hover:shadow-teal-400/25 transition-colors transition-shadow duration-150"
-                  onClick={() => setOpenCreate(true)}
+          <button
+            type="button"
+            className="rounded-xl border border-teal-300/30 bg-teal-500/10 px-4 py-2 text-sm
+                       hover:bg-teal-300 hover:border-teal-200 hover:text-slate-900
+                       hover:shadow-lg hover:shadow-teal-400/25 transition-colors transition-shadow duration-150"
+            onClick={() => setOpenCreate(true)}
           >
             Create Game
           </button>
 
-          <button className="rounded-xl border border-teal-300/30 bg-teal-500/10 px-4 py-2 text-sm hover:bg-teal-500/20">
+          <button
+            type="button"
+            className="rounded-xl border border-teal-300/30 bg-teal-500/10 px-4 py-2 text-sm hover:bg-teal-500/20"
+          >
             LFG Channel
           </button>
         </div>
 
-      {openCreate && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <CreateGamePopUp
-            rooms={rooms}
-            loading={loading}
-            error={error}
-            onClose={() => setOpenCreate(false)} 
-          />
-        </div>
-      )}
+        {openCreate && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+            <CreateGamePopUp onClose={() => setOpenCreate(false)} />
+          </div>
+        )}
 
-        <GamesGrid />
+        <GamesGrid
+          rooms={rooms}
+          onOpenRoom={(id) => console.log("open", id)}
+          onJoinRoom={(id) => console.log("join", id)}
+        />
       </div>
     </div>
   );
