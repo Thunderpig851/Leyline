@@ -1,14 +1,13 @@
-// web/src/components/GamesGrid.tsx
 import { useEffect, useMemo, useState } from "react";
 import RoomCard, { type RoomCardData } from "./RoomCard";
 
-type Room =
+type GridRoom =
 {
   _id: string;
   title: string;
   hostName?: string;
   visible?: "public" | "private";
-  status?: "open" | "full" | "closed";
+  status?: "open" | "full";
   playersCount?: number;
   maxPlayers?: number;
   createdAt?: string;
@@ -16,7 +15,7 @@ type Room =
 
 type GamesGridProps =
 {
-  rooms: Room[];
+  rooms: GridRoom[];
   onOpenRoom?: (roomId: string) => void;
   onJoinRoom?: (roomId: string) => void;
 };
@@ -34,7 +33,7 @@ export default function GamesGrid({ rooms, onOpenRoom, onJoinRoom }: GamesGridPr
       title: r.title,
       hostName: r.hostName,
       visibility: r.visible ?? "public",
-      status: r.status === "full" ? "closed" : (r.status ?? "open"),
+      status: r.status === "full" ? "full" : (r.status ?? "open"),
       playersCount: r.playersCount ?? 0,
       maxPlayers: r.maxPlayers ?? 4,
       createdAt: r.createdAt,

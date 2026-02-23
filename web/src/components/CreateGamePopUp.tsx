@@ -4,7 +4,8 @@ import { apiPost } from "../lib/api";
 type CreateGameResponse =
 {
   ok: boolean;
-  game?: {
+  game?: 
+  {
     id: string;
     host: string;
     createdAt: string;

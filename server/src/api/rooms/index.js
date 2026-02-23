@@ -58,4 +58,21 @@ router.get("/all", async (req, res) =>
   }
 });
 
+router.get("/:id" , async (req, res) =>
+{
+  try
+  {
+    const room = await RoomModel.findById(req.params.id).exec();
+
+    if (!room) return res.status(404).json({ ok: false, error: "Room not found." });
+
+    return res.status(200).json({ ok: true, room });
+  }
+  catch (err)
+  {
+    console.error("Error fetching room:", err);
+    return res.status(500).json({ ok: false, error: err.message || "Failed to fetch room." });
+  }
+});
+
 module.exports = router;

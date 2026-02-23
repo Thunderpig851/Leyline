@@ -1,4 +1,5 @@
-// web/src/components/RoomCard.tsx
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 export type RoomCardData =
 {
@@ -6,7 +7,7 @@ export type RoomCardData =
   title: string;
   hostName?: string;
   visibility?: "public" | "private";
-  status?: "open" | "closed";
+  status?: "open" | "full";
   playersCount?: number;
   maxPlayers?: number;
   createdAt?: string;
@@ -21,21 +22,25 @@ type RoomCardProps =
   onJoin?: (roomId: string) => void;
 };
 
-export default function RoomCard({ room, onOpen, onJoin }: RoomCardProps)
+export default function RoomCard({ room }: RoomCardProps)
 {
+  const navigate = useNavigate();
+
   const {
     id,
     title,
     hostName,
     visibility,
-    status = "open",
+    status,
     playersCount = 0,
     maxPlayers = 4,
   } = room;
 
   return (
+
     <div className="rounded-2xl border border-white/10 bg-slate-950/40 p-4">
       <div className="flex items-start justify-between gap-3">
+
         <div className="min-w-0">
           <div className="text-sm font-semibold text-slate-100 truncate">
             {title}
@@ -64,7 +69,7 @@ export default function RoomCard({ room, onOpen, onJoin }: RoomCardProps)
       <div className="mt-4 flex gap-2">
         <button
           type="button"
-          onClick={() => onOpen?.(id)}
+          
           className="flex-1 rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-200 
                      hover:bg-teal-300 hover:border-teal-200 hover:text-slate-900
                      hover:shadow-lg hover:shadow-teal-400/25 transition-colors transition-shadow duration-150"
@@ -74,7 +79,7 @@ export default function RoomCard({ room, onOpen, onJoin }: RoomCardProps)
 
         <button
           type="button"
-          onClick={() => onJoin?.(id)}
+          onClick={() => navigate(`/rooms/${id}`)}
           className="flex-1 rounded-xl border border-teal-300/60 bg-gradient-to-r from-emerald-400/25 via-teal-400/20 to-cyan-300/20
                      px-3 py-2 text-sm font-medium text-slate-100
                      hover:bg-teal-300 hover:border-teal-200 hover:text-slate-900
@@ -82,6 +87,7 @@ export default function RoomCard({ room, onOpen, onJoin }: RoomCardProps)
         >
           Join
         </button>
+
       </div>
     </div>
   );

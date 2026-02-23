@@ -1,4 +1,3 @@
-// web/src/pages/LobbyPage.tsx
 import { useState, useEffect, useCallback } from "react";
 import CreateGamePopUp from "../components/CreateGamePopUp";
 import GamesGrid from "../components/GamesGrid";
@@ -70,6 +69,8 @@ export default function LobbyPage()
     };
   }, [loadRooms]);
 
+  
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
       <div className="mx-auto max-w-5xl px-6 py-10">
@@ -104,11 +105,14 @@ export default function LobbyPage()
           </div>
         )}
 
+        
+
         <GamesGrid
           rooms={rooms}
           onOpenRoom={(id) => console.log("open", id)}
           onJoinRoom={(id) => console.log("join", id)}
         />
+
       </div>
     </div>
   );
