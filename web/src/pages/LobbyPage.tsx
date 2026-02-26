@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
+import { socket } from "../lib/socket";
 import CreateGamePopUp from "../components/CreateGamePopUp";
 import GamesGrid from "../components/GamesGrid";
-import { socket } from "../lib/socket";
 
 type Room =
 {
@@ -69,7 +69,7 @@ export default function LobbyPage()
     };
   }, [loadRooms]);
 
-  
+
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
