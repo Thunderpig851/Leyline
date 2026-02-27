@@ -101,7 +101,6 @@ export default function AccountPage()
           <div className="mt-6 grid gap-6 lg:grid-cols-[340px_1fr]">
             <aside className="rounded-2xl border border-teal-400/25 bg-slate-900/70 backdrop-blur p-5 shadow-[0_0_0_1px_rgba(45,212,191,0.12),0_18px_70px_-32px_rgba(0,0,0,0.85)]">
               <div className="mt-4 space-y-2">
-                {/* button styling can be conditional based on `section` */}
                 <button
                   type="button"
                   onClick={() => setSection("account")}
