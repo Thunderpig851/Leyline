@@ -27,8 +27,9 @@ export async function apiPost<T>(
   {
     const token = sessionStorage.getItem("accessToken");
     
-    const res = await fetch(`${API_BASE}${path}`, {
-      method: "POST",
+    const res = await fetch(`${API_BASE}${path}`, 
+    {
+      method: init?.method ?? "POST",
       headers: {
         "Content-Type": "application/json",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),

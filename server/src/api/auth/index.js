@@ -95,7 +95,7 @@ router.post("/login", async (req, res) =>
         (
           { userId: user._id }, 
           process.env.JWT_SECRET,
-          { expiresIn: '3h' }
+          { expiresIn: '1d' }
         );
 
         return res.json({
@@ -162,7 +162,6 @@ function validateEmail(email)
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   return emailRegex.test(email);
 }
-
 
 
 async function hashPassword(password) 

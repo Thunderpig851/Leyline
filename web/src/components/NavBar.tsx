@@ -74,7 +74,7 @@ export default function NavBar()
             to="/account"
             className="rounded-xl border border-teal-300/30 bg-teal-500/10 px-3 py-2 text-sm text-slate-200 hover:bg-teal-500/20"
           >
-            Account
+          {username}
           </Link>
           ) : (
           <div className="ml-2 text-xs text-slate-400">
