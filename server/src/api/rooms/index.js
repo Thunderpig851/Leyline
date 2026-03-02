@@ -32,7 +32,7 @@ router.post("/create", requireAuth ,async (req, res) =>
     });
 
     const io = req.app.get("io");
-    io.emit("rooms:changed")
+    io.emit("rooms:changed");
 
     return res.status(201).json({ ok: true, room });
   }

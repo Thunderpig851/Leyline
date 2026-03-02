@@ -21,18 +21,18 @@ export default function JoinRoomPage({ roomId, roomTitle }: JoinRoomPageProps)
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // PSEUDOCODE: refs you’ll add (do NOT put these in JSX)
+  // For Later : refs you’ll add (do NOT put these in JSX)
   // - videoRef: points to the <video> element used for preview
   // - streamRef: holds the active MediaStream (camera/mic)
   // - optionally: devices state (camera list, mic list) if you want dropdowns later
 
-  // PSEUDOCODE: lifecycle for auto-start preview
+  // For Later : lifecycle for auto-start preview
   // useEffect(() => {
   //   startPreview();               // request permissions + attach stream to video
   //   return () => stopPreview();   // stop tracks when leaving page
   // }, []);
 
-  // PSEUDOCODE: startPreview()
+  // For Later : startPreview()
   // startPreview should:
   // - setError(null)
   // - call navigator.mediaDevices.getUserMedia({
@@ -44,7 +44,7 @@ export default function JoinRoomPage({ roomId, roomTitle }: JoinRoomPageProps)
   // - ensure preview video is muted + playsInline
   // - optionally enumerateDevices AFTER permission so labels show
 
-  // PSEUDOCODE: stopPreview()
+  // For Later : stopPreview()
   // stopPreview should:
   // - if streamRef exists:
   //     streamRef.current.getTracks().forEach(track => track.stop())
@@ -52,11 +52,11 @@ export default function JoinRoomPage({ roomId, roomTitle }: JoinRoomPageProps)
   // - if videoRef exists:
   //     videoRef.current.srcObject = null
 
-  // PSEUDOCODE: toggles (simple test version)
+  // For Later : toggles (simple test version)
   // - mic toggle: streamRef.current.getAudioTracks().forEach(t => t.enabled = false/true)
   // - cam toggle: streamRef.current.getVideoTracks().forEach(t => t.enabled = false/true)
 
-  // PSEUDOCODE: switching camera/mic devices (later)
+  // For Later : switching camera/mic devices (later)
   // Easiest early approach:
   // - stopPreview()
   // - startPreview() again with deviceId constraints
@@ -100,9 +100,9 @@ export default function JoinRoomPage({ roomId, roomTitle }: JoinRoomPageProps)
                   <option value="phone">Phone</option>
                 </select>
 
-                {/* PSEUDOCODE: if cameraSource changes and you want it to affect preview:
+                {/* For Later : if cameraSource changes and you want it to affect preview:
                     - If "webcam": use getUserMedia video constraints
-                    - If "phone": you’ll eventually need a different ingestion path (NDI, WebRTC from phone, etc.)
+                    - If "phone": you’ll eventually need a different ingestion path
                     - For now, you can treat both as “webcam” and just keep UI state */}
               </label>
 
@@ -119,7 +119,7 @@ export default function JoinRoomPage({ roomId, roomTitle }: JoinRoomPageProps)
                   <option value="1:1">1:1</option>
                 </select>
 
-                {/* PSEUDOCODE: applying aspect ratio to preview:
+                {/* For Later : applying aspect ratio to preview:
                     - Wrap the <video> in a container
                     - Set container aspect via CSS (aspect-video / custom)
                     - Keep video object-cover */}
@@ -137,9 +137,6 @@ export default function JoinRoomPage({ roomId, roomTitle }: JoinRoomPageProps)
                 />
               </label>
 
-              {/* PSEUDOCODE: add mic/cam toggle buttons here (optional):
-                  - toggleCam(): enable/disable video tracks on streamRef
-                  - toggleMic(): enable/disable audio tracks on streamRef */}
             </div>
           </aside>
 
@@ -155,8 +152,6 @@ export default function JoinRoomPage({ roomId, roomTitle }: JoinRoomPageProps)
               <button
                 type="button"
                 className="rounded-xl border border-teal-300/40 bg-teal-500/10 px-4 py-2 text-sm text-slate-100 hover:bg-teal-500/20"
-                // PSEUDOCODE: wire this to startPreview()
-                // onClick={() => startPreview()}
                 onClick={() => {}}
               >
                 Start
@@ -165,9 +160,6 @@ export default function JoinRoomPage({ roomId, roomTitle }: JoinRoomPageProps)
 
             <div className="mt-4 rounded-2xl border border-white/10 bg-slate-900/30 p-4">
               <div className="flex items-center justify-center rounded-xl border border-white/10 bg-slate-950/40 p-6 text-sm text-slate-400">
-                {/* PSEUDOCODE: replace this placeholder with the actual preview element:
-                    - <video ref={videoRef} autoPlay playsInline muted />
-                    - Attach stream in startPreview() */}
                 Video preview goes here
               </div>
             </div>
@@ -187,9 +179,9 @@ export default function JoinRoomPage({ roomId, roomTitle }: JoinRoomPageProps)
                 className="flex-1 rounded-xl border border-teal-300/60 bg-gradient-to-r from-emerald-400/25 via-teal-400/20 to-cyan-300/20
                            px-4 py-2 text-sm font-medium text-slate-100 hover:bg-teal-300 hover:border-teal-200 hover:text-slate-900
                            disabled:opacity-50 disabled:cursor-not-allowed"
-                // PSEUDOCODE: join flow later:
+                // For Later : join flow later:
                 // - validate joinCode if private
-                // - call backend join endpoint (or token mint if using LiveKit/mediasoup)
+                // - call backend join endpoint (mediasoup)
                 // - navigate to /rooms/:roomId when ok
                 onClick={() => {}}
               >
@@ -197,7 +189,7 @@ export default function JoinRoomPage({ roomId, roomTitle }: JoinRoomPageProps)
               </button>
             </div>
 
-            {/* PSEUDOCODE: consider stopping preview when leaving:
+            {/* For Later : Stop preview when navigating away
                 - Back button could call stopPreview() before navigate
                 - Also rely on useEffect cleanup on unmount */}
           </main>

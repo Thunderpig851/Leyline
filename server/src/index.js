@@ -2,7 +2,9 @@ require("dotenv").config();
 const mongoose = require("mongoose");
 const http = require("http");
 const { Server } = require("socket.io");
+
 const { createApp } = require("./app");
+const { registerSFUSignaling, getWorker } = require("./sfu");
 
 async function start()
 {
@@ -20,6 +22,8 @@ async function start()
     await mongoose.connect(mongoURI);
     console.log("Connected to MongoDB");
 
+    await getWorker();
+
     const app = createApp();
     const server = http.createServer(app);
 
@@ -28,19 +32,17 @@ async function start()
       cors:
       {
         origin: process.env.CLIENT_ORIGIN || "http://localhost:5173",
-        credentials: true,
-      },
+        credentials: true
+      }
     });
 
     io.on("connection", (socket) =>
     {
       console.log("socket connected:", socket.id);
-
-      socket.on("disconnect", () =>
-      {
-        console.log("socket disconnected:", socket.id);
-      });
+      socket.on("disconnect", () => console.log("socket disconnected:", socket.id));
     });
+
+    registerSFUSignaling(io);
 
     app.set("io", io);
 
