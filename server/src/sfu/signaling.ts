@@ -6,7 +6,7 @@ const peerTransports = new Map<string, Map<string, MsTypes.WebRtcTransport>>();
 
 export function registerSFUSignaling(io: Server) : void
 {
-    io.on("connnection", (socket: Socket) =>
+    io.on("connection", (socket: Socket) =>
     {
         socket.on("sfu:join", async (payload: { roomId: string, PeerId: string, }, cb) => 
         {
@@ -31,7 +31,7 @@ export function registerSFUSignaling(io: Server) : void
             }
             catch(err: any)
             {
-                console.error("sfu:joun error.", err);
+                console.error("sfu:join error.", err);
                 cb({ ok: false, error: err.message });
             }
         });
@@ -100,8 +100,8 @@ export function registerSFUSignaling(io: Server) : void
         {
             try
             {
-                const peerTransportMap = peerTransports.get(socket.id);
-                const transport = peerTransportMap?.get(payload.transportId);
+                const peerTransportMap = getPeerTransportMap(socket.id);
+                const transport = peerTransportMap.get(payload.transportId);
                 if (!transport) return cb({ ok: false, error: "Transport not found." });
 
                 await transport.connect({ dtlsParameters: payload.dtlsParameters });
@@ -131,11 +131,11 @@ export function registerSFUSignaling(io: Server) : void
 
 function getPeerTransportMap(socketId: string): Map<string, MsTypes.WebRtcTransport>
 {
-  let m = peerTransports.get(socketId);
-  if (!m)
+  let peerTransportMap = peerTransports.get(socketId);
+  if (!peerTransportMap)
   {
-    m = new Map<string, MsTypes.WebRtcTransport>();
-    peerTransports.set(socketId, m);
+    peerTransportMap = new Map<string, MsTypes.WebRtcTransport>();
+    peerTransports.set(socketId, peerTransportMap);
   }
-  return m;
+  return peerTransportMap;
 }
