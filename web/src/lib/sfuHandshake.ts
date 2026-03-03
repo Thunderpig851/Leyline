@@ -15,7 +15,7 @@ function emitAcknowledge<TRes>(event: string, payload: any): Promise<TRes>
 
 export async function sfuHandshake(roomId: string)
 {
-    const peerId = crypto.randomUUID;
+    const peerId = crypto.randomUUID();
 
     const joinRes = await emitAcknowledge<{ok: true, rtpCapabilities: any}>("sfu:join", { roomId, peerId });
 
