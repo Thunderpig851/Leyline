@@ -17,10 +17,10 @@ export async function sfuHandshake(roomId: string)
 {
     const peerId = crypto.randomUUID;
 
-    const joinRes = await emitAcknowledge<{ok: true, rtpCababilities: any}>("sfu:join", { roomId, peerId });
+    const joinRes = await emitAcknowledge<{ok: true, rtpCapabilities: any}>("sfu:join", { roomId, peerId });
 
     const device = new mediasoupClient.Device();
-    await device.load({ routerRtpCapabilities: joinRes.rtpCababilities });
+    await device.load({ routerRtpCapabilities: joinRes.rtpCapabilities });
 
     const sendRes = await emitAcknowledge<{ ok: true, transportOptions: any}>("sfu:createTransport", { roomId });
     const recvRes = await emitAcknowledge<{ ok: true, transportOptions: any}>("sfu:createTransport", { roomId });
