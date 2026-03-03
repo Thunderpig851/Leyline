@@ -7,6 +7,7 @@ import LoginPage from "../pages/LoginPage";
 import RegisterPage from "../pages/RegisterPage";
 import NotFoundPage from "../pages/NotFoundPage";
 import AccountPage from "../pages/AccountPage";
+import GamePage from "../pages/GamePage";
 
 
 export const router = createBrowserRouter([
@@ -16,11 +17,12 @@ export const router = createBrowserRouter([
     children: 
     [
       {path: "/lobby", element: <LobbyPage /> },
-      {path: "/rooms/:id", element: <JoinRoomPage roomId={""} roomTitle={""} />},
+      {path: "/rooms/:id", element: <JoinRoomPage />},
       {path: "/account", element: <AccountPage /> },
 
     ]
   },
+  {path: "/rooms/:id/game/", element: <GamePage /> },
   {path: "*", element: <NotFoundPage /> },
   {path: "/login", element: <LoginPage />},
   {path: "/register", element: <RegisterPage />},

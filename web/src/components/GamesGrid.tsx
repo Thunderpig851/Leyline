@@ -16,13 +16,12 @@ type GridRoom =
 type GamesGridProps =
 {
   rooms: GridRoom[];
-  onOpenRoom?: (roomId: string) => void;
   onJoinRoom?: (roomId: string) => void;
 };
 
 const PAGE_SIZE = 9;
 
-export default function GamesGrid({ rooms, onOpenRoom, onJoinRoom }: GamesGridProps)
+export default function GamesGrid({ rooms, onJoinRoom }: GamesGridProps)
 {
   const [page, setPage] = useState(1);
 
@@ -101,7 +100,6 @@ export default function GamesGrid({ rooms, onOpenRoom, onJoinRoom }: GamesGridPr
           <RoomCard
             key={room.id}
             room={room}
-            onOpen={onOpenRoom}
             onJoin={onJoinRoom}
           />
         ))}

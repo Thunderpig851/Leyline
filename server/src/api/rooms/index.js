@@ -7,7 +7,7 @@ const RoomModel = require("../../database/models/Room");
 
 router.get("/", (req, res) => res.json({ ok: true, route: "rooms" }));
 
-router.post("/create", requireAuth ,async (req, res) =>
+router.post("/create", requireAuth, async (req, res) =>
 {
   try
   {
@@ -106,5 +106,51 @@ router.patch("/:id/update", requireAuth, async (req, res) =>
     return res.status(500).json({ ok: false, error: err.message || "Failed to update room." });
   }
 });
+
+router.post("/:id/join", requireAuth, async (req, res) =>
+{
+  try 
+  {
+    const room = await RoomModel.findById(req.params.id).exec();
+    if (!room) return res.status(404).json( { ok: false, error: "Room not found" });
+
+    const userId = req.user._id;
+
+    const maxPlayers = 
+      room.settings && room.settings.maxPlayers ? room.settings.maxPlayers : 4;
+
+    const alreadyMember = room.members?.some(
+      (member) => member.userId.toString() === userId.toString()
+    );
+
+    if (alreadyMember)
+    {
+      return res.status(200).json({ ok: true, room, alreadyMember: true });
+    }
+
+    if (room.members && room.members.length >= maxPlayers)
+    {
+      return res.status(400).json({ ok: false, error: "Room is full." })
+    }
+    
+    room.members.push({ userID: userId, role: "player" });
+    if (room.members.length >= maxPlayers) room.status = "full";
+    else room.status = "open";
+
+
+    await room.save();
+
+    const io = req.app.get("io");
+    io.emit("rooms:changed");
+
+    return res.status(200).json({ ok: true, room });
+  }
+  catch(err)
+  {
+    console.log("error joining room", err);
+    res.status(500).json({ ok: false, error: err.message })
+  }
+});
+
 
 module.exports = router;

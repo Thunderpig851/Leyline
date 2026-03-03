@@ -109,7 +109,6 @@ export default function LobbyPage()
 
         <GamesGrid
           rooms={rooms}
-          onOpenRoom={(id) => console.log("open", id)}
           onJoinRoom={(id) => console.log("join", id)}
         />
 

@@ -20,6 +20,7 @@ const RoomSettingsSchema = new mongoose.Schema(
         enum: ['1', '2', '3', '4', '5'],
         required: true,
     },
+    maxPlayers: { type: Number, default: 4 },
     allowSpectators: { type: Boolean, default: false },
 },
     { _id: false}
@@ -52,9 +53,6 @@ const RoomSchema = new mongoose.Schema(
 
     members: { type: [RoomMemberSchema], default: [] },
     settings: { type: RoomSettingsSchema, default: () => ({}) },
-
-    lfgPostID: { type: mongoose.Schema.Types.ObjectId, ref: 'LFGPost' },
-
 });
 
 // Room Sorting
