@@ -59,7 +59,6 @@ export default function GamesGrid({ rooms, onJoinRoom }: GamesGridProps)
     <div className="mt-8">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <div className="text-sm font-semibold text-slate-100">Games</div>
           <div className="mt-1 text-xs text-slate-400">
             Showing {startNum}-{endNum} of {cards.length}
           </div>

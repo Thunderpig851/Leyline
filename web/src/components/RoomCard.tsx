@@ -38,8 +38,10 @@ export default function RoomCard({ room, onJoin }: RoomCardProps)
   }
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-slate-950/40 p-4">
-      <div className="flex items-start justify-between gap-3">
+    <div className="relative rounded-2xl border border-white/10 bg-slate-200/10 p-4 ring-1 ring-white/5">
+      <div className="pointer-events-none absolute inset-0 rounded-2xl bg-gradient-to-b from-white/10 via-white/5 to-transparent" />
+
+      <div className="relative flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="text-sm font-semibold text-slate-100 truncate">
             {title}
@@ -53,19 +55,19 @@ export default function RoomCard({ room, onJoin }: RoomCardProps)
           <span className="rounded-full border border-teal-300/30 bg-teal-500/10 px-2 py-0.5 text-[11px] text-teal-200">
             {status}
           </span>
-          <span className="rounded-full border border-white/10 bg-slate-900/60 px-2 py-0.5 text-[11px] text-slate-200">
+          <span className="rounded-full border border-white/10 bg-slate-900/50 px-2 py-0.5 text-[11px] text-slate-200">
             {visibility}
           </span>
         </div>
       </div>
 
-      <div className="mt-3 flex items-center justify-between text-xs text-slate-300">
+      <div className="relative mt-3 flex items-center justify-between text-xs text-slate-300">
         <span>
           Players: {playersCount}/{maxPlayers}
         </span>
       </div>
 
-      <div className="mt-4">
+      <div className="relative mt-4">
         <button
           type="button"
           onClick={handleJoin}
