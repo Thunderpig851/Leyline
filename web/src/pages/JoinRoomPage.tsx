@@ -1,9 +1,8 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { sfuHandshake } from "../lib/sfuHandshake";
 import { apiPost } from "../lib/api";
 
-type CameraSource = "webcam" | "phone";
 type Aspect = "16:9" | "4:3" | "1:1";
 
 type RoomResponse =
@@ -62,17 +61,33 @@ function CamOffIcon()
   );
 }
 
+function isDefaultDevice(d: MediaDeviceInfo)
+{
+  const label = (d.label || "").trim().toLowerCase();
+  return d.deviceId === "default" || label.startsWith("default");
+}
+
+function baseLabel(label: string)
+{
+  return label.replace(/^default\s*[-–—]\s*/i, "").trim().toLowerCase();
+}
+
+function deviceLabel(d: MediaDeviceInfo, fallback: string)
+{
+  const raw = (d.label || "").trim();
+  if (raw) return raw;
+  return `${fallback} (${d.deviceId.slice(0, 6)}…)`;
+}
+
 export default function JoinRoomPage()
 {
   const navigate = useNavigate();
-
   const { id } = useParams();
   const roomId = id || "";
 
   const [roomTitle, setRoomTitle] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  const [cameraSource, setCameraSource] = useState<CameraSource>("webcam");
   const [aspect, setAspect] = useState<Aspect>("16:9");
 
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -81,10 +96,162 @@ export default function JoinRoomPage()
   const [camEnabled, setCamEnabled] = useState(true);
   const [micEnabled, setMicEnabled] = useState(true);
 
+  const [videoInputs, setVideoInputs] = useState<MediaDeviceInfo[]>([]);
+  const [audioInputs, setAudioInputs] = useState<MediaDeviceInfo[]>([]);
+  const [selectedVideoId, setSelectedVideoId] = useState<string>("");
+  const [selectedAudioId, setSelectedAudioId] = useState<string>("");
+
   const [joinCode, setJoinCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [isJoined, setIsJoined] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const stopPreview = useCallback(() =>
+  {
+    if (localStreamRef.current)
+    {
+      localStreamRef.current.getTracks().forEach(t => t.stop());
+      localStreamRef.current = null;
+    }
+    if (localVideoRef.current)
+    {
+      localVideoRef.current.srcObject = null;
+    }
+  }, []);
+
+  const refreshDevices = useCallback(async () =>
+  {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+
+    function sortDefaultFirst(a: MediaDeviceInfo, b: MediaDeviceInfo)
+    {
+      const ad = isDefaultDevice(a);
+      const bd = isDefaultDevice(b);
+      if (ad !== bd) return ad ? -1 : 1;
+      return (a.label || "").localeCompare(b.label || "");
+    }
+
+    function dedupeDefaultPairs(list: MediaDeviceInfo[])
+    {
+      const chosen = new Map<string, MediaDeviceInfo>();
+
+      for (const d of list.slice().sort(sortDefaultFirst))
+      {
+        const key =
+          (d.groupId && d.groupId.trim()) ||
+          baseLabel(d.label || "");
+
+        if (!chosen.has(key))
+        {
+          chosen.set(key, d);
+          continue;
+        }
+
+        const existing = chosen.get(key)!;
+        if (!isDefaultDevice(existing) && isDefaultDevice(d))
+        {
+          chosen.set(key, d);
+        }
+      }
+
+      return Array.from(chosen.values()).sort(sortDefaultFirst);
+    }
+
+    const vidsRaw = devices.filter(d => d.kind === "videoinput");
+    const micsRaw = devices.filter(d => d.kind === "audioinput");
+
+    const vids = dedupeDefaultPairs(vidsRaw);
+    const mics = dedupeDefaultPairs(micsRaw);
+
+    setVideoInputs(vids);
+    setAudioInputs(mics);
+
+    const defaultVid = vids.find(isDefaultDevice);
+    const defaultMic = mics.find(isDefaultDevice);
+
+    if (!selectedVideoId || !vids.some(v => v.deviceId === selectedVideoId))
+    {
+      setSelectedVideoId(defaultVid?.deviceId || vids[0]?.deviceId || "");
+    }
+
+    if (!selectedAudioId || !mics.some(m => m.deviceId === selectedAudioId))
+    {
+      setSelectedAudioId(defaultMic?.deviceId || mics[0]?.deviceId || "");
+    }
+  }, [selectedAudioId, selectedVideoId]);
+
+  async function ensurePermissionAndListDevices()
+  {
+    try
+    {
+      const temp = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      temp.getTracks().forEach(t => t.stop());
+    }
+    catch
+    {
+      // labels may stay blank if permission is denied
+    }
+
+    await refreshDevices();
+  }
+
+  async function startPreview()
+  {
+    try
+    {
+      stopPreview();
+
+      const videoConstraint =
+        selectedVideoId
+          ? { deviceId: { exact: selectedVideoId } }
+          : true;
+
+      const audioConstraint =
+        selectedAudioId
+          ? { deviceId: { exact: selectedAudioId } }
+          : true;
+
+      const stream = await navigator.mediaDevices.getUserMedia(
+      {
+        video: videoConstraint,
+        audio: audioConstraint,
+      });
+
+      localStreamRef.current = stream;
+
+      stream.getVideoTracks().forEach(t => { t.enabled = camEnabled; });
+      stream.getAudioTracks().forEach(t => { t.enabled = micEnabled; });
+
+      if (localVideoRef.current)
+      {
+        localVideoRef.current.srcObject = stream;
+      }
+    }
+    catch (err)
+    {
+      console.error("Failed to start video preview:", err);
+    }
+  }
+
+  function toggleCam()
+  {
+    const next = !camEnabled;
+    setCamEnabled(next);
+
+    const stream = localStreamRef.current;
+    if (!stream) return;
+    stream.getVideoTracks().forEach(t => { t.enabled = next; });
+  }
+
+  function toggleMic()
+  {
+    const next = !micEnabled;
+    setMicEnabled(next);
+
+    const stream = localStreamRef.current;
+    if (!stream) return;
+    stream.getAudioTracks().forEach(t => { t.enabled = next; });
+  }
 
   useEffect(() =>
   {
@@ -114,7 +281,7 @@ export default function JoinRoomPage()
         }
 
         setRoomTitle(data.room.title);
-        startPreview();
+        await ensurePermissionAndListDevices();
       }
       catch (e: any)
       {
@@ -123,65 +290,37 @@ export default function JoinRoomPage()
       }
     })();
 
-    return () => { cancelled = true; };
+    return () =>
+    {
+      cancelled = true;
+    };
   }, [id]);
 
-  async function startPreview()
+  useEffect(() =>
   {
-    try
+    function onDeviceChange()
     {
-      const stream = await navigator.mediaDevices.getUserMedia(
-      {
-        video: cameraSource === "webcam" ? { facingMode: "user" } : { facingMode: "environment" },
-        audio: true,
-      });
-
-      localStreamRef.current = stream;
-
-      stream.getAudioTracks().forEach(t => t.enabled = micEnabled);
-      stream.getVideoTracks().forEach(t => t.enabled = camEnabled);
-
-      if (localVideoRef.current)
-      {
-        localVideoRef.current.srcObject = stream;
-      }
+      refreshDevices();
     }
-    catch (err)
+
+    navigator.mediaDevices.addEventListener("devicechange", onDeviceChange);
+    return () =>
     {
-      console.error("Failed to start video preview:", err);
-    }
-  }
+      navigator.mediaDevices.removeEventListener("devicechange", onDeviceChange);
+    };
+  }, [refreshDevices]);
 
-  function stopPreview()
+  useEffect(() =>
   {
-    if (localStreamRef.current)
+    if (!selectedVideoId && !selectedAudioId) return;
+    startPreview();
+
+    return () =>
     {
-      localStreamRef.current.getTracks().forEach(track => track.stop());
-      localStreamRef.current = null;
-    }
-  }
-
-  function toggleCam()
-  {
-    const next = !camEnabled;
-    setCamEnabled(next);
-
-    const stream = localStreamRef.current;
-    if (!stream) return;
-
-    stream.getVideoTracks().forEach(t => { t.enabled = next; });
-  }
-
-  function toggleMic()
-  {
-    const next = !micEnabled;
-    setMicEnabled(next);
-
-    const stream = localStreamRef.current;
-    if (!stream) return;
-
-    stream.getAudioTracks().forEach(t => { t.enabled = next; });
-  }
+      stopPreview();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedVideoId, selectedAudioId]);
 
   async function joinGame()
   {
@@ -205,7 +344,6 @@ export default function JoinRoomPage()
 
       console.log("Joined room successfully:", res);
       setIsJoined(true);
-      // currently working here
     }
     catch (err: any)
     {
@@ -249,15 +387,40 @@ export default function JoinRoomPage()
           <aside className="rounded-2xl border border-white/10 bg-slate-950/40 p-4">
             <div className="mt-4 space-y-4">
               <label className="block">
-                <span className="text-xs text-slate-300">Camera Source</span>
+                <span className="text-xs text-slate-300">Camera</span>
                 <select
                   className="mt-1 w-full rounded-xl border border-white/10 bg-slate-950/50 px-3 py-2 text-sm text-slate-100 outline-none
                              focus:border-teal-300/80 focus:ring-4 focus:ring-emerald-400/20"
-                  value={cameraSource}
-                  onChange={(e) => setCameraSource(e.target.value as CameraSource)}
+                  value={selectedVideoId}
+                  onChange={(e) => setSelectedVideoId(e.target.value)}
                 >
-                  <option value="webcam">Webcam</option>
-                  <option value="phone">Phone</option>
+                  {videoInputs.length === 0 && (
+                    <option value="">No cameras found</option>
+                  )}
+                  {videoInputs.map((d, idx) => (
+                    <option key={d.deviceId} value={d.deviceId}>
+                      {deviceLabel(d, `Camera ${idx + 1}`)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="block">
+                <span className="text-xs text-slate-300">Microphone</span>
+                <select
+                  className="mt-1 w-full rounded-xl border border-white/10 bg-slate-950/50 px-3 py-2 text-sm text-slate-100 outline-none
+                             focus:border-teal-300/80 focus:ring-4 focus:ring-emerald-400/20"
+                  value={selectedAudioId}
+                  onChange={(e) => setSelectedAudioId(e.target.value)}
+                >
+                  {audioInputs.length === 0 && (
+                    <option value="">No microphones found</option>
+                  )}
+                  {audioInputs.map((d, idx) => (
+                    <option key={d.deviceId} value={d.deviceId}>
+                      {deviceLabel(d, `Microphone ${idx + 1}`)}
+                    </option>
+                  ))}
                 </select>
               </label>
 
@@ -294,7 +457,7 @@ export default function JoinRoomPage()
               <div>
                 <div className="text-sm font-semibold text-slate-100">Preview</div>
                 <div className="mt-1 text-xs text-slate-400">
-                  Source: {cameraSource} · Aspect: {aspect}
+                  {selectedVideoId ? "Camera selected" : "No camera"} · {selectedAudioId ? "Mic selected" : "No mic"} · Aspect: {aspect}
                 </div>
               </div>
 
