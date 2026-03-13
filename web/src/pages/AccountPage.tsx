@@ -1,15 +1,42 @@
-
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import AccountSettingsPanel from "../components/AccountSettingsPanel";
 import SocialPanel from "../components/SocialPanel";
 
 type AccountSection = "account" | "social";
 
+function isAccountSection(v: string | null): v is AccountSection
+{
+  return v === "account" || v === "social";
+}
+
 export default function AccountPage()
 {
-  const [section, setSection] = useState<AccountSection>("account");
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const initialSection = useMemo<AccountSection>(() =>
+  {
+    const p = searchParams.get("panel");
+    return isAccountSection(p) ? p : "account";
+  }, [searchParams]);
+
+  const [section, setSection] = useState<AccountSection>(initialSection);
+
+  useEffect(() =>
+  {
+    const p = searchParams.get("panel");
+    if (isAccountSection(p) && p !== section) setSection(p);
+    if (!p && section !== "account") setSearchParams({ panel: section }, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   const isActive = (key: AccountSection) => section === key;
+
+  function go(key: AccountSection)
+  {
+    setSection(key);
+    setSearchParams({ panel: key }, { replace: true });
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
@@ -26,9 +53,11 @@ export default function AccountPage()
               <div className="mt-4 space-y-2">
                 <button
                   type="button"
-                  onClick={() => setSection("account")}
+                  onClick={() => go("account")}
                   className={`w-full rounded-xl border border-white/10 px-3 py-2 text-left text-sm ${
-                    isActive("account") ? "bg-teal-500/20 text-slate-100" : "bg-slate-950/40 text-slate-200 hover:bg-white/5"
+                    isActive("account")
+                      ? "bg-teal-500/20 text-slate-100"
+                      : "bg-slate-950/40 text-slate-200 hover:bg-white/5"
                   }`}
                 >
                   Account
@@ -36,9 +65,11 @@ export default function AccountPage()
 
                 <button
                   type="button"
-                  onClick={() => setSection("social")}
+                  onClick={() => go("social")}
                   className={`w-full rounded-xl border border-white/10 px-3 py-2 text-left text-sm ${
-                    isActive("social") ? "bg-teal-500/20 text-slate-100" : "bg-slate-950/40 text-slate-200 hover:bg-white/5"
+                    isActive("social")
+                      ? "bg-teal-500/20 text-slate-100"
+                      : "bg-slate-950/40 text-slate-200 hover:bg-white/5"
                   }`}
                 >
                   Social
@@ -47,11 +78,7 @@ export default function AccountPage()
             </aside>
 
             <main className="rounded-2xl border border-teal-400/25 bg-slate-900/70 backdrop-blur p-5 shadow-[0_0_0_1px_rgba(45,212,191,0.12),0_18px_70px_-32px_rgba(0,0,0,0.85)]">
-              {section === "account" ? (
-                <AccountSettingsPanel />
-              ) : section === "social" ? (
-                <SocialPanel />
-              ) : null}
+              {section === "account" ? <AccountSettingsPanel /> : <SocialPanel />}
             </main>
           </div>
         </div>

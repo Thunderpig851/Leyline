@@ -1,62 +1,69 @@
-mongoose = require('mongoose');
+const mongoose = require("mongoose");
 
 const RoomMemberSchema = new mongoose.Schema(
 {
-    userID: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    role: 
-    {
-        type: String,
-        enum: ['host', 'player', 'spectator'],
-        default: 'player',
-        required: true
-    },
-    joinedAt: { type: Date, default: Date.now },
-});
+  userID: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+  role:
+  {
+    type: String,
+    enum: ["host", "player", "spectator"],
+    default: "player",
+    required: true
+  },
+  joinedAt: { type: Date, default: Date.now },
+},
+{ _id: false }
+);
 
 const RoomSettingsSchema = new mongoose.Schema(
 {
-    bracket: {
-        type: String,
-        enum: ['1', '2', '3', '4', '5'],
-        required: true,
-    },
-    maxPlayers: { type: Number, default: 4 },
-    allowSpectators: { type: Boolean, default: false },
+  bracket:
+  {
+    type: String,
+    enum: ["1", "2", "3", "4", "5"],
+    default: "1",
+    required: true,
+  },
+  maxPlayers: { type: Number, default: 4 },
+  allowSpectators: { type: Boolean, default: false },
 },
-    { _id: false}
+{ _id: false }
 );
 
 const RoomSchema = new mongoose.Schema(
 {
-    title: { type: String, required: true, maxlength: 50 },
-    description: { type: String, maxlength: 500 },
-    hostID: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    hostName: { type: String, required: true },
-    
-    visibility: 
-    {
-        type: String,
-        enum: ['public', 'private'],
-        default: 'private',
-        index: true
-    },
-    status: 
-    {
-        type: String,
-        enum: ['open', 'full'],
-        default: 'open',
-        index: true
-    },
-    
-    createdAt: { type: Date, default: Date.now },
-    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true},
+  title: { type: String, required: true, maxlength: 50 },
+  description: { type: String, maxlength: 500 },
 
-    members: { type: [RoomMemberSchema], default: [] },
-    settings: { type: RoomSettingsSchema, default: () => ({}) },
+  hostID: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+  hostName: { type: String, required: true },
+
+  visibility:
+  {
+    type: String,
+    enum: ["public", "private"],
+    default: "private",
+    index: true
+  },
+
+  status:
+  {
+    type: String,
+    enum: ["open", "full"],
+    default: "open",
+    index: true
+  },
+
+  createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+
+  members: { type: [RoomMemberSchema], default: [] },
+
+  settings: { type: RoomSettingsSchema, default: () => ({}) },
+},
+{
+  timestamps: true 
 });
 
-// Room Sorting
 RoomSchema.index({ visibility: 1, status: 1, updatedAt: -1 });
-RoomSchema.index({ tags: 1 });
 
 module.exports = mongoose.model("Room", RoomSchema);

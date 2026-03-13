@@ -7,7 +7,7 @@ const RoomModel = require("../../database/models/Room");
 
 router.get("/", (req, res) => res.json({ ok: true, route: "rooms" }));
 
-router.post("/create", requireAuth, async (req, res) =>
+router.post("/create", requireAuth ,async (req, res) =>
 {
   try
   {
@@ -107,20 +107,23 @@ router.patch("/:id/update", requireAuth, async (req, res) =>
   }
 });
 
-router.post("/:id/join", requireAuth, async (req, res) =>
+router.post("/:id/live", requireAuth, async (req, res) =>
 {
-  try 
+  try
   {
-    const room = await RoomModel.findById(req.params.id).exec();
-    if (!room) return res.status(404).json( { ok: false, error: "Room not found" });
-
     const userId = req.user._id;
 
-    const maxPlayers = 
-      room.settings && room.settings.maxPlayers ? room.settings.maxPlayers : 4;
+    const room = await RoomModel.findByIdAndUpdate(
+      req.params.id,
+      {},
+      { returnDocument: "after" }
+    ).exec();
+    if (!room) return res.status(404).json({ ok: false, error: "Room not found." });
+
+    const maxPlayers = Number(room.settings?.maxPlayers ?? 4);
 
     const alreadyMember = room.members?.some(
-      (member) => member.userId.toString() === userId.toString()
+      (m) => m.userID.toString() === userId.toString()
     );
 
     if (alreadyMember)
@@ -128,27 +131,32 @@ router.post("/:id/join", requireAuth, async (req, res) =>
       return res.status(200).json({ ok: true, room, alreadyMember: true });
     }
 
-    if (room.members && room.members.length >= maxPlayers)
+    if (room.members.length >= maxPlayers)
     {
-      return res.status(400).json({ ok: false, error: "Room is full." })
+      return res.status(400).json({ ok: false, error: "Room is full." });
     }
-    
-    room.members.push({ userID: userId, role: "player" });
-    if (room.members.length >= maxPlayers) room.status = "full";
-    else room.status = "open";
 
+    const nextCount = room.members.length + 1;
+    const nextStatus = nextCount >= maxPlayers ? "full" : "open";
 
-    await room.save();
+    const updated = await RoomModel.findByIdAndUpdate(
+      req.params.id,
+      {
+        $push: { members: { userID: userId, role: "player" } },
+        $set: { status: nextStatus }
+      },
+      { new: true }
+    ).exec();
 
     const io = req.app.get("io");
     io.emit("rooms:changed");
 
-    return res.status(200).json({ ok: true, room });
+    return res.status(200).json({ ok: true, room: updated });
   }
-  catch(err)
+  catch (err)
   {
-    console.log("error joining room", err);
-    res.status(500).json({ ok: false, error: err.message })
+    console.error("error joining room", err);
+    return res.status(500).json({ ok: false, error: err.message || "Failed to join room." });
   }
 });
 

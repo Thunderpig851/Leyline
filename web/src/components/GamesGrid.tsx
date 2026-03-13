@@ -57,41 +57,52 @@ export default function GamesGrid({ rooms, onJoinRoom }: GamesGridProps)
 
   return (
     <div className="mt-8">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <div className="mt-1 text-xs text-slate-400">
-            Showing {startNum}-{endNum} of {cards.length}
+      <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-slate-950/40 p-4 ring-1 ring-white/5">
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-emerald-400/5 via-teal-400/5 to-cyan-300/5" />
+        <div className="relative flex flex-wrap items-center justify-between gap-3">
+          <div className="text-xs text-slate-300">
+            Showing <span className="font-semibold text-slate-100">{startNum}</span>
+            {" - "}
+            <span className="font-semibold text-slate-100">{endNum}</span>
+            {" "}of{" "}
+            <span className="font-semibold text-slate-100">{cards.length}</span>
           </div>
-        </div>
 
-        {totalPages > 1 && (
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              disabled={page <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              className="rounded-xl border border-white/10 bg-slate-950/40 px-3 py-2 text-xs text-slate-200 hover:bg-white/5
-                         disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Prev
-            </button>
+          {totalPages > 1 && (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                className="rounded-xl border border-teal-300/30 bg-teal-500/10 px-3 py-2 text-xs text-slate-100
+                           hover:bg-teal-300 hover:border-teal-200 hover:text-slate-900
+                           hover:shadow-lg hover:shadow-teal-400/25
+                           disabled:cursor-not-allowed disabled:opacity-50
+                           transition-colors transition-shadow duration-150"
+              >
+                Prev
+              </button>
 
-            <div className="text-xs text-slate-300">
-              Page <span className="font-semibold text-slate-100">{page}</span> of{" "}
-              <span className="font-semibold text-slate-100">{totalPages}</span>
+              <div className="rounded-xl border border-white/10 bg-slate-900/50 px-3 py-2 text-xs text-slate-300">
+                Page <span className="font-semibold text-slate-100">{page}</span> of{" "}
+                <span className="font-semibold text-slate-100">{totalPages}</span>
+              </div>
+
+              <button
+                type="button"
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                className="rounded-xl border border-teal-300/30 bg-teal-500/10 px-3 py-2 text-xs text-slate-100
+                           hover:bg-teal-300 hover:border-teal-200 hover:text-slate-900
+                           hover:shadow-lg hover:shadow-teal-400/25
+                           disabled:cursor-not-allowed disabled:opacity-50
+                           transition-colors transition-shadow duration-150"
+              >
+                Next
+              </button>
             </div>
-
-            <button
-              type="button"
-              disabled={page >= totalPages}
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              className="rounded-xl border border-white/10 bg-slate-950/40 px-3 py-2 text-xs text-slate-200 hover:bg-white/5
-                         disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Next
-            </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">

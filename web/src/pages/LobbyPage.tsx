@@ -120,12 +120,10 @@ export default function LobbyPage()
           </span>
         </h1>
 
-        {/* Filters bar w/ room-card style gradient */}
         <div
           className="relative mt-6 flex items-center flex-nowrap gap-3 overflow-x-auto rounded-2xl border border-white/10
                      bg-slate-200/10 p-3 ring-1 ring-white/5"
         >
-          {/* matches RoomCard button gradient: from-emerald -> via-teal -> to-cyan */}
           <div className="pointer-events-none absolute inset-0 rounded-2xl bg-gradient-to-r from-emerald-400/10 via-teal-400/10 to-cyan-300/10" />
           <div className="pointer-events-none absolute inset-0 rounded-2xl bg-gradient-to-b from-white/10 via-white/5 to-transparent opacity-80" />
 
@@ -159,7 +157,6 @@ export default function LobbyPage()
             />
           </div>
 
-          {/* Status dropdown (enhanced) */}
           <div className="relative shrink-0">
             <select
               value={filterStatus}
@@ -183,7 +180,6 @@ export default function LobbyPage()
             <div className="pointer-events-none absolute inset-0 rounded-xl bg-gradient-to-b from-white/10 via-white/5 to-transparent opacity-80" />
           </div>
 
-          {/* Visibility dropdown (enhanced) */}
           <div className="relative shrink-0">
             <select
               value={filterVisibility}
