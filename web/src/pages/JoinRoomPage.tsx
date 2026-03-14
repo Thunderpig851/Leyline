@@ -3,6 +3,15 @@ import { useNavigate, useParams } from "react-router-dom";
 import { sfuHandshake } from "../lib/sfuHandshake";
 import { apiPost } from "../lib/api";
 
+import StatusOkIcon from "../components/icons/StatusOkIcon";
+import StatusBadIcon from "../components/icons/StatusBadIcon";
+import CamOnIcon from "../components/icons/CamOnIcon";
+import CamOffIcon from "../components/icons/CamOffIcon";
+import MicOnIcon from "../components/icons/MicOnIcon";
+import MicOffIcon from "../components/icons/MicOffIcon";
+
+
+
 type Aspect = "16:9" | "4:3" | "1:1";
 
 type RoomResponse =
@@ -11,55 +20,6 @@ type RoomResponse =
   room?: { _id: string; title: string };
   error?: string;
 };
-
-function MicOnIcon()
-{
-  return (
-    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3z" />
-      <path d="M19 11a7 7 0 0 1-14 0" />
-      <path d="M12 18v3" />
-      <path d="M8 21h8" />
-    </svg>
-  );
-}
-
-function MicOffIcon()
-{
-  return (
-    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M10 9v2a2 2 0 0 0 3.4 1.4" />
-      <path d="M9 5a3 3 0 0 1 6 0v6" />
-      <path d="M19 11a7 7 0 0 1-2.2 5.1" />
-      <path d="M5 11a7 7 0 0 0 9.1 6.7" />
-      <path d="M12 18v3" />
-      <path d="M8 21h8" />
-      <path d="M3 3l18 18" />
-    </svg>
-  );
-}
-
-function CamOnIcon()
-{
-  return (
-    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M14 7H6a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z" />
-      <path d="M16 10l4-2v8l-4-2v-4z" />
-    </svg>
-  );
-}
-
-function CamOffIcon()
-{
-  return (
-    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M10 7H6a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 1.4-.6" />
-      <path d="M14 7h2a2 2 0 0 1 2 2v3" />
-      <path d="M16 10l4-2v8l-2.2-1.1" />
-      <path d="M3 3l18 18" />
-    </svg>
-  );
-}
 
 function isDefaultDevice(d: MediaDeviceInfo)
 {
@@ -457,7 +417,20 @@ export default function JoinRoomPage()
               <div>
                 <div className="text-sm font-semibold text-slate-100">Preview</div>
                 <div className="mt-1 text-xs text-slate-400">
-                  {selectedVideoId ? "Camera selected" : "No camera"} · {selectedAudioId ? "Mic selected" : "No mic"} · Aspect: {aspect}
+                  <div className="mt-1 flex items-center gap-3 text-xs text-slate-400">
+                    <div className="flex items-center gap-1.5">
+                      {selectedVideoId ? <StatusOkIcon /> : <StatusBadIcon />}
+                      <span>Camera</span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      {selectedAudioId ? <StatusOkIcon /> : <StatusBadIcon />}
+                      <span>Mic</span>
+                    </div>
+
+                    <span className="text-slate-500">·</span>
+                    <span>Aspect: {aspect}</span>
+                  </div>
                 </div>
               </div>
 
