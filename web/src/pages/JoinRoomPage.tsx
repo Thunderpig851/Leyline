@@ -10,7 +10,7 @@ import CamOffIcon from "../components/icons/CamOffIcon";
 import MicOnIcon from "../components/icons/MicOnIcon";
 import MicOffIcon from "../components/icons/MicOffIcon";
 
-
+import { useGameSession } from "../context/GameSession";
 
 type Aspect = "16:9" | "4:3" | "1:1";
 
@@ -45,6 +45,8 @@ export default function JoinRoomPage()
   const { id } = useParams();
   const roomId = id || "";
 
+  const { session, setPrefs, setRoom } = useGameSession();
+
   const [roomTitle, setRoomTitle] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -53,18 +55,23 @@ export default function JoinRoomPage()
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
 
-  const [camEnabled, setCamEnabled] = useState(true);
-  const [micEnabled, setMicEnabled] = useState(true);
+  const [camEnabled, setCamEnabled] = useState<boolean>(session.camEnabled ?? true);
+  const [micEnabled, setMicEnabled] = useState<boolean>(session.micEnabled ?? true);
 
   const [videoInputs, setVideoInputs] = useState<MediaDeviceInfo[]>([]);
   const [audioInputs, setAudioInputs] = useState<MediaDeviceInfo[]>([]);
-  const [selectedVideoId, setSelectedVideoId] = useState<string>("");
-  const [selectedAudioId, setSelectedAudioId] = useState<string>("");
+
+  const [selectedVideoId, setSelectedVideoId] = useState<string>(session.selectedVideoId ?? "");
+  const [selectedAudioId, setSelectedAudioId] = useState<string>(session.selectedAudioId ?? "");
 
   const [joinCode, setJoinCode] = useState("");
   const [loading, setLoading] = useState(false);
-  const [isJoined, setIsJoined] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() =>
+  {
+    if (roomId) setRoom(roomId);
+  }, [roomId]);
 
   const stopPreview = useCallback(() =>
   {
@@ -131,14 +138,18 @@ export default function JoinRoomPage()
 
     if (!selectedVideoId || !vids.some(v => v.deviceId === selectedVideoId))
     {
-      setSelectedVideoId(defaultVid?.deviceId || vids[0]?.deviceId || "");
+      const nextVid = defaultVid?.deviceId || vids[0]?.deviceId || "";
+      setSelectedVideoId(nextVid);
+      setPrefs({ selectedVideoId: nextVid });
     }
 
     if (!selectedAudioId || !mics.some(m => m.deviceId === selectedAudioId))
     {
-      setSelectedAudioId(defaultMic?.deviceId || mics[0]?.deviceId || "");
+      const nextMic = defaultMic?.deviceId || mics[0]?.deviceId || "";
+      setSelectedAudioId(nextMic);
+      setPrefs({ selectedAudioId: nextMic });
     }
-  }, [selectedAudioId, selectedVideoId]);
+  }, [selectedAudioId, selectedVideoId, setPrefs]);
 
   async function ensurePermissionAndListDevices()
   {
@@ -149,7 +160,7 @@ export default function JoinRoomPage()
     }
     catch
     {
-      // labels may stay blank if permission is denied
+      console.warn("Permission to access media devices was denied. Device labels may be blank.");
     }
 
     await refreshDevices();
@@ -162,14 +173,10 @@ export default function JoinRoomPage()
       stopPreview();
 
       const videoConstraint =
-        selectedVideoId
-          ? { deviceId: { exact: selectedVideoId } }
-          : true;
+        selectedVideoId ? { deviceId: { exact: selectedVideoId } } : true;
 
       const audioConstraint =
-        selectedAudioId
-          ? { deviceId: { exact: selectedAudioId } }
-          : true;
+        selectedAudioId ? { deviceId: { exact: selectedAudioId } } : true;
 
       const stream = await navigator.mediaDevices.getUserMedia(
       {
@@ -197,6 +204,7 @@ export default function JoinRoomPage()
   {
     const next = !camEnabled;
     setCamEnabled(next);
+    setPrefs({ camEnabled: next });
 
     const stream = localStreamRef.current;
     if (!stream) return;
@@ -207,6 +215,7 @@ export default function JoinRoomPage()
   {
     const next = !micEnabled;
     setMicEnabled(next);
+    setPrefs({ micEnabled: next });
 
     const stream = localStreamRef.current;
     if (!stream) return;
@@ -250,10 +259,7 @@ export default function JoinRoomPage()
       }
     })();
 
-    return () =>
-    {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [id]);
 
   useEffect(() =>
@@ -273,14 +279,16 @@ export default function JoinRoomPage()
   useEffect(() =>
   {
     if (!selectedVideoId && !selectedAudioId) return;
+
+    setPrefs({ selectedVideoId, selectedAudioId });
+
     startPreview();
 
     return () =>
     {
       stopPreview();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedVideoId, selectedAudioId]);
+  }, [selectedVideoId, selectedAudioId, setPrefs, stopPreview]);
 
   async function joinGame()
   {
@@ -291,6 +299,17 @@ export default function JoinRoomPage()
 
     try
     {
+      // ✅ FIX: roomId goes through setRoom()
+      setRoom(roomId);
+
+      // prefs go through setPrefs()
+      setPrefs({
+        selectedVideoId,
+        selectedAudioId,
+        camEnabled,
+        micEnabled,
+      });
+
       const { peerId, device, sendTransport, recvTransport } = await sfuHandshake(roomId);
       console.log("SFU handshake successful:", { peerId, device, sendTransport, recvTransport });
 
@@ -302,8 +321,7 @@ export default function JoinRoomPage()
         return;
       }
 
-      console.log("Joined room successfully:", res);
-      setIsJoined(true);
+      navigate(`/rooms/${roomId}/game`);
     }
     catch (err: any)
     {
@@ -354,9 +372,7 @@ export default function JoinRoomPage()
                   value={selectedVideoId}
                   onChange={(e) => setSelectedVideoId(e.target.value)}
                 >
-                  {videoInputs.length === 0 && (
-                    <option value="">No cameras found</option>
-                  )}
+                  {videoInputs.length === 0 && <option value="">No cameras found</option>}
                   {videoInputs.map((d, idx) => (
                     <option key={d.deviceId} value={d.deviceId}>
                       {deviceLabel(d, `Camera ${idx + 1}`)}
@@ -373,9 +389,7 @@ export default function JoinRoomPage()
                   value={selectedAudioId}
                   onChange={(e) => setSelectedAudioId(e.target.value)}
                 >
-                  {audioInputs.length === 0 && (
-                    <option value="">No microphones found</option>
-                  )}
+                  {audioInputs.length === 0 && <option value="">No microphones found</option>}
                   {audioInputs.map((d, idx) => (
                     <option key={d.deviceId} value={d.deviceId}>
                       {deviceLabel(d, `Microphone ${idx + 1}`)}
@@ -416,21 +430,19 @@ export default function JoinRoomPage()
             <div className="flex items-end justify-between gap-3">
               <div>
                 <div className="text-sm font-semibold text-slate-100">Preview</div>
-                <div className="mt-1 text-xs text-slate-400">
-                  <div className="mt-1 flex items-center gap-3 text-xs text-slate-400">
-                    <div className="flex items-center gap-1.5">
-                      {selectedVideoId ? <StatusOkIcon /> : <StatusBadIcon />}
-                      <span>Camera</span>
-                    </div>
-
-                    <div className="flex items-center gap-1.5">
-                      {selectedAudioId ? <StatusOkIcon /> : <StatusBadIcon />}
-                      <span>Mic</span>
-                    </div>
-
-                    <span className="text-slate-500">·</span>
-                    <span>Aspect: {aspect}</span>
+                <div className="mt-1 flex items-center gap-3 text-xs text-slate-400">
+                  <div className="flex items-center gap-1.5">
+                    {selectedVideoId ? <StatusOkIcon /> : <StatusBadIcon />}
+                    <span>Camera</span>
                   </div>
+
+                  <div className="flex items-center gap-1.5">
+                    {selectedAudioId ? <StatusOkIcon /> : <StatusBadIcon />}
+                    <span>Mic</span>
+                  </div>
+
+                  <span className="text-slate-500">·</span>
+                  <span>Aspect: {aspect}</span>
                 </div>
               </div>
 

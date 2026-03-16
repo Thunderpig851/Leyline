@@ -4,8 +4,12 @@ import { RouterProvider } from "react-router-dom";
 import { router } from "./app/router";
 import "./index.css";
 
+import { GameSessionProvider } from "./context/GameSession";
+
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <RouterProvider router={router} />
+    <GameSessionProvider>
+      <RouterProvider router={router} />
+    </GameSessionProvider>
   </React.StrictMode>
 );

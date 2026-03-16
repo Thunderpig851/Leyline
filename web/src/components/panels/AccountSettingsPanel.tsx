@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { apiPost } from "../lib/api";
+import { apiPost } from "../../lib/api";
 
 type AccountResponse =
 {

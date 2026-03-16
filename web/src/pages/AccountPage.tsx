@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import AccountSettingsPanel from "../components/AccountSettingsPanel";
-import SocialPanel from "../components/SocialPanel";
+import AccountSettingsPanel from "../components/panels/AccountSettingsPanel";
+import SocialPanel from "../components/panels/SocialPanel";
 
 type AccountSection = "account" | "social";
 

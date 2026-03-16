@@ -1,5 +1,5 @@
 import { createBrowserRouter } from "react-router-dom";
-import Layout from "../components/Layout";
+import Layout from "../components/layout/Layout";
 
 import LobbyPage from "../pages/LobbyPage";
 import JoinRoomPage from "../pages/JoinRoomPage";
@@ -17,12 +17,12 @@ export const router = createBrowserRouter([
     children: 
     [
       {path: "/lobby", element: <LobbyPage /> },
-      {path: "/rooms/:id", element: <JoinRoomPage />},
       {path: "/account", element: <AccountPage /> },
-
+      {path: "/rooms/:id", element: <JoinRoomPage />},
+      
     ]
   },
-  {path: "/rooms/:id/game/", element: <GamePage /> },
+  {path: "/rooms/:id/game", element: <GamePage /> },
   {path: "*", element: <NotFoundPage /> },
   {path: "/login", element: <LoginPage />},
   {path: "/register", element: <RegisterPage />},
