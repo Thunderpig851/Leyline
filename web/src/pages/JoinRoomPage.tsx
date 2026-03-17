@@ -1,6 +1,5 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { sfuHandshake } from "../lib/sfuHandshake";
 import { apiPost } from "../lib/api";
 
 import StatusOkIcon from "../components/icons/StatusOkIcon";
@@ -11,6 +10,7 @@ import MicOnIcon from "../components/icons/MicOnIcon";
 import MicOffIcon from "../components/icons/MicOffIcon";
 
 import { useGameSession } from "../context/GameSession";
+import { useMediaSession } from "../context/MediaSession";
 
 type Aspect = "16:9" | "4:3" | "1:1";
 
@@ -20,17 +20,6 @@ type RoomResponse =
   room?: { _id: string; title: string };
   error?: string;
 };
-
-function isDefaultDevice(d: MediaDeviceInfo)
-{
-  const label = (d.label || "").trim().toLowerCase();
-  return d.deviceId === "default" || label.startsWith("default");
-}
-
-function baseLabel(label: string)
-{
-  return label.replace(/^default\s*[-–—]\s*/i, "").trim().toLowerCase();
-}
 
 function deviceLabel(d: MediaDeviceInfo, fallback: string)
 {
@@ -45,182 +34,46 @@ export default function JoinRoomPage()
   const { id } = useParams();
   const roomId = id || "";
 
-  const { session, setPrefs, setRoom } = useGameSession();
+  const { setRoom } = useGameSession();
+
+  const {
+    videoInputs,
+    audioInputs,
+    localStream,
+    camEnabled,
+    micEnabled,
+    selectedVideoId,
+    selectedAudioId,
+    setSelectedVideoId,
+    setSelectedAudioId,
+    ensurePermissionAndListDevices,
+    toggleCam,
+    toggleMic,
+    stopPreview,
+    connectToSFU,
+  } = useMediaSession();
 
   const [roomTitle, setRoomTitle] = useState("");
   const [error, setError] = useState<string | null>(null);
-
   const [aspect, setAspect] = useState<Aspect>("16:9");
-
-  const localVideoRef = useRef<HTMLVideoElement | null>(null);
-  const localStreamRef = useRef<MediaStream | null>(null);
-
-  const [camEnabled, setCamEnabled] = useState<boolean>(session.camEnabled ?? true);
-  const [micEnabled, setMicEnabled] = useState<boolean>(session.micEnabled ?? true);
-
-  const [videoInputs, setVideoInputs] = useState<MediaDeviceInfo[]>([]);
-  const [audioInputs, setAudioInputs] = useState<MediaDeviceInfo[]>([]);
-
-  const [selectedVideoId, setSelectedVideoId] = useState<string>(session.selectedVideoId ?? "");
-  const [selectedAudioId, setSelectedAudioId] = useState<string>(session.selectedAudioId ?? "");
-
   const [joinCode, setJoinCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  const localVideoRef = useRef<HTMLVideoElement | null>(null);
+
   useEffect(() =>
   {
-    if (roomId) setRoom(roomId);
-  }, [roomId]);
+    if (roomId) setRoom(roomId, roomTitle);
+  }, [roomId, roomTitle, setRoom]);
 
-  const stopPreview = useCallback(() =>
+  useEffect(() =>
   {
-    if (localStreamRef.current)
-    {
-      localStreamRef.current.getTracks().forEach(t => t.stop());
-      localStreamRef.current = null;
-    }
     if (localVideoRef.current)
     {
-      localVideoRef.current.srcObject = null;
+      localVideoRef.current.srcObject = localStream;
     }
-  }, []);
-
-  const refreshDevices = useCallback(async () =>
-  {
-    const devices = await navigator.mediaDevices.enumerateDevices();
-
-    function sortDefaultFirst(a: MediaDeviceInfo, b: MediaDeviceInfo)
-    {
-      const ad = isDefaultDevice(a);
-      const bd = isDefaultDevice(b);
-      if (ad !== bd) return ad ? -1 : 1;
-      return (a.label || "").localeCompare(b.label || "");
-    }
-
-    function dedupeDefaultPairs(list: MediaDeviceInfo[])
-    {
-      const chosen = new Map<string, MediaDeviceInfo>();
-
-      for (const d of list.slice().sort(sortDefaultFirst))
-      {
-        const key =
-          (d.groupId && d.groupId.trim()) ||
-          baseLabel(d.label || "");
-
-        if (!chosen.has(key))
-        {
-          chosen.set(key, d);
-          continue;
-        }
-
-        const existing = chosen.get(key)!;
-        if (!isDefaultDevice(existing) && isDefaultDevice(d))
-        {
-          chosen.set(key, d);
-        }
-      }
-
-      return Array.from(chosen.values()).sort(sortDefaultFirst);
-    }
-
-    const vidsRaw = devices.filter(d => d.kind === "videoinput");
-    const micsRaw = devices.filter(d => d.kind === "audioinput");
-
-    const vids = dedupeDefaultPairs(vidsRaw);
-    const mics = dedupeDefaultPairs(micsRaw);
-
-    setVideoInputs(vids);
-    setAudioInputs(mics);
-
-    const defaultVid = vids.find(isDefaultDevice);
-    const defaultMic = mics.find(isDefaultDevice);
-
-    if (!selectedVideoId || !vids.some(v => v.deviceId === selectedVideoId))
-    {
-      const nextVid = defaultVid?.deviceId || vids[0]?.deviceId || "";
-      setSelectedVideoId(nextVid);
-      setPrefs({ selectedVideoId: nextVid });
-    }
-
-    if (!selectedAudioId || !mics.some(m => m.deviceId === selectedAudioId))
-    {
-      const nextMic = defaultMic?.deviceId || mics[0]?.deviceId || "";
-      setSelectedAudioId(nextMic);
-      setPrefs({ selectedAudioId: nextMic });
-    }
-  }, [selectedAudioId, selectedVideoId, setPrefs]);
-
-  async function ensurePermissionAndListDevices()
-  {
-    try
-    {
-      const temp = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      temp.getTracks().forEach(t => t.stop());
-    }
-    catch
-    {
-      console.warn("Permission to access media devices was denied. Device labels may be blank.");
-    }
-
-    await refreshDevices();
-  }
-
-  async function startPreview()
-  {
-    try
-    {
-      stopPreview();
-
-      const videoConstraint =
-        selectedVideoId ? { deviceId: { exact: selectedVideoId } } : true;
-
-      const audioConstraint =
-        selectedAudioId ? { deviceId: { exact: selectedAudioId } } : true;
-
-      const stream = await navigator.mediaDevices.getUserMedia(
-      {
-        video: videoConstraint,
-        audio: audioConstraint,
-      });
-
-      localStreamRef.current = stream;
-
-      stream.getVideoTracks().forEach(t => { t.enabled = camEnabled; });
-      stream.getAudioTracks().forEach(t => { t.enabled = micEnabled; });
-
-      if (localVideoRef.current)
-      {
-        localVideoRef.current.srcObject = stream;
-      }
-    }
-    catch (err)
-    {
-      console.error("Failed to start video preview:", err);
-    }
-  }
-
-  function toggleCam()
-  {
-    const next = !camEnabled;
-    setCamEnabled(next);
-    setPrefs({ camEnabled: next });
-
-    const stream = localStreamRef.current;
-    if (!stream) return;
-    stream.getVideoTracks().forEach(t => { t.enabled = next; });
-  }
-
-  function toggleMic()
-  {
-    const next = !micEnabled;
-    setMicEnabled(next);
-    setPrefs({ micEnabled: next });
-
-    const stream = localStreamRef.current;
-    if (!stream) return;
-    stream.getAudioTracks().forEach(t => { t.enabled = next; });
-  }
+  }, [localStream]);
 
   useEffect(() =>
   {
@@ -260,35 +113,7 @@ export default function JoinRoomPage()
     })();
 
     return () => { cancelled = true; };
-  }, [id]);
-
-  useEffect(() =>
-  {
-    function onDeviceChange()
-    {
-      refreshDevices();
-    }
-
-    navigator.mediaDevices.addEventListener("devicechange", onDeviceChange);
-    return () =>
-    {
-      navigator.mediaDevices.removeEventListener("devicechange", onDeviceChange);
-    };
-  }, [refreshDevices]);
-
-  useEffect(() =>
-  {
-    if (!selectedVideoId && !selectedAudioId) return;
-
-    setPrefs({ selectedVideoId, selectedAudioId });
-
-    startPreview();
-
-    return () =>
-    {
-      stopPreview();
-    };
-  }, [selectedVideoId, selectedAudioId, setPrefs, stopPreview]);
+  }, [id, ensurePermissionAndListDevices]);
 
   async function joinGame()
   {
@@ -299,19 +124,9 @@ export default function JoinRoomPage()
 
     try
     {
-      // ✅ FIX: roomId goes through setRoom()
-      setRoom(roomId);
+      setRoom(roomId, roomTitle);
 
-      // prefs go through setPrefs()
-      setPrefs({
-        selectedVideoId,
-        selectedAudioId,
-        camEnabled,
-        micEnabled,
-      });
-
-      const { peerId, device, sendTransport, recvTransport } = await sfuHandshake(roomId);
-      console.log("SFU handshake successful:", { peerId, device, sendTransport, recvTransport });
+      await connectToSFU(roomId);
 
       const res = await apiPost(`/api/rooms/${roomId}/live`, { credentials: "include" });
 
@@ -361,9 +176,9 @@ export default function JoinRoomPage()
           </div>
         )}
 
-        <div className="mt-6 grid gap-6 lg:grid-cols-[320px_1fr]">
-          <aside className="rounded-2xl border border-white/10 bg-slate-950/40 p-4">
-            <div className="mt-4 space-y-4">
+        <div className="mt-6 grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
+          <aside className="rounded-2xl border border-white/10 bg-slate-950/40 p-4 lg:h-[620px]">
+            <div className="space-y-4">
               <label className="block">
                 <span className="text-xs text-slate-300">Camera</span>
                 <select
@@ -426,83 +241,89 @@ export default function JoinRoomPage()
             </div>
           </aside>
 
-          <main className="rounded-2xl border border-white/10 bg-slate-950/40 p-4">
-            <div className="flex items-end justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold text-slate-100">Preview</div>
-                <div className="mt-1 flex items-center gap-3 text-xs text-slate-400">
-                  <div className="flex items-center gap-1.5">
-                    {selectedVideoId ? <StatusOkIcon /> : <StatusBadIcon />}
-                    <span>Camera</span>
-                  </div>
+          <main className="rounded-2xl border border-white/10 bg-slate-950/40 p-4 lg:h-[620px]">
+            <div className="flex h-full flex-col">
+              <div className="flex items-end justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-slate-100">Preview</div>
+                  <div className="mt-1 flex items-center gap-3 text-xs text-slate-400">
+                    <div className="flex items-center gap-1.5">
+                      {selectedVideoId ? <StatusOkIcon /> : <StatusBadIcon />}
+                      <span>Camera</span>
+                    </div>
 
-                  <div className="flex items-center gap-1.5">
-                    {selectedAudioId ? <StatusOkIcon /> : <StatusBadIcon />}
-                    <span>Mic</span>
-                  </div>
+                    <div className="flex items-center gap-1.5">
+                      {selectedAudioId ? <StatusOkIcon /> : <StatusBadIcon />}
+                      <span>Mic</span>
+                    </div>
 
-                  <span className="text-slate-500">·</span>
-                  <span>Aspect: {aspect}</span>
+                    <span className="text-slate-500">·</span>
+                    <span>Aspect: {aspect}</span>
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={toggleCam}
+                    className="inline-flex items-center justify-center rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-slate-200
+                              hover:bg-white/5 hover:text-slate-100 transition-colors duration-150"
+                    aria-label={camEnabled ? "Turn off camera" : "Turn on camera"}
+                    title={camEnabled ? "Turn off camera" : "Turn on camera"}
+                  >
+                    {camEnabled ? <CamOnIcon /> : <CamOffIcon />}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={toggleMic}
+                    className="inline-flex items-center justify-center rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-slate-200
+                              hover:bg-white/5 hover:text-slate-100 transition-colors duration-150"
+                    aria-label={micEnabled ? "Mute microphone" : "Unmute microphone"}
+                    title={micEnabled ? "Mute mic" : "Unmute mic"}
+                  >
+                    {micEnabled ? <MicOnIcon /> : <MicOffIcon />}
+                  </button>
                 </div>
               </div>
 
-              <div className="flex gap-2">
+              <div className="mt-4 flex-1 overflow-hidden rounded-xl bg-black/40">
+                <div className="flex h-full w-full items-center justify-center">
+                  <video
+                    className="max-h-full max-w-full rounded-xl bg-black/50 object-contain"
+                    ref={localVideoRef}
+                    style={{ aspectRatio: aspect }}
+                    autoPlay
+                    playsInline
+                    muted
+                  />
+                </div>
+              </div>
+
+              <div className="mt-4 flex gap-3">
                 <button
                   type="button"
-                  onClick={toggleCam}
-                  className="inline-flex items-center justify-center rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-slate-200
-                            hover:bg-white/5 hover:text-slate-100 transition-colors duration-150"
-                  aria-label={camEnabled ? "Turn off camera" : "Turn on camera"}
-                  title={camEnabled ? "Turn off camera" : "Turn on camera"}
+                  className="flex-1 rounded-xl border border-white/10 bg-slate-900/60 px-4 py-2 text-sm text-slate-200 hover:bg-white/5"
+                  onClick={() =>
+                  {
+                    stopPreview();
+                    navigate("/lobby");
+                  }}
                 >
-                  {camEnabled ? <CamOnIcon /> : <CamOffIcon />}
+                  Back
                 </button>
 
                 <button
                   type="button"
-                  onClick={toggleMic}
-                  className="inline-flex items-center justify-center rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-slate-200
-                            hover:bg-white/5 hover:text-slate-100 transition-colors duration-150"
-                  aria-label={micEnabled ? "Mute microphone" : "Unmute microphone"}
-                  title={micEnabled ? "Mute mic" : "Unmute mic"}
+                  disabled={loading || !roomId}
+                  className="flex-1 rounded-xl border border-teal-300/60 bg-gradient-to-r from-emerald-400/25 via-teal-400/20 to-cyan-300/20
+                             px-4 py-2 text-sm font-medium text-slate-100 hover:bg-teal-300 hover:border-teal-200 hover:text-slate-900
+                             disabled:opacity-50 disabled:cursor-not-allowed"
+                  onClick={() => { void joinGame(); }}
                 >
-                  {micEnabled ? <MicOnIcon /> : <MicOffIcon />}
+                  {loading ? "Joining..." : "Join Room"}
                 </button>
               </div>
-            </div>
-
-            <video
-              className="mt-4 w-full rounded-xl bg-black/50"
-              ref={localVideoRef}
-              style={{ aspectRatio: aspect }}
-              autoPlay
-              playsInline
-              muted
-            />
-
-            <div className="mt-4 flex gap-3">
-              <button
-                type="button"
-                className="flex-1 rounded-xl border border-white/10 bg-slate-900/60 px-4 py-2 text-sm text-slate-200 hover:bg-white/5"
-                onClick={() =>
-                {
-                  stopPreview();
-                  navigate("/lobby");
-                }}
-              >
-                Back
-              </button>
-
-              <button
-                type="button"
-                disabled={loading || !roomId}
-                className="flex-1 rounded-xl border border-teal-300/60 bg-gradient-to-r from-emerald-400/25 via-teal-400/20 to-cyan-300/20
-                           px-4 py-2 text-sm font-medium text-slate-100 hover:bg-teal-300 hover:border-teal-200 hover:text-slate-900
-                           disabled:opacity-50 disabled:cursor-not-allowed"
-                onClick={() => { joinGame(); }}
-              >
-                {loading ? "Joining..." : "Join Room"}
-              </button>
             </div>
           </main>
         </div>

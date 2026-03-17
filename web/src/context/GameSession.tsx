@@ -3,6 +3,7 @@ import React, { createContext, useContext, useMemo, useState, useCallback } from
 export type GameSessionState =
 {
   roomId: string;
+  roomTitle?: string;
   playerId: string;
 
   selectedVideoId: string | null;
@@ -18,7 +19,7 @@ type GameSessionContextType =
 
   setPrefs: (patch: Partial<Omit<GameSessionState, "roomId" | "playerId">>) => void;
 
-  setRoom: (roomId: string) => void;
+  setRoom: (roomId: string, roomTitle?: string) => void;
   setPlayer: (playerId: string) => void;
 
   reset: () => void;
@@ -27,6 +28,7 @@ type GameSessionContextType =
 const initialSession: GameSessionState =
 {
   roomId: "",
+  roomTitle: "",
   playerId: "",
 
   selectedVideoId: null,
@@ -48,9 +50,9 @@ export function GameSessionProvider({ children }: { children: React.ReactNode })
     setSession((prev) => ({ ...prev, ...patch }));
   }, []);
 
-  const setRoom = useCallback((roomId: string) =>
+  const setRoom = useCallback((roomId: string, roomTitle?: string) =>
   {
-    setSession((prev) => ({ ...prev, roomId }));
+    setSession((prev) => ({ ...prev, roomId, roomTitle }));
   }, []);
 
   const setPlayer = useCallback((playerId: string) =>

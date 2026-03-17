@@ -1,13 +1,34 @@
-import { useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+
+import { useGameSession } from "../context/GameSession";
+import { useMediaSession } from "../context/MediaSession";
 
 export default function GamePage()
 {
-  const [leftOpen, setLeftOpen] = useState(true);
-  const [rightOpen, setRightOpen] = useState(true);
-
+  const [leftOpen, setLeftOpen] = useState(false);
+  const [rightOpen, setRightOpen] = useState(false);
   const leftPanelWidth = "clamp(260px, 22vw, 360px)";
   const rightPanelWidth = "clamp(260px, 22vw, 360px)";
+
+  const { session } = useGameSession();
+  const { } = useMediaSession();
+
+//   const sessionDebug = useMemo(() => (
+//   {
+//     roomId: session.roomId,
+//     roomTitle: session.roomTitle,
+//     playerId: session.playerId,
+//     selectedVideoId: session.selectedVideoId,
+//     selectedAudioId: session.selectedAudioId,
+//     camEnabled: session.camEnabled,
+//     micEnabled: session.micEnabled,
+//   }), [session]);
+
+// useEffect(() =>
+// {
+//   console.log("Session debug", sessionDebug);
+// }, [sessionDebug]);
 
   return (
     <div className="min-h-screen w-screen overflow-x-hidden bg-slate-950 text-slate-100">
@@ -20,6 +41,7 @@ export default function GamePage()
               Room: <span className="text-slate-200">Placeholder Room</span>{" "}
               <span className="text-slate-600">·</span>{" "}
               Turn: <span className="text-slate-200">1</span>
+              <button className="ml-2 text-slate-200 hover:text-red-500">Leave Game</button>
             </div>
           </div>
         </div>
