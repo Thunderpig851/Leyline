@@ -7,7 +7,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { sfuHandshake } from "../lib/sfuHandshake";
+import { sfuHandshake } from "../lib/sfuClient";
 import { useGameSession } from "./GameSession";
 
 type MediaStatus = "idle" | "previewing" | "connecting" | "connected" | "error";
