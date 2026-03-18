@@ -7,7 +7,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { sfuHandshake } from "../lib/sfuClient";
+import { sfuClient } from "../lib/sfuClient";
 import { useGameSession } from "./GameSession";
 
 type MediaStatus = "idle" | "previewing" | "connecting" | "connected" | "error";
@@ -207,7 +207,7 @@ export function MediaSessionProvider({ children }: { children: React.ReactNode }
 
     try
     {
-      const { peerId, device, sendTransport, recvTransport } = await sfuHandshake(roomId);
+      const { peerId, device, sendTransport, recvTransport } = await sfuClient(roomId);
 
       peerIdRef.current = peerId;
       deviceRef.current = device;
