@@ -64,15 +64,32 @@ export default function JoinRoomPage()
 
   useEffect(() =>
   {
-    if (roomId) setRoom(roomId, roomTitle);
+    if (!roomId) return;
+    setRoom(roomId, roomTitle);
   }, [roomId, roomTitle, setRoom]);
 
   useEffect(() =>
   {
-    if (localVideoRef.current)
+    async function attach()
     {
+      if (!localVideoRef.current) return;
+
       localVideoRef.current.srcObject = localStream;
+
+      try
+      {
+        if (localStream)
+        {
+          await localVideoRef.current.play();
+        }
+      }
+      catch (err)
+      {
+        console.error("Failed to play local preview:", err);
+      }
     }
+
+    void attach();
   }, [localStream]);
 
   useEffect(() =>
@@ -160,8 +177,6 @@ export default function JoinRoomPage()
 
         <div className="mt-2 text-sm text-slate-300">
           <span className="text-slate-400">Room:</span> {roomTitle || "…"}{" "}
-          <span className="text-slate-500">·</span>{" "}
-          <span className="text-slate-400">ID:</span> {roomId}
         </div>
 
         {error && (

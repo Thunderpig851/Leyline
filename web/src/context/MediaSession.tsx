@@ -1,4 +1,4 @@
-import React, {
+import {
   createContext,
   useCallback,
   useContext,
@@ -7,10 +7,32 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { sfuClient } from "../lib/sfuClient";
+import { types as mediasoupClientTypes } from "mediasoup-client";
+import {
+  sfuClient,
+  produceTrack,
+  consumeTrack,
+  onNewProducer,
+  onConsumerClosed,
+} from "../lib/sfuClient";
 import { useGameSession } from "./GameSession";
 
 type MediaStatus = "idle" | "previewing" | "connecting" | "connected" | "error";
+
+type RemoteMediaEntry =
+{
+  peerId: string;
+  audioTrack: MediaStreamTrack | null;
+  videoTrack: MediaStreamTrack | null;
+  stream: MediaStream | null;
+};
+
+type ConsumerEntry =
+{
+  consumer: mediasoupClientTypes.Consumer;
+  peerId: string;
+  kind: "audio" | "video";
+};
 
 type MediaSessionContextType =
 {
@@ -21,6 +43,7 @@ type MediaSessionContextType =
   audioInputs: MediaDeviceInfo[];
 
   localStream: MediaStream | null;
+  remoteMedia: Record<string, RemoteMediaEntry>;
 
   camEnabled: boolean;
   micEnabled: boolean;
@@ -37,11 +60,11 @@ type MediaSessionContextType =
   startPreview: () => Promise<void>;
   stopPreview: () => void;
 
-  toggleCam: () => void;
-  toggleMic: () => void;
-
   connectToSFU: (roomId: string) => Promise<void>;
   disconnectFromSFU: () => void;
+
+  toggleCam: () => void;
+  toggleMic: () => void;
 };
 
 const MediaSessionContext = createContext<MediaSessionContextType | undefined>(undefined);
@@ -63,29 +86,23 @@ export function MediaSessionProvider({ children }: { children: React.ReactNode }
   const [micEnabled, setMicEnabled] = useState<boolean>(session.micEnabled ?? true);
 
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const [remoteMedia, setRemoteMedia] = useState<Record<string, RemoteMediaEntry>>({});
 
   const localStreamRef = useRef<MediaStream | null>(null);
-
   const peerIdRef = useRef<string | null>(null);
-  const deviceRef = useRef<any>(null);
-  const sendTransportRef = useRef<any>(null);
-  const recvTransportRef = useRef<any>(null);
+  const roomIdRef = useRef<string | null>(null);
 
-  const stopPreview = useCallback(() =>
-  {
-    if (localStreamRef.current)
-    {
-      localStreamRef.current.getTracks().forEach((t) => t.stop());
-      localStreamRef.current = null;
-    }
+  const deviceRef = useRef<mediasoupClientTypes.Device | null>(null);
+  const sendTransportRef = useRef<mediasoupClientTypes.Transport | null>(null);
+  const recvTransportRef = useRef<mediasoupClientTypes.Transport | null>(null);
 
-    setLocalStream(null);
+  const audioProducerRef = useRef<mediasoupClientTypes.Producer | null>(null);
+  const videoProducerRef = useRef<mediasoupClientTypes.Producer | null>(null);
 
-    if (status === "previewing")
-    {
-      setStatus("idle");
-    }
-  }, [status]);
+  const consumersRef = useRef<Map<string, ConsumerEntry>>(new Map());
+
+  const newProducerCleanupRef = useRef<(() => void) | null>(null);
+  const consumerClosedCleanupRef = useRef<(() => void) | null>(null);
 
   const refreshDevices = useCallback(async () =>
   {
@@ -127,32 +144,146 @@ export function MediaSessionProvider({ children }: { children: React.ReactNode }
     await refreshDevices();
   }, [refreshDevices]);
 
+  const stopPreview = useCallback(() =>
+  {
+    if (localStreamRef.current)
+    {
+      localStreamRef.current.getTracks().forEach((t) => t.stop());
+      localStreamRef.current = null;
+    }
+
+    setLocalStream(null);
+    setStatus((prev) => (prev === "previewing" ? "idle" : prev));
+  }, []);
+
   const startPreview = useCallback(async () =>
   {
     try
     {
-      setError(null);
-      stopPreview();
+        setError(null);
+        stopPreview();
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: selectedVideoId ? { deviceId: selectedVideoId } : true,
-        audio: selectedAudioId ? { deviceId: selectedAudioId } : true,
-      });
+        const stream = await navigator.mediaDevices.getUserMedia(
+        {
+            video: selectedVideoId ? { deviceId: selectedVideoId } : true,
+            audio: selectedAudioId ? { deviceId: selectedAudioId } : true,
+        });
 
-      stream.getVideoTracks().forEach((t) => { t.enabled = camEnabled; });
-      stream.getAudioTracks().forEach((t) => { t.enabled = micEnabled; });
+        stream.getVideoTracks().forEach((t) => { t.enabled = camEnabled; });
+        stream.getAudioTracks().forEach((t) => { t.enabled = micEnabled; });
 
-      localStreamRef.current = stream;
-      setLocalStream(stream);
-      setStatus("previewing");
+        localStreamRef.current = stream;
+        setLocalStream(stream);
+        setStatus("previewing");
     }
-    catch (err: any)
+    catch (err: unknown)
     {
-      console.error("Failed to start preview:", err);
-      setError(err?.message || "Failed to start preview.");
-      setStatus("error");
+        console.error("[MediaSession] failed to start preview", err);
+        setError(err instanceof Error ? err.message : "Failed to start preview.");
+        setStatus("error");
     }
-  }, [selectedVideoId, selectedAudioId, camEnabled, micEnabled, stopPreview]);
+  }, [selectedVideoId, selectedAudioId, stopPreview, camEnabled, micEnabled]);
+
+  const publishLocalTracks = useCallback(async () =>
+  {
+    if (!sendTransportRef.current || !localStreamRef.current) return;
+
+    const videoTrack = localStreamRef.current.getVideoTracks()[0];
+    const audioTrack = localStreamRef.current.getAudioTracks()[0];
+
+    if (videoTrack && !videoProducerRef.current)
+    {
+      videoProducerRef.current = await produceTrack(
+        sendTransportRef.current,
+        videoTrack,
+        { mediaTag: "cam" }
+      );
+    }
+
+    if (audioTrack && !audioProducerRef.current)
+    {
+      audioProducerRef.current = await produceTrack(
+        sendTransportRef.current,
+        audioTrack,
+        { mediaTag: "mic" }
+      );
+    }
+  }, []);
+
+  const attachConsumedTrackToPeer = useCallback((
+    peerId: string,
+    kind: "audio" | "video",
+    track: MediaStreamTrack
+  ) =>
+  {
+    setRemoteMedia((prev) =>
+    {
+      const existing = prev[peerId] ?? {
+        peerId,
+        audioTrack: null,
+        videoTrack: null,
+        stream: new MediaStream(),
+      };
+
+      const stream = existing.stream ?? new MediaStream();
+
+      const alreadyHasTrack = stream.getTracks().some((t) => t.id === track.id);
+      if (!alreadyHasTrack)
+      {
+        stream.addTrack(track);
+      }
+
+      return {
+        ...prev,
+        [peerId]: {
+          ...existing,
+          audioTrack: kind === "audio" ? track : existing.audioTrack,
+          videoTrack: kind === "video" ? track : existing.videoTrack,
+          stream,
+        },
+      };
+    });
+  }, []);
+
+  const removeTrackFromPeer = useCallback((
+    peerId: string,
+    kind: "audio" | "video",
+    track: MediaStreamTrack
+  ) =>
+  {
+    setRemoteMedia((prev) =>
+    {
+      const existing = prev[peerId];
+      if (!existing) return prev;
+
+      const stream = existing.stream ?? new MediaStream();
+      const matchingTrack = stream.getTracks().find((t) => t.id === track.id);
+
+      if (matchingTrack)
+      {
+        stream.removeTrack(matchingTrack);
+      }
+
+      const nextEntry: RemoteMediaEntry = {
+        ...existing,
+        audioTrack: kind === "audio" ? null : existing.audioTrack,
+        videoTrack: kind === "video" ? null : existing.videoTrack,
+        stream,
+      };
+
+      if (!nextEntry.audioTrack && !nextEntry.videoTrack)
+      {
+        const copy = { ...prev };
+        delete copy[peerId];
+        return copy;
+      }
+
+      return {
+        ...prev,
+        [peerId]: nextEntry,
+      };
+    });
+  }, []);
 
   const toggleCam = useCallback(() =>
   {
@@ -207,41 +338,110 @@ export function MediaSessionProvider({ children }: { children: React.ReactNode }
 
     try
     {
+      newProducerCleanupRef.current?.();
+      consumerClosedCleanupRef.current?.();
+
       const { peerId, device, sendTransport, recvTransport } = await sfuClient(roomId);
 
+      roomIdRef.current = roomId;
       peerIdRef.current = peerId;
       deviceRef.current = device;
       sendTransportRef.current = sendTransport;
       recvTransportRef.current = recvTransport;
 
+      newProducerCleanupRef.current = onNewProducer(async ({ peerId, producerId, kind }) =>
+      {
+        try
+        {
+          if (peerId === peerIdRef.current) return;
+
+          const currentRoomId = roomIdRef.current;
+          const currentDevice = deviceRef.current;
+          const currentRecvTransport = recvTransportRef.current;
+
+          if (!currentRoomId || !currentDevice || !currentRecvTransport) return;
+
+          const consumer = await consumeTrack(
+            currentRoomId,
+            currentDevice,
+            currentRecvTransport,
+            producerId
+          );
+
+          consumersRef.current.set(consumer.id, {
+            consumer,
+            peerId,
+            kind,
+          });
+
+          attachConsumedTrackToPeer(peerId, kind, consumer.track);
+        }
+        catch (err)
+        {
+          console.error("Failed to consume remote producer:", err);
+        }
+      });
+
+      consumerClosedCleanupRef.current = onConsumerClosed(({ consumerId }) =>
+      {
+        const entry = consumersRef.current.get(consumerId);
+        if (!entry) return;
+
+        const { consumer, peerId, kind } = entry;
+
+        consumer.close();
+        consumersRef.current.delete(consumerId);
+
+        removeTrackFromPeer(peerId, kind, consumer.track);
+      });
+
+      await publishLocalTracks();
       setPlayer(peerId);
       setStatus("connected");
     }
-    catch (err: any)
+    catch (err: unknown)
     {
       console.error("SFU connection failed:", err);
-      setError(err?.message || "Failed to connect to SFU.");
+      setError(err instanceof Error ? err.message : "Failed to connect to SFU.");
       setStatus("error");
       throw err;
     }
-  }, [setPlayer]);
+  }, [attachConsumedTrackToPeer, publishLocalTracks, removeTrackFromPeer, setPlayer]);
 
   const disconnectFromSFU = useCallback(() =>
   {
     try
     {
+      newProducerCleanupRef.current?.();
+      consumerClosedCleanupRef.current?.();
+      newProducerCleanupRef.current = null;
+      consumerClosedCleanupRef.current = null;
+
+      audioProducerRef.current?.close();
+      videoProducerRef.current?.close();
+      audioProducerRef.current = null;
+      videoProducerRef.current = null;
+
+      for (const entry of consumersRef.current.values())
+      {
+        entry.consumer.close();
+      }
+      consumersRef.current.clear();
+
       sendTransportRef.current?.close?.();
       recvTransportRef.current?.close?.();
     }
     catch (err)
     {
-      console.warn("Error closing transports:", err);
+      console.warn("Error closing SFU session:", err);
     }
 
     sendTransportRef.current = null;
     recvTransportRef.current = null;
     deviceRef.current = null;
     peerIdRef.current = null;
+    roomIdRef.current = null;
+    setRemoteMedia({});
 
     if (status === "connected" || status === "connecting")
     {
@@ -274,7 +474,7 @@ export function MediaSessionProvider({ children }: { children: React.ReactNode }
     {
       stopPreview();
     };
-  }, [selectedVideoId, selectedAudioId]);
+  }, [selectedVideoId, selectedAudioId, startPreview, stopPreview]);
 
   const value = useMemo<MediaSessionContextType>(() => ({
     status,
@@ -282,6 +482,7 @@ export function MediaSessionProvider({ children }: { children: React.ReactNode }
     videoInputs,
     audioInputs,
     localStream,
+    remoteMedia,
     camEnabled,
     micEnabled,
     selectedVideoId,
@@ -302,6 +503,7 @@ export function MediaSessionProvider({ children }: { children: React.ReactNode }
     videoInputs,
     audioInputs,
     localStream,
+    remoteMedia,
     camEnabled,
     micEnabled,
     selectedVideoId,

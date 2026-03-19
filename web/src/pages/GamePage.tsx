@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { useMediaSession } from "../context/MediaSession";
 import { useGameSession } from "../context/GameSession";
 import SidePanel from "../components/panels/SidePanel";
+import PlayerTile from "../components/PlayerTile";
 
 export default function GamePage()
 {
@@ -8,24 +11,54 @@ export default function GamePage()
   const [rightOpen, setRightOpen] = useState(false);
 
   const { session, isHydrated } = useGameSession();
+  
+  const mediaSession = useMediaSession();
+  const mediaSessionDebug = useMemo(() => ({
+    status: mediaSession.status,
+    error: mediaSession.error,
+    videoInputs: mediaSession.videoInputs,
+    audioInputs: mediaSession.audioInputs,
+    camEnabled: mediaSession.camEnabled,
+    micEnabled: mediaSession.micEnabled,
+    localStream: mediaSession.localStream,
+    remoteMedia: mediaSession.remoteMedia,
+    selectedVideoId: mediaSession.selectedVideoId,
+    selectedAudioId: mediaSession.selectedAudioId,
+  }), [mediaSession]);
 
-  // const sessionDebug = useMemo(() => ({
-  //   roomId: session.roomId,
-  //   roomTitle: session.roomTitle ?? null,
-  //   playerId: session.playerId || null,
-  //   selectedVideoId: session.selectedVideoId,
-  //   selectedAudioId: session.selectedAudioId,
-  //   camEnabled: session.camEnabled,
-  //   micEnabled: session.micEnabled,
-  //   isHydrated,
-  // }), [session, isHydrated]);
+  useEffect(() =>
+  {
+    console.log("GameSession:", mediaSessionDebug);
+  }, [isHydrated, mediaSessionDebug]);
 
-  // useEffect(() =>
-  // {
-  //   if (!isHydrated) return;
-  //   else 
-  //   console.log("GameSession:", sessionDebug);
-  // }, [isHydrated, sessionDebug]);
+  const navigate = useNavigate();
+  const { id } = useParams();
+
+  const roomId = id || "";
+
+  const { status } = useMediaSession();
+
+  useEffect(() =>
+  {
+    if (!roomId)
+    {
+      navigate("/lobby", { replace: true });
+      return;
+    }
+
+    if (status !== "connected")
+    {
+      navigate(`/rooms/${roomId}`, {
+        replace: true,
+        state: { reason: "session-lost" },
+      });
+    }
+  }, [roomId, status, navigate]);
+
+  if (status !== "connected")
+  {
+    return null;
+  }
 
   return (
     <div className="min-h-screen w-screen overflow-x-hidden bg-slate-950 text-slate-100">
@@ -49,10 +82,10 @@ export default function GamePage()
         <main className="h-full w-full px-6 py-6">
           <div className="grid h-full grid-rows-[minmax(0,1fr)_auto] gap-4">
             <div className="grid min-h-0 grid-cols-2 grid-rows-2 gap-4">
-              <div className="min-h-0 rounded-2xl border border-white/10 bg-slate-900/40 ring-1 ring-white/5" />
-              <div className="min-h-0 rounded-2xl border border-white/10 bg-slate-900/40 ring-1 ring-white/5" />
-              <div className="min-h-0 rounded-2xl border border-white/10 bg-slate-900/40 ring-1 ring-white/5" />
-              <div className="min-h-0 rounded-2xl border border-white/10 bg-slate-900/40 ring-1 ring-white/5" />
+              <PlayerTile title="Player 1" stream={mediaSession.localStream} />
+              <PlayerTile title="Player 2" stream={null} />
+              <PlayerTile title="Player 3" stream={null} />
+              <PlayerTile title="Player 4" stream={null} />
             </div>
           </div>
         </main>

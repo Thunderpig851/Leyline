@@ -18,10 +18,10 @@ export const router = createBrowserRouter([
     [
       {path: "/lobby", element: <LobbyPage /> },
       {path: "/account", element: <AccountPage /> },
-      {path: "/login", element: <LoginPage />},
-      {path: "/register", element: <RegisterPage />},
     ]
   },
+  {path: "/login", element: <LoginPage />},
+  {path: "/register", element: <RegisterPage />},
   {path: "/rooms/:id", element: <JoinRoomPage />},
   {path: "/rooms/:id/game", element: <GamePage /> },
   {path: "*", element: <NotFoundPage /> },
