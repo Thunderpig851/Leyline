@@ -10,7 +10,6 @@ export function registerSFUSignaling(io: Server): void
 {
   io.on("connection", (socket: Socket) =>
   {
-    // Join SFU room and get router RTP capabilities
     socket.on("sfu:join", async (payload: { roomId: string; peerId: string }, cb) =>
     {
       try
@@ -35,7 +34,6 @@ export function registerSFUSignaling(io: Server): void
       }
     });
 
-    // Create a mediasoup WebRTC transport for this socket
     socket.on("sfu:createTransport", async (payload: { roomId: string }, cb) =>
     {
       try
@@ -48,19 +46,18 @@ export function registerSFUSignaling(io: Server): void
             {
               protocol: "udp",
               ip: "0.0.0.0",
-              announcedIp: process.env.MEDIASOUP_ANNOUNCED_IP || undefined,
+              announcedAddress: process.env.MEDIASOUP_ANNOUNCED_IP || undefined,
             },
             {
               protocol: "tcp",
               ip: "0.0.0.0",
-              announcedIp: process.env.MEDIASOUP_ANNOUNCED_IP || undefined,
+              announcedAddress: process.env.MEDIASOUP_ANNOUNCED_IP || undefined,
             },
           ],
           enableUdp: true,
           enableTcp: true,
           preferUdp: true,
         });
-
         const peerTransportMap = getPeerTransportMap(socket.id);
         peerTransportMap.set(transport.id, transport);
 
@@ -91,7 +88,6 @@ export function registerSFUSignaling(io: Server): void
       }
     });
 
-    // Connect a transport with DTLS parameters from the client
     socket.on("sfu:connectTransport", async (
       payload: { transportId: string; dtlsParameters: MsTypes.DtlsParameters },
       cb
@@ -117,7 +113,6 @@ export function registerSFUSignaling(io: Server): void
       }
     });
 
-    // Produce a local audio or video track on the send transport
     socket.on("sfu:produce", async (
       payload: {
         roomId: string;
@@ -143,6 +138,16 @@ export function registerSFUSignaling(io: Server): void
           kind: payload.kind,
           rtpParameters: payload.rtpParameters,
           appData: payload.appData ?? {},
+        });
+
+        console.log("[SFU][server] producer created", {
+          producerId: producer.id,
+          kind: producer.kind,
+          paused: producer.paused,
+          appData: producer.appData,
+          socketId: socket.id,
+          peerId: socket.data.peerId,
+          roomId: payload.roomId,
         });
 
         const producerMap = getPeerProducerMap(socket.id);
@@ -174,7 +179,40 @@ export function registerSFUSignaling(io: Server): void
       }
     });
 
-    // Create a consumer for a remote producer on this socket's recv transport
+    socket.on("sfu:getProducers", async (
+      payload: { roomId: string },
+      cb
+    ) =>
+    {
+      try
+      {
+        const producers: { producerId: string; peerId: string; kind: "audio" | "video" }[] = [];
+
+        for (const [socketId, producerMap] of peerProducers.entries())
+        {
+          const peerSocket = io.sockets.sockets.get(socketId);
+          if (!peerSocket) continue;
+          if (!peerSocket.rooms.has(payload.roomId)) continue;
+
+          for (const producer of producerMap.values())
+          {
+            producers.push({
+              producerId: producer.id,
+              peerId: peerSocket.data.peerId,
+              kind: producer.kind,
+            });
+          }
+        }
+
+        cb({ ok: true, producers });
+      }
+      catch (err: any)
+      {
+        console.error("sfu:getProducers error.", err);
+        cb({ ok: false, error: err?.message || "Failed to get producers." });
+      }
+    });
+
     socket.on("sfu:consume", async (
       payload: {
         roomId: string;
@@ -220,6 +258,16 @@ export function registerSFUSignaling(io: Server): void
           paused: true,
         });
 
+        console.log("[SFU][server] consumer created", {
+          consumerId: consumer.id,
+          producerId: payload.producerId,
+          kind: consumer.kind,
+          paused: consumer.paused,
+          socketId: socket.id,
+          peerId: socket.data.peerId,
+          roomId: payload.roomId,
+        });
+
         const consumerMap = getPeerConsumerMap(socket.id);
         consumerMap.set(consumer.id, consumer);
 
@@ -258,7 +306,6 @@ export function registerSFUSignaling(io: Server): void
       }
     });
 
-    // Resume a consumer after the client has created its local mediasoup consumer
     socket.on("sfu:resumeConsumer", async (payload: { consumerId: string }, cb) =>
     {
       try
@@ -272,6 +319,16 @@ export function registerSFUSignaling(io: Server): void
         }
 
         await consumer.resume();
+
+        console.log("[SFU][server] consumer resumed", {
+          consumerId: consumer.id,
+          kind: consumer.kind,
+          paused: consumer.paused,
+          producerPaused: consumer.producerPaused,
+          socketId: socket.id,
+          peerId: socket.data.peerId,
+        });
+
         cb({ ok: true });
       }
       catch (err: any)
@@ -281,7 +338,6 @@ export function registerSFUSignaling(io: Server): void
       }
     });
 
-    // Cleanup all mediasoup objects for this socket
     socket.on("disconnect", () =>
     {
       const peerTransportMap = peerTransports.get(socket.id);

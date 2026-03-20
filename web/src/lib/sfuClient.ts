@@ -61,6 +61,7 @@ export async function sfuClient(roomId: string)
         else errback(new Error(res?.error ?? "produce failed"));
       }
     );
+    
   });
 
   const recvTransport = device.createRecvTransport(recvRes.transportOptions);
@@ -125,7 +126,7 @@ export async function consumeTrack(
   });
 
   await emitAcknowledge("sfu:resumeConsumer", { consumerId: consumer.id });
-
+  console.log("resumed consumer", consumer.id, consumer.kind);
   return consumer;
 }
 
@@ -143,4 +144,12 @@ export function onConsumerClosed(
 {
   socket.on("sfu:consumerClosed", handler);
   return () => socket.off("sfu:consumerClosed", handler);
+}
+
+export function getExistingProducers(roomId: string)
+{
+  return emitAcknowledge<{ ok: true; producers: { producerId: string; peerId: string; kind: "audio" | "video" }[] }>(
+    "sfu:getProducers",
+    { roomId }
+  );
 }

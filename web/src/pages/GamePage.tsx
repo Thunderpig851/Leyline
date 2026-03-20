@@ -2,42 +2,33 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useMediaSession } from "../context/MediaSession";
 import { useGameSession } from "../context/GameSession";
-import SidePanel from "../components/panels/SidePanel";
-import PlayerTile from "../components/PlayerTile";
+import SidePanel from "../components/gamepage/SidePanel";
+import PlayerTile from "../components/gamepage/PlayerTile";
+
+type ParticipantMedia = 
+{
+  peerId: string;
+  stream: MediaStream | null;
+  isSelf: boolean;
+  hasVideo: boolean;
+  hasAudio: boolean;
+}
 
 export default function GamePage()
 {
   const [leftOpen, setLeftOpen] = useState(false);
   const [rightOpen, setRightOpen] = useState(false);
 
-  const { session, isHydrated } = useGameSession();
-  
+  const { session } = useGameSession();
   const mediaSession = useMediaSession();
-  const mediaSessionDebug = useMemo(() => ({
-    status: mediaSession.status,
-    error: mediaSession.error,
-    videoInputs: mediaSession.videoInputs,
-    audioInputs: mediaSession.audioInputs,
-    camEnabled: mediaSession.camEnabled,
-    micEnabled: mediaSession.micEnabled,
-    localStream: mediaSession.localStream,
-    remoteMedia: mediaSession.remoteMedia,
-    selectedVideoId: mediaSession.selectedVideoId,
-    selectedAudioId: mediaSession.selectedAudioId,
-  }), [mediaSession]);
-
-  useEffect(() =>
-  {
-    console.log("GameSession:", mediaSessionDebug);
-  }, [isHydrated, mediaSessionDebug]);
-
+  
   const navigate = useNavigate();
   const { id } = useParams();
 
   const roomId = id || "";
 
-  const { status } = useMediaSession();
 
+  // Force users back to JoinRoomPage on reload or if session is lost
   useEffect(() =>
   {
     if (!roomId)
@@ -46,19 +37,50 @@ export default function GamePage()
       return;
     }
 
-    if (status !== "connected")
+    if (mediaSession.status !== "connected")
     {
       navigate(`/rooms/${roomId}`, {
         replace: true,
         state: { reason: "session-lost" },
       });
     }
-  }, [roomId, status, navigate]);
+  }, [roomId, mediaSession.status, navigate]);
 
-  if (status !== "connected")
+  if (mediaSession.status !== "connected")
   {
     return null;
   }
+
+  const participants = useMemo(() =>
+  {
+    const byPeerId = new Map<string, ParticipantMedia>();
+
+    if (mediaSession.selfPeerId && mediaSession.localStream)
+    {
+        byPeerId.set(mediaSession.selfPeerId, {
+          peerId: mediaSession.selfPeerId,
+          stream: mediaSession.localStream,
+          isSelf: true,
+          hasVideo: mediaSession.localStream.getVideoTracks().length > 0,
+          hasAudio: mediaSession.localStream.getAudioTracks().length > 0,
+        });
+    }
+
+    for (const remote of Object.values(mediaSession.remoteMedia))
+    {
+      if (!remote.peerId) continue;
+      if (remote.peerId === mediaSession.selfPeerId) continue;
+
+      byPeerId.set(remote.peerId, {
+        peerId: remote.peerId,
+        stream: remote.stream,
+        isSelf: false,
+        hasVideo: !!remote.videoTrack,
+        hasAudio: !!remote.audioTrack,
+      });
+  }
+    return Array.from(byPeerId.values());
+  }, [mediaSession.selfPeerId, mediaSession.localStream, mediaSession.remoteMedia]);
 
   return (
     <div className="min-h-screen w-screen overflow-x-hidden bg-slate-950 text-slate-100">
@@ -82,10 +104,14 @@ export default function GamePage()
         <main className="h-full w-full px-6 py-6">
           <div className="grid h-full grid-rows-[minmax(0,1fr)_auto] gap-4">
             <div className="grid min-h-0 grid-cols-2 grid-rows-2 gap-4">
-              <PlayerTile title="Player 1" stream={mediaSession.localStream} />
-              <PlayerTile title="Player 2" stream={null} />
-              <PlayerTile title="Player 3" stream={null} />
-              <PlayerTile title="Player 4" stream={null} />
+              {participants.map((p) => (
+                <PlayerTile
+                  key={p.peerId}
+                  isSelf={p.isSelf}
+                  title={p.isSelf ? "You" : `Player ${p.peerId}`}
+                  stream={p.stream}
+                />
+              ))}
             </div>
           </div>
         </main>

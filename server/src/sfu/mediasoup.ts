@@ -11,7 +11,7 @@ export async function getWorker(): Promise<mediasoup.types.Worker>
     logLevel: "warn",
     logTags: ["ice", "dtls", "rtp", "srtp", "rtcp"],
     rtcMinPort: 40000,
-    rtcMaxPort: 49999,
+    rtcMaxPort: 40100,
   });
 
   worker.on("died", () =>
