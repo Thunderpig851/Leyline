@@ -15,17 +15,6 @@ const UserSchema = new mongoose.Schema(
     status: { type: String, enum: ['online', 'offline'], default: 'offline' },
 });
 
-
-// To be expanded
-const SettingsSchema = new mongoose.Schema(
-{
-    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-
-});
-
-
-
 const UserModel = mongoose.model('User', UserSchema);
-const SettingsModel = mongoose.model('Settings', SettingsSchema);
 
-module.exports = { UserModel, SettingsModel };
+module.exports = { UserModel };

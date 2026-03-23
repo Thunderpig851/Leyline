@@ -17,6 +17,21 @@ const RoomMemberSchema = new mongoose.Schema(
 
 const RoomSettingsSchema = new mongoose.Schema(
 {
+  format: 
+  { type: String, enum: 
+    [
+      "commander",
+      "standard",
+      "modern",
+      "legacy",
+      "pauper",
+      "vintage",
+      "pioneer",
+      "historic",
+    ], 
+    default: "commander", 
+    required: true 
+  },
   bracket:
   {
     type: String,
@@ -59,6 +74,8 @@ const RoomSchema = new mongoose.Schema(
   members: { type: [RoomMemberSchema], default: [] },
 
   settings: { type: RoomSettingsSchema, default: () => ({}) },
+
+  activeSessionID: { type: mongoose.Schema.Types.ObjectId, ref: "GameSession", default: null },
 },
 {
   timestamps: true 

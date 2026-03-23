@@ -41,20 +41,33 @@ export default function RoomCard({ room }: RoomCardProps)
   }
 
   const isFull = status === "full";
+  const showBracket = format?.toLowerCase() === "commander" && bracket;
 
   return (
     <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-slate-950/40 p-4 ring-1 ring-white/5">
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/10 via-white/5 to-transparent" />
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-emerald-400/5 via-transparent to-cyan-300/5 opacity-60" />
 
-      <div className="relative flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="truncate text-sm font-semibold text-slate-100">
-            {title}
-          </div>
+      <div className="relative">
+        <div className="truncate text-sm font-semibold text-slate-100">
+          {title}
         </div>
 
-        <div className="flex shrink-0 flex-col items-end gap-1">
+        <div className="mt-2 flex flex-wrap gap-2">
+          {format && (
+            <span className="rounded-full border border-white/10 bg-slate-900/60 px-2 py-0.5 text-[11px] capitalize text-slate-200">
+              {format}
+            </span>
+          )}
+
+          {showBracket && (
+            <span className="rounded-full border border-emerald-300/25 bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-200">
+              Bracket {bracket}
+            </span>
+          )}
+        </div>
+
+        <div className="mt-2 flex flex-wrap gap-2">
           <span
             className={
               isFull
@@ -71,22 +84,10 @@ export default function RoomCard({ room }: RoomCardProps)
         </div>
       </div>
 
-      <div className="relative mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-300">
+      <div className="relative mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-300">
         <span>
           Players: <span className="text-slate-100">{playersCount}</span>/{maxPlayers}
         </span>
-
-        {format && (
-          <span className="rounded-full border border-white/10 bg-slate-900/60 px-2 py-0.5 text-[11px] text-slate-200 capitalize">
-            {format}
-          </span>
-        )}
-
-        {bracket && (
-          <span className="rounded-full border border-emerald-300/25 bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-200">
-            Bracket {bracket}
-          </span>
-        )}
       </div>
 
       <div className="relative mt-4">
