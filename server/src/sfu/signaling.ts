@@ -140,16 +140,6 @@ export function registerSFUSignaling(io: Server): void
           appData: payload.appData ?? {},
         });
 
-        console.log("[SFU][server] producer created", {
-          producerId: producer.id,
-          kind: producer.kind,
-          paused: producer.paused,
-          appData: producer.appData,
-          socketId: socket.id,
-          peerId: socket.data.peerId,
-          roomId: payload.roomId,
-        });
-
         const producerMap = getPeerProducerMap(socket.id);
         producerMap.set(producer.id, producer);
 
@@ -258,16 +248,6 @@ export function registerSFUSignaling(io: Server): void
           paused: true,
         });
 
-        console.log("[SFU][server] consumer created", {
-          consumerId: consumer.id,
-          producerId: payload.producerId,
-          kind: consumer.kind,
-          paused: consumer.paused,
-          socketId: socket.id,
-          peerId: socket.data.peerId,
-          roomId: payload.roomId,
-        });
-
         const consumerMap = getPeerConsumerMap(socket.id);
         consumerMap.set(consumer.id, consumer);
 
@@ -319,16 +299,7 @@ export function registerSFUSignaling(io: Server): void
         }
 
         await consumer.resume();
-
-        console.log("[SFU][server] consumer resumed", {
-          consumerId: consumer.id,
-          kind: consumer.kind,
-          paused: consumer.paused,
-          producerPaused: consumer.producerPaused,
-          socketId: socket.id,
-          peerId: socket.data.peerId,
-        });
-
+      
         cb({ ok: true });
       }
       catch (err: any)

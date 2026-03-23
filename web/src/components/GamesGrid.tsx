@@ -6,10 +6,16 @@ type GridRoom =
   _id: string;
   title: string;
   hostName?: string;
-  visible?: "public" | "private";
+  visibility?: "public" | "private";
   status?: "open" | "full";
-  playersCount?: number;
-  maxPlayers?: number;
+  members?: Array<unknown>;
+  settings?:
+  {
+    format?: string;
+    bracket?: string;
+    maxPlayers?: number;
+    allowSpectators?: boolean;
+  };
   createdAt?: string;
 };
 
@@ -31,10 +37,13 @@ export default function GamesGrid({ rooms, onJoinRoom }: GamesGridProps)
       id: r._id,
       title: r.title,
       hostName: r.hostName,
-      visibility: r.visible ?? "public",
+      visibility: r.visibility ?? "public",
+      bracket: r.settings?.bracket,
+      format: r.settings?.format,
       status: r.status === "full" ? "full" : (r.status ?? "open"),
-      playersCount: r.playersCount ?? 0,
-      maxPlayers: r.maxPlayers ?? 4,
+      playersCount: r.members?.length ?? 0,
+      maxPlayers: r.settings?.maxPlayers ?? 4,
+      allowSpectators: r.settings?.allowSpectators ?? false,
       createdAt: r.createdAt,
     })),
   [rooms]);

@@ -16,9 +16,8 @@ export default function PlayerTile(
 {
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
-    
   useEffect(() =>
-{
+  {
   const video = videoRef.current;
   if (!video) return;
 
@@ -33,7 +32,7 @@ export default function PlayerTile(
     video.srcObject = stream;
   }
 
-  const track = stream.getVideoTracks()[0];
+  // const track = stream.getVideoTracks()[0];
 
   // console.log(title, {
   //   track: track
