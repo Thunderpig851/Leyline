@@ -1,3 +1,5 @@
+const mongoose = require("mongoose");
+
 const GameSettingsSchema = new mongoose.Schema(
 {
   format:
@@ -66,12 +68,6 @@ const GameSeatSchema = new mongoose.Schema(
     default: Date.now,
   },
 
-  isConnected:
-  {
-    type: Boolean,
-    default: true,
-  },
-
   isReady:
   {
     type: Boolean,
@@ -107,8 +103,8 @@ const LiveGameSchema = new mongoose.Schema(
   status:
   {
     type: String,
-    enum: ["setup", "active"],
-    default: "setup",
+    enum: ["active", "inactive"],
+    default: "active",
     index: true,
   },
 
@@ -133,12 +129,6 @@ const LiveGameSchema = new mongoose.Schema(
       },
       message: "Seats must be unique and cannot exceed 4 players.",
     },
-  },
-
-  version:
-  {
-    type: Number,
-    default: 0,
   },
 },
 { timestamps: true }

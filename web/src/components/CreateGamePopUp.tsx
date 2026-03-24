@@ -1,14 +1,26 @@
 import { useState } from "react";
 import { apiPost } from "../lib/api";
+import { useNavigate } from "react-router-dom";
 
 type CreateGameResponse =
 {
   ok: boolean;
+  room?:
+  {
+    _id: string;
+    title: string;
+  };
+  error?: string;
+};
+
+type StartLiveGameResponse =
+{
+  ok: boolean;
   game?:
   {
-    id: string;
-    host: string;
-    createdAt: string;
+    _id: string;
+    roomId: string;
+    format: string;
   };
   error?: string;
 };
@@ -20,6 +32,7 @@ type CreateGamePopUpProps =
 
 export default function CreateGamePopUp({ onClose }: CreateGamePopUpProps)
 {
+  const navigate = useNavigate();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [visibility, setVisibility] = useState("public");
@@ -42,34 +55,55 @@ export default function CreateGamePopUp({ onClose }: CreateGamePopUpProps)
     setServerError(null);
     setLoginPrompt(null);
     setSuccessMsg(null);
-
     setLoading(true);
 
-    const result = await apiPost<CreateGameResponse>("/api/rooms/create", {
+    const roomResult = await apiPost<CreateGameResponse>("/api/rooms/create", {
       title,
       description,
       visibility,
       settings,
     });
 
-    if (!result.ok)
+    if (!roomResult.ok)
     {
-      if (result.error === "Invalid token: jwt expired")
+      if (roomResult.error === "Invalid token: jwt expired")
       {
         setLoginPrompt("Your session expired. Want to log in again?");
       }
       else
       {
-        setServerError(result.error || "Failed to create game");
+        setServerError(roomResult.error || "Failed to create room.");
       }
-    }
-    else
-    {
-      setSuccessMsg("Game created successfully!");
-      setTimeout(() => onClose(), 1500);
+
+      setLoading(false);
+      return;
     }
 
+    const roomId = roomResult.data?.room?._id;
+
+    if (!roomId)
+    {
+      setServerError("Room was created, but no room id was returned.");
+      setLoading(false);
+      return;
+    }
+
+    const liveGameResult = await apiPost<StartLiveGameResponse>("/api/live-games/start", {
+      roomId,
+      format: settings.format,
+    });
+
+    if (!liveGameResult.ok)
+    {
+      setServerError(liveGameResult.error || "Room created, but failed to start live game.");
+      setLoading(false);
+      return;
+    }
+
+    setSuccessMsg("Game created successfully!");
     setLoading(false);
+    onClose();
+    navigate(`/rooms/${roomId}`);
   }
 
   return (
@@ -137,6 +171,12 @@ export default function CreateGamePopUp({ onClose }: CreateGamePopUpProps)
                   onChange={(e) => setSettings({ ...settings, format: e.target.value })}
                 >
                   <option value="commander">Commander</option>
+                  <option value="standard">Standard</option>
+                  <option value="modern">Modern</option>
+                  <option value="legacy">Legacy</option>
+                  <option value="vintage">Vintage</option>
+                  <option value="pauper">Pauper</option>
+                  <option value="pioneer">Pioneer</option>
                 </select>
               </label>
 
