@@ -11,6 +11,7 @@ import MicOffIcon from "../components/icons/MicOffIcon";
 
 import { useGameSession } from "../context/GameSession";
 import { useMediaSession } from "../context/MediaSession";
+import { socket } from "../lib/socket";
 
 type Aspect = "16:9" | "4:3" | "1:1";
 
@@ -31,8 +32,7 @@ function deviceLabel(d: MediaDeviceInfo, fallback: string)
 export default function JoinRoomPage()
 {
   const navigate = useNavigate();
-  const { id } = useParams();
-  const roomId = id || "";
+  const { roomId = "" } = useParams();
 
   const { setRoom } = useGameSession();
 
@@ -94,7 +94,7 @@ export default function JoinRoomPage()
 
   useEffect(() =>
   {
-    if (!id)
+    if (!roomId)
     {
       setError("Missing room id.");
       return;
@@ -108,7 +108,7 @@ export default function JoinRoomPage()
       {
         setError(null);
 
-        const res = await fetch(`http://localhost:3001/api/rooms/${id}`, { credentials: "include" });
+        const res = await fetch(`http://localhost:3001/api/rooms/${roomId}`, { credentials: "include" });
         const data: RoomResponse = await res.json();
 
         if (cancelled) return;
@@ -130,7 +130,7 @@ export default function JoinRoomPage()
     })();
 
     return () => { cancelled = true; };
-  }, [id, ensurePermissionAndListDevices]);
+  }, [roomId, ensurePermissionAndListDevices]);
 
   async function joinGame()
   {
@@ -143,15 +143,20 @@ export default function JoinRoomPage()
     {
       setRoom(roomId, roomTitle);
 
-      await connectToSFU(roomId);
-
-      const res = await apiPost(`/api/rooms/${roomId}/live`, { credentials: "include" });
+      const res = await apiPost(`/api/rooms/${roomId}/join`, {});
 
       if (!res.ok)
       {
         setErrorMessage(res.error || "Failed to join room.");
         return;
       }
+
+      if (socket.connected)
+      {
+        socket.emit("room:join", { roomId });
+      }
+
+      await connectToSFU(roomId);
 
       navigate(`/rooms/${roomId}/game`);
     }
@@ -163,6 +168,31 @@ export default function JoinRoomPage()
     finally
     {
       setLoading(false);
+    }
+  }
+
+  async function leaveRoomAndGoBack()
+  {
+    try
+    {
+      if (roomId)
+      {
+        await apiPost(`/api/rooms/${roomId}/leave`, {});
+      }
+    }
+    catch (err)
+    {
+      console.error("Failed to leave room on back:", err);
+    }
+    finally
+    {
+      if (socket.connected && roomId)
+      {
+        socket.emit("room:leave", { roomId });
+      }
+
+      stopPreview();
+      navigate("/lobby");
     }
   }
 
@@ -319,11 +349,7 @@ export default function JoinRoomPage()
                 <button
                   type="button"
                   className="flex-1 rounded-xl border border-white/10 bg-slate-900/60 px-4 py-2 text-sm text-slate-200 hover:bg-white/5"
-                  onClick={() =>
-                  {
-                    stopPreview();
-                    navigate("/lobby");
-                  }}
+                  onClick={() => { void leaveRoomAndGoBack(); }}
                 >
                   Back
                 </button>

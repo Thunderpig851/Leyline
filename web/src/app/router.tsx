@@ -1,4 +1,4 @@
-import { createBrowserRouter } from "react-router-dom";
+import { createBrowserRouter, Navigate } from "react-router-dom";
 import Layout from "../components/layout/Layout";
 
 import LobbyPage from "../pages/LobbyPage";
@@ -9,20 +9,20 @@ import NotFoundPage from "../pages/NotFoundPage";
 import AccountPage from "../pages/AccountPage";
 import GamePage from "../pages/GamePage";
 
-
 export const router = createBrowserRouter([
   {
     path: "/",
     element: <Layout />,
-    children: 
+    children:
     [
-      {path: "/lobby", element: <LobbyPage /> },
-      {path: "/account", element: <AccountPage /> },
-    ]
+      { index: true, element: <Navigate to="/lobby" replace /> },
+      { path: "lobby", element: <LobbyPage /> },
+      { path: "account", element: <AccountPage /> },
+    ],
   },
-  {path: "/login", element: <LoginPage />},
-  {path: "/register", element: <RegisterPage />},
-  {path: "/rooms/:id", element: <JoinRoomPage />},
-  {path: "/rooms/:id/game", element: <GamePage /> },
-  {path: "*", element: <NotFoundPage /> },
+  { path: "/login", element: <LoginPage /> },
+  { path: "/register", element: <RegisterPage /> },
+  { path: "/rooms/:roomId", element: <JoinRoomPage /> },
+  { path: "/rooms/:roomId/game", element: <GamePage /> },
+  { path: "*", element: <NotFoundPage /> },
 ]);

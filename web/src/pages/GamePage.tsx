@@ -2,33 +2,43 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useMediaSession } from "../context/MediaSession";
 import { useGameSession } from "../context/GameSession";
+import { apiPost, apiGet } from "../lib/api";
+import { socket } from "../lib/socket";
 import SidePanel from "../components/gamepage/SidePanel";
 import PlayerTile from "../components/gamepage/PlayerTile";
 
-type ParticipantMedia = 
+type ParticipantMedia =
 {
   peerId: string;
   stream: MediaStream | null;
   isSelf: boolean;
   hasVideo: boolean;
   hasAudio: boolean;
-}
+};
+
+type ActiveGameResponse =
+{
+  ok: boolean;
+  game?: {
+    _id: string;
+    roomId: string;
+  };
+  error?: string;
+};
 
 export default function GamePage()
 {
   const [leftOpen, setLeftOpen] = useState(false);
   const [rightOpen, setRightOpen] = useState(false);
+  const [gameId, setGameId] = useState("");
+  const [leaving, setLeaving] = useState(false);
 
-  const { session } = useGameSession();
+  const { session, reset } = useGameSession();
   const mediaSession = useMediaSession();
-  
+
   const navigate = useNavigate();
-  const { id } = useParams();
+  const { roomId = "" } = useParams();
 
-  const roomId = id || "";
-
-
-  // Force users back to JoinRoomPage on reload or if session is lost
   useEffect(() =>
   {
     if (!roomId)
@@ -46,6 +56,104 @@ export default function GamePage()
     }
   }, [roomId, mediaSession.status, navigate]);
 
+  useEffect(() =>
+  {
+    if (!roomId || mediaSession.status !== "connected") return;
+
+    let cancelled = false;
+
+    async function loadActiveGame()
+    {
+      try
+      {
+        const res = await apiGet<ActiveGameResponse>(`/api/live-games/room/${roomId}`);
+
+        if (!res.ok || !res.data?.game?._id) return;
+
+        const data = res.data;
+
+        if (cancelled) return;
+        if (!data.ok || !data.game?._id) return;
+
+        setGameId(data.game._id);
+
+        if (socket.connected)
+        {
+          socket.emit("room:join", { roomId });
+          socket.emit("live-game:join", { gameId: data.game._id });
+        }
+      }
+      catch (err)
+      {
+        console.error("Failed to load active game:", err);
+      }
+    }
+
+    void loadActiveGame();
+
+    return () =>
+    {
+      cancelled = true;
+    };
+  }, [roomId, mediaSession.status]);
+
+  async function handleLeaveGame()
+  {
+    if (leaving) return;
+
+    setLeaving(true);
+
+    try
+    {
+      if (gameId)
+      {
+        try
+        {
+          await apiPost(`/api/live-games/${gameId}/leave`, {});
+        }
+        catch (err)
+        {
+          console.error("Failed to leave live game:", err);
+        }
+      }
+
+      if (roomId)
+      {
+        try
+        {
+          await apiPost(`/api/rooms/${roomId}/leave`, {});
+        }
+        catch (err)
+        {
+          console.error("Failed to leave room:", err);
+        }
+      }
+    }
+    finally
+    {
+      if (socket.connected)
+      {
+        if (gameId)
+        {
+          socket.emit("live-game:leave", { gameId });
+        }
+
+        if (roomId)
+        {
+          socket.emit("room:leave", { roomId });
+        }
+      }
+
+      if (typeof mediaSession.stopPreview === "function")
+      {
+        mediaSession.stopPreview();
+      }
+
+      reset();
+      navigate("/lobby", { replace: true });
+    }
+  }
+
   if (mediaSession.status !== "connected")
   {
     return null;
@@ -57,13 +165,13 @@ export default function GamePage()
 
     if (mediaSession.selfPeerId && mediaSession.localStream)
     {
-        byPeerId.set(mediaSession.selfPeerId, {
-          peerId: mediaSession.selfPeerId,
-          stream: mediaSession.localStream,
-          isSelf: true,
-          hasVideo: mediaSession.localStream.getVideoTracks().length > 0,
-          hasAudio: mediaSession.localStream.getAudioTracks().length > 0,
-        });
+      byPeerId.set(mediaSession.selfPeerId, {
+        peerId: mediaSession.selfPeerId,
+        stream: mediaSession.localStream,
+        isSelf: true,
+        hasVideo: mediaSession.localStream.getVideoTracks().length > 0,
+        hasAudio: mediaSession.localStream.getAudioTracks().length > 0,
+      });
     }
 
     for (const remote of Object.values(mediaSession.remoteMedia))
@@ -78,7 +186,8 @@ export default function GamePage()
         hasVideo: !!remote.videoTrack,
         hasAudio: !!remote.audioTrack,
       });
-  }
+    }
+
     return Array.from(byPeerId.values());
   }, [mediaSession.selfPeerId, mediaSession.localStream, mediaSession.remoteMedia]);
 
@@ -92,8 +201,13 @@ export default function GamePage()
               Room: <span className="text-slate-200">{session.roomTitle || "Placeholder Room"}</span>{" "}
               <span className="text-slate-600">·</span>{" "}
               Turn: <span className="text-slate-200">1</span>
-              <button className="ml-2 text-slate-200 transition-colors hover:text-red-500">
-                Leave Game
+              <button
+                type="button"
+                onClick={() => { void handleLeaveGame(); }}
+                disabled={leaving}
+                className="ml-2 text-slate-200 transition-colors hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {leaving ? "Leaving..." : "Leave Game"}
               </button>
             </div>
           </div>

@@ -57,3 +57,41 @@ export async function apiPost<T>(
   }
 }
 
+export async function apiGet<T>(
+  path: string,
+  init?: RequestInit
+): Promise<ApiResult<T>>
+{
+  try
+  {
+    const token = sessionStorage.getItem("accessToken");
+
+    const res = await fetch(`${API_BASE}${path}`,
+    {
+      method: "GET",
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(init?.headers || {}),
+      },
+      ...init,
+    });
+
+    const json = await res.json().catch(() => null);
+
+    if (!res.ok)
+    {
+      return {
+        ok: false,
+        status: res.status,
+        error: json?.error || `Request failed (${res.status})`,
+      };
+    }
+
+    return { ok: true, data: json as T };
+  }
+  catch (err)
+  {
+    return { ok: false, error: "Network error. Is the server running?" };
+  }
+}
+

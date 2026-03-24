@@ -10,7 +10,16 @@ const RoomMemberSchema = new mongoose.Schema(
     default: "player",
     required: true
   },
+  connectionStatus:
+  {
+    type: String,
+    enum: ["connected", "disconnected"],
+    default: "connected",
+    required: true
+  },
   joinedAt: { type: Date, default: Date.now },
+  lastSeenAt: { type: Date, default: Date.now },
+  
 },
 { _id: false }
 );
