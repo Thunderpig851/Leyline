@@ -5,6 +5,7 @@ import { useGameSession } from "../context/GameSession";
 import { apiPost, apiGet, getStoredUserId, getStoredUsername } from "../lib/api";
 import { socket } from "../lib/socket";
 import SidePanel from "../components/gamepage/SidePanel";
+import RightSidePanel from "../components/gamepage/RightSidePanel";
 import PlayerTile from "../components/gamepage/PlayerTile";
 
 type ParticipantMedia =
@@ -322,12 +323,10 @@ export default function GamePage()
           onToggle={() => setLeftOpen((v) => !v)}
         />
 
-        <SidePanel
-          side="right"
+        <RightSidePanel
           open={rightOpen}
-          title="Right Panel"
-          description="Placeholder for players list, actions, settings."
           onToggle={() => setRightOpen((v) => !v)}
+          roomId={roomId}
         />
       </div>
     </div>

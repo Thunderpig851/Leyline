@@ -8,6 +8,7 @@ const requireAuth = require("./middleware/requireAuth");
 const accountRoutes = require("./api/account");
 const roomsRoutes = require("./api/rooms");
 const liveGamesRoutes = require("./api/games");
+const chatRoutes = require("./api/chat");
 
 function createApp() {
   const app = express();
@@ -30,6 +31,8 @@ function createApp() {
   app.use("/api/account", requireAuth, accountRoutes);
   app.use("/api/rooms", roomsRoutes); 
   app.use("/api/live-games", requireAuth, liveGamesRoutes);
+  app.use("/api/chat", requireAuth, chatRoutes);
+
 
   app.use((req, res) => 
   {
