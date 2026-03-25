@@ -393,7 +393,7 @@ router.post("/:gameId/end", requireAuth, async (req, res) =>
       return res.status(403).json({ ok: false, error: "Only the room host can end the game." });
     }
 
-    game.status = "ended";
+    game.status = "inactive";
     game.endedAt = new Date();
 
     await game.save();

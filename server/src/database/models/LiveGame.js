@@ -86,6 +86,29 @@ const GameSeatSchema = new mongoose.Schema(
     type: GameStatsSchema,
     default: () => ({})
   },
+
+  lastSeenAt:
+  {
+    type: Date,
+    default: Date.now,
+  },
+
+  lastActiveAt:
+  {
+    type: Date,
+    default: Date.now,
+  },
+  disconnectDeadlineAt:
+  {
+    type: Date,
+    default: null,
+  },
+
+  awaySinceAt:
+  {
+    type: Date,
+    default: null,
+  },
 },
 { _id: false }
 );
