@@ -6,33 +6,48 @@ const peerTransports = new Map<string, Map<string, MsTypes.WebRtcTransport>>();
 const peerProducers = new Map<string, Map<string, MsTypes.Producer>>();
 const peerConsumers = new Map<string, Map<string, MsTypes.Consumer>>();
 
+function normalizeUsername(username?: string | null): string | null
+{
+  if (typeof username !== "string") return null;
+
+  const trimmed = username.trim();
+  return trimmed ? trimmed : null;
+}
+
 export function registerSFUSignaling(io: Server): void
 {
   io.on("connection", (socket: Socket) =>
   {
-    socket.on("sfu:join", async (payload: { roomId: string; peerId: string }, cb) =>
-    {
-      try
+    socket.on(
+      "sfu:join",
+      async (
+        payload: { roomId: string; peerId: string; username?: string | null },
+        cb
+      ) =>
       {
-        const { roomId, peerId } = payload;
-        const room = await getOrCreateRoom(roomId);
+        try
+        {
+          const { roomId, peerId, username } = payload;
+          const room = await getOrCreateRoom(roomId);
 
-        socket.data.roomId = roomId;
-        socket.data.peerId = peerId;
+          socket.data.roomId = roomId;
+          socket.data.peerId = peerId;
+          socket.data.username = normalizeUsername(username);
 
-        socket.join(roomId);
+          socket.join(roomId);
 
-        cb({
-          ok: true,
-          rtpCapabilities: room.router.rtpCapabilities,
-        });
+          cb({
+            ok: true,
+            rtpCapabilities: room.router.rtpCapabilities,
+          });
+        }
+        catch (err: any)
+        {
+          console.error("sfu:join error.", err);
+          cb({ ok: false, error: err?.message || "Failed to join SFU room." });
+        }
       }
-      catch (err: any)
-      {
-        console.error("sfu:join error.", err);
-        cb({ ok: false, error: err?.message || "Failed to join SFU room." });
-      }
-    });
+    );
 
     socket.on("sfu:createTransport", async (payload: { roomId: string }, cb) =>
     {
@@ -58,6 +73,7 @@ export function registerSFUSignaling(io: Server): void
           enableTcp: true,
           preferUdp: true,
         });
+
         const peerTransportMap = getPeerTransportMap(socket.id);
         peerTransportMap.set(transport.id, transport);
 
@@ -88,203 +104,240 @@ export function registerSFUSignaling(io: Server): void
       }
     });
 
-    socket.on("sfu:connectTransport", async (
-      payload: { transportId: string; dtlsParameters: MsTypes.DtlsParameters },
-      cb
-    ) =>
-    {
-      try
+    socket.on(
+      "sfu:connectTransport",
+      async (
+        payload: { transportId: string; dtlsParameters: MsTypes.DtlsParameters },
+        cb
+      ) =>
       {
-        const peerTransportMap = getPeerTransportMap(socket.id);
-        const transport = peerTransportMap.get(payload.transportId);
-
-        if (!transport)
+        try
         {
-          return cb({ ok: false, error: "Transport not found." });
-        }
+          const peerTransportMap = getPeerTransportMap(socket.id);
+          const transport = peerTransportMap.get(payload.transportId);
 
-        await transport.connect({ dtlsParameters: payload.dtlsParameters });
-        cb({ ok: true });
-      }
-      catch (err: any)
-      {
-        console.error("sfu:connectTransport error.", err);
-        cb({ ok: false, error: err?.message || "Failed to connect transport." });
-      }
-    });
-
-    socket.on("sfu:produce", async (
-      payload: {
-        roomId: string;
-        transportId: string;
-        kind: "audio" | "video";
-        rtpParameters: MsTypes.RtpParameters;
-        appData?: any;
-      },
-      cb
-    ) =>
-    {
-      try
-      {
-        const peerTransportMap = getPeerTransportMap(socket.id);
-        const transport = peerTransportMap.get(payload.transportId);
-
-        if (!transport)
-        {
-          return cb({ ok: false, error: "Transport not found." });
-        }
-
-        const producer = await transport.produce({
-          kind: payload.kind,
-          rtpParameters: payload.rtpParameters,
-          appData: payload.appData ?? {},
-        });
-
-        const producerMap = getPeerProducerMap(socket.id);
-        producerMap.set(producer.id, producer);
-
-        producer.on("transportclose", () =>
-        {
-          producerMap.delete(producer.id);
-        });
-
-        producer.on("@close", () =>
-        {
-          producerMap.delete(producer.id);
-        });
-
-        socket.to(payload.roomId).emit("sfu:newProducer", {
-          producerId: producer.id,
-          peerId: socket.data.peerId,
-          kind: producer.kind,
-          appData: producer.appData,
-        });
-
-        cb({ ok: true, producerId: producer.id });
-      }
-      catch (err: any)
-      {
-        console.error("sfu:produce error.", err);
-        cb({ ok: false, error: err?.message || "Failed to produce." });
-      }
-    });
-
-    socket.on("sfu:getProducers", async (
-      payload: { roomId: string },
-      cb
-    ) =>
-    {
-      try
-      {
-        const producers: { producerId: string; peerId: string; kind: "audio" | "video" }[] = [];
-
-        for (const [socketId, producerMap] of peerProducers.entries())
-        {
-          const peerSocket = io.sockets.sockets.get(socketId);
-          if (!peerSocket) continue;
-          if (!peerSocket.rooms.has(payload.roomId)) continue;
-
-          for (const producer of producerMap.values())
+          if (!transport)
           {
-            producers.push({
-              producerId: producer.id,
-              peerId: peerSocket.data.peerId,
-              kind: producer.kind,
-            });
+            return cb({ ok: false, error: "Transport not found." });
           }
-        }
 
-        cb({ ok: true, producers });
+          await transport.connect({ dtlsParameters: payload.dtlsParameters });
+          cb({ ok: true });
+        }
+        catch (err: any)
+        {
+          console.error("sfu:connectTransport error.", err);
+          cb({ ok: false, error: err?.message || "Failed to connect transport." });
+        }
       }
-      catch (err: any)
+    );
+
+    socket.on(
+      "sfu:produce",
+      async (
+        payload: {
+          roomId: string;
+          transportId: string;
+          kind: "audio" | "video";
+          rtpParameters: MsTypes.RtpParameters;
+          appData?: any;
+        },
+        cb
+      ) =>
       {
-        console.error("sfu:getProducers error.", err);
-        cb({ ok: false, error: err?.message || "Failed to get producers." });
-      }
-    });
-
-    socket.on("sfu:consume", async (
-      payload: {
-        roomId: string;
-        transportId: string;
-        producerId: string;
-        rtpCapabilities: MsTypes.RtpCapabilities;
-      },
-      cb
-    ) =>
-    {
-      try
-      {
-        const room = await getOrCreateRoom(payload.roomId);
-
-        const peerTransportMap = getPeerTransportMap(socket.id);
-        const transport = peerTransportMap.get(payload.transportId);
-
-        if (!transport)
+        try
         {
-          return cb({ ok: false, error: "Receive transport not found." });
-        }
+          const peerTransportMap = getPeerTransportMap(socket.id);
+          const transport = peerTransportMap.get(payload.transportId);
 
-        const producer = findProducerById(payload.producerId);
+          if (!transport)
+          {
+            return cb({ ok: false, error: "Transport not found." });
+          }
 
-        if (!producer)
-        {
-          return cb({ ok: false, error: "Producer not found." });
-        }
+          const username =
+            normalizeUsername(socket.data.username) ??
+            normalizeUsername(payload.appData?.username);
 
-        const canConsume = room.router.canConsume({
-          producerId: payload.producerId,
-          rtpCapabilities: payload.rtpCapabilities,
-        });
-
-        if (!canConsume)
-        {
-          return cb({ ok: false, error: "Router cannot consume this producer." });
-        }
-
-        const consumer = await transport.consume({
-          producerId: payload.producerId,
-          rtpCapabilities: payload.rtpCapabilities,
-          paused: true,
-        });
-
-        const consumerMap = getPeerConsumerMap(socket.id);
-        consumerMap.set(consumer.id, consumer);
-
-        consumer.on("transportclose", () =>
-        {
-          consumerMap.delete(consumer.id);
-        });
-
-        consumer.on("producerclose", () =>
-        {
-          consumerMap.delete(consumer.id);
-
-          socket.emit("sfu:consumerClosed", {
-            consumerId: consumer.id,
-            producerId: payload.producerId,
+          const producer = await transport.produce({
+            kind: payload.kind,
+            rtpParameters: payload.rtpParameters,
+            appData: {
+              ...(payload.appData ?? {}),
+              username,
+            },
           });
 
-          consumer.close();
-        });
+          const producerMap = getPeerProducerMap(socket.id);
+          producerMap.set(producer.id, producer);
 
-        cb({
-          ok: true,
-          consumerOptions: {
-            id: consumer.id,
-            producerId: payload.producerId,
-            kind: consumer.kind,
-            rtpParameters: consumer.rtpParameters,
-            appData: consumer.appData,
-          },
-        });
+          producer.on("transportclose", () =>
+          {
+            producerMap.delete(producer.id);
+          });
+
+          producer.on("@close", () =>
+          {
+            producerMap.delete(producer.id);
+          });
+
+          socket.to(payload.roomId).emit("sfu:newProducer", {
+            producerId: producer.id,
+            peerId: socket.data.peerId,
+            username,
+            kind: producer.kind,
+            appData: {
+              ...(producer.appData ?? {}),
+              username,
+            },
+          });
+
+          cb({ ok: true, producerId: producer.id });
+        }
+        catch (err: any)
+        {
+          console.error("sfu:produce error.", err);
+          cb({ ok: false, error: err?.message || "Failed to produce." });
+        }
       }
-      catch (err: any)
+    );
+
+    socket.on(
+      "sfu:getProducers",
+      async (
+        payload: { roomId: string },
+        cb
+      ) =>
       {
-        console.error("sfu:consume error.", err);
-        cb({ ok: false, error: err?.message || "Failed to consume." });
+        try
+        {
+          const producers: {
+            producerId: string;
+            peerId: string;
+            username?: string | null;
+            kind: "audio" | "video";
+            appData?: any;
+          }[] = [];
+
+          for (const [socketId, producerMap] of peerProducers.entries())
+          {
+            const peerSocket = io.sockets.sockets.get(socketId);
+            if (!peerSocket) continue;
+            if (!peerSocket.rooms.has(payload.roomId)) continue;
+
+            for (const producer of producerMap.values())
+            {
+              const username =
+                normalizeUsername(peerSocket.data.username) ?? null;
+
+              producers.push({
+                producerId: producer.id,
+                peerId: peerSocket.data.peerId,
+                username,
+                kind: producer.kind,
+                appData: {
+                  ...(producer.appData ?? {}),
+                  username,
+                },
+              });
+            }
+          }
+
+          cb({ ok: true, producers });
+        }
+        catch (err: any)
+        {
+          console.error("sfu:getProducers error.", err);
+          cb({ ok: false, error: err?.message || "Failed to get producers." });
+        }
       }
-    });
+    );
+
+    socket.on(
+      "sfu:consume",
+      async (
+        payload: {
+          roomId: string;
+          transportId: string;
+          producerId: string;
+          rtpCapabilities: MsTypes.RtpCapabilities;
+        },
+        cb
+      ) =>
+      {
+        try
+        {
+          const room = await getOrCreateRoom(payload.roomId);
+
+          const peerTransportMap = getPeerTransportMap(socket.id);
+          const transport = peerTransportMap.get(payload.transportId);
+
+          if (!transport)
+          {
+            return cb({ ok: false, error: "Receive transport not found." });
+          }
+
+          const producer = findProducerById(payload.producerId);
+
+          if (!producer)
+          {
+            return cb({ ok: false, error: "Producer not found." });
+          }
+
+          const canConsume = room.router.canConsume({
+            producerId: payload.producerId,
+            rtpCapabilities: payload.rtpCapabilities,
+          });
+
+          if (!canConsume)
+          {
+            return cb({ ok: false, error: "Router cannot consume this producer." });
+          }
+
+          const consumer = await transport.consume({
+            producerId: payload.producerId,
+            rtpCapabilities: payload.rtpCapabilities,
+            paused: true,
+          });
+
+          const consumerMap = getPeerConsumerMap(socket.id);
+          consumerMap.set(consumer.id, consumer);
+
+          consumer.on("transportclose", () =>
+          {
+            consumerMap.delete(consumer.id);
+          });
+
+          consumer.on("producerclose", () =>
+          {
+            consumerMap.delete(consumer.id);
+
+            socket.emit("sfu:consumerClosed", {
+              consumerId: consumer.id,
+              producerId: payload.producerId,
+            });
+
+            consumer.close();
+          });
+
+          cb({
+            ok: true,
+            consumerOptions: {
+              id: consumer.id,
+              producerId: payload.producerId,
+              kind: consumer.kind,
+              rtpParameters: consumer.rtpParameters,
+              appData: consumer.appData,
+            },
+          });
+        }
+        catch (err: any)
+        {
+          console.error("sfu:consume error.", err);
+          cb({ ok: false, error: err?.message || "Failed to consume." });
+        }
+      }
+    );
 
     socket.on("sfu:resumeConsumer", async (payload: { consumerId: string }, cb) =>
     {
@@ -299,7 +352,7 @@ export function registerSFUSignaling(io: Server): void
         }
 
         await consumer.resume();
-      
+
         cb({ ok: true });
       }
       catch (err: any)

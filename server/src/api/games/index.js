@@ -155,7 +155,7 @@ router.post("/:gameId/join", requireAuth, async (req, res) =>
 {
   try
   {
-    const { seatNumber } = req.body;
+    const { seatNumber } = req.body || {};
 
     const game = await LiveGameModel.findById(req.params.gameId).exec();
     if (!game)
@@ -183,9 +183,6 @@ router.post("/:gameId/join", requireAuth, async (req, res) =>
       return res.status(403).json({ ok: false, error: "You must join the room before joining a game seat." });
     }
 
-    const format = game.settings?.format;
-    const startingLife = getStartingLife(format);
-
     const existingSeat = game.seats?.find(
       (seat) => seat.userId?.toString() === req.user._id.toString()
     );
@@ -194,6 +191,7 @@ router.post("/:gameId/join", requireAuth, async (req, res) =>
     {
       existingSeat.connectionStatus = "connected";
       existingSeat.username = req.user.username;
+      existingSeat.lastSeenAt = new Date();
       if (!existingSeat.joinedAt) existingSeat.joinedAt = new Date();
 
       await game.save();
@@ -204,30 +202,47 @@ router.post("/:gameId/join", requireAuth, async (req, res) =>
       return res.status(200).json({ ok: true, game, alreadySeated: true });
     }
 
-    if (!seatNumber || typeof seatNumber !== "number")
+    const maxPlayers = Number(room.settings?.maxPlayers ?? 4);
+    const takenSeatNumbers = new Set(game.seats.map((seat) => seat.seatNumber));
+
+    let assignedSeatNumber = seatNumber;
+
+    if (!assignedSeatNumber)
     {
-      return res.status(400).json({ ok: false, error: "seatNumber is required." });
+      for (let i = 1; i <= maxPlayers; i += 1)
+      {
+        if (!takenSeatNumbers.has(i))
+        {
+          assignedSeatNumber = i;
+          break;
+        }
+      }
     }
 
-    const seatTaken = game.seats?.some((seat) => seat.seatNumber === seatNumber);
-    if (seatTaken)
+    if (!assignedSeatNumber)
+    {
+      return res.status(400).json({ ok: false, error: "No open seats available." });
+    }
+
+    if (takenSeatNumbers.has(assignedSeatNumber))
     {
       return res.status(400).json({ ok: false, error: "Seat is already taken." });
     }
 
+    const startingLife = getStartingLife(game.settings?.format);
+
     game.seats.push({
-      seatNumber,
+      seatNumber: assignedSeatNumber,
       userId: req.user._id,
       username: req.user.username,
       joinedAt: new Date(),
+      lastSeenAt: new Date(),
       connectionStatus: "connected",
       isReady: false,
       deck: null,
-
       stats: {
         commanderDamage: {},
         commanderCastCount: 0,
-
         life: startingLife,
         poison: 0,
         energy: 0,

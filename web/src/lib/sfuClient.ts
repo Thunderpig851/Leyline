@@ -1,4 +1,5 @@
 import * as mediasoupClient from "mediasoup-client";
+import { getStoredUsername } from "./api";
 import { socket } from "./socket";
 
 function emitAcknowledge<TRes>(event: string, payload: any): Promise<TRes>
@@ -16,10 +17,11 @@ function emitAcknowledge<TRes>(event: string, payload: any): Promise<TRes>
 export async function sfuClient(roomId: string)
 {
   const peerId = crypto.randomUUID();
+  const username = getStoredUsername() || null;
 
   const joinRes = await emitAcknowledge<{ ok: true; rtpCapabilities: any }>(
     "sfu:join",
-    { roomId, peerId }
+    { roomId, peerId, username }
   );
 
   const device = new mediasoupClient.Device();
@@ -61,7 +63,6 @@ export async function sfuClient(roomId: string)
         else errback(new Error(res?.error ?? "produce failed"));
       }
     );
-    
   });
 
   const recvTransport = device.createRecvTransport(recvRes.transportOptions);
@@ -126,12 +127,17 @@ export async function consumeTrack(
   });
 
   await emitAcknowledge("sfu:resumeConsumer", { consumerId: consumer.id });
-  console.log("resumed consumer", consumer.id, consumer.kind);
   return consumer;
 }
 
 export function onNewProducer(
-  handler: (data: { peerId: string; producerId: string; kind: "audio" | "video" }) => void
+  handler: (data: {
+    peerId: string;
+    producerId: string;
+    username?: string | null;
+    kind: "audio" | "video";
+    appData?: any;
+  }) => void
 )
 {
   socket.on("sfu:newProducer", handler);
@@ -148,7 +154,16 @@ export function onConsumerClosed(
 
 export function getExistingProducers(roomId: string)
 {
-  return emitAcknowledge<{ ok: true; producers: { producerId: string; peerId: string; kind: "audio" | "video" }[] }>(
+  return emitAcknowledge<{
+    ok: true;
+    producers: {
+      producerId: string;
+      peerId: string;
+      username?: string | null;
+      kind: "audio" | "video";
+      appData?: any;
+    }[];
+  }>(
     "sfu:getProducers",
     { roomId }
   );

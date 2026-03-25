@@ -2,19 +2,44 @@ const API_BASE =
   import.meta.env.VITE_API_URL?.replace(/\/$/, "") || "http://localhost:3001";
 
 const TOKEN_KEY = "accessToken";
+const USERNAME_KEY = "username";
+const USER_ID_KEY = "userId";
 
 export type ApiResult<T> =
   | { ok: true; data: T }
   | { ok: false; error: string; status?: number };
 
-export function setAccessToken(token: string) 
+
+export function setAuthSession(
+  token: string,
+  user: { id: string; username: string }
+)
 {
   sessionStorage.setItem(TOKEN_KEY, token);
+  sessionStorage.setItem(USERNAME_KEY, user.username);
+  sessionStorage.setItem(USER_ID_KEY, user.id);
 }
 
-export function clearAccessToken() 
+export function clearAuthSession()
 {
   sessionStorage.removeItem(TOKEN_KEY);
+  sessionStorage.removeItem(USERNAME_KEY);
+  sessionStorage.removeItem(USER_ID_KEY);
+}
+
+export function getStoredAccessToken()
+{
+  return sessionStorage.getItem(TOKEN_KEY);
+}
+
+export function getStoredUsername()
+{
+  return sessionStorage.getItem(USERNAME_KEY);
+}
+
+export function getStoredUserId()
+{
+  return sessionStorage.getItem(USER_ID_KEY);
 }
 
 export async function apiPost<T>(
@@ -25,9 +50,9 @@ export async function apiPost<T>(
 {
   try
   {
-    const token = sessionStorage.getItem("accessToken");
-    
-    const res = await fetch(`${API_BASE}${path}`, 
+    const token = getStoredAccessToken();
+
+    const res = await fetch(`${API_BASE}${path}`,
     {
       method: init?.method ?? "POST",
       headers: {
@@ -49,9 +74,10 @@ export async function apiPost<T>(
         error: json?.error || `Request failed (${res.status})`,
       };
     }
+
     return { ok: true, data: json as T };
   }
-  catch (err)
+  catch
   {
     return { ok: false, error: "Network error. Is the server running?" };
   }
@@ -64,7 +90,7 @@ export async function apiGet<T>(
 {
   try
   {
-    const token = sessionStorage.getItem("accessToken");
+    const token = getStoredAccessToken();
 
     const res = await fetch(`${API_BASE}${path}`,
     {
@@ -89,9 +115,8 @@ export async function apiGet<T>(
 
     return { ok: true, data: json as T };
   }
-  catch (err)
+  catch
   {
     return { ok: false, error: "Network error. Is the server running?" };
   }
 }
-

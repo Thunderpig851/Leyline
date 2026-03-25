@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { apiPost, setAccessToken } from "../lib/api";
+import { apiPost, setAuthSession } from "../lib/api";
 import { useNavigate } from "react-router-dom";
 
 type LoginResponse =
@@ -67,14 +67,14 @@ export default function LoginPage()
       return;
     }
     
-    setAccessToken(token);
+
+    setAuthSession(token, result.data.user!);
     setSuccessMsg("Logged in successfully!");
     navigate("/lobby");
   }
 
   return (
     <div className="min-h-screen text-slate-100 grid place-items-center px-6 bg-slate-950 relative">
-      {/* accent glow */}
       <div className="absolute inset-0 -z-10 overflow-hidden">
         <div className="absolute left-1/2 top-1/3 h-[520px] w-[520px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-emerald-500/10 blur-3xl" />
         <div className="absolute left-1/3 top-2/3 h-[520px] w-[520px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-teal-500/10 blur-3xl" />

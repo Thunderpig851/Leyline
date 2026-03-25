@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { clearAuthSession } from "../../lib/api";
 import { useEffect, useRef, useState } from "react";
 
 type MeResponse =
@@ -134,8 +135,7 @@ export default function NavBar()
                         role="menuitem"
                         onClick={() =>
                         {
-                          sessionStorage.removeItem("accessToken");
-                          setUsername(null);
+                          clearAuthSession();
                           setOpenMenu(false);
                         }}
                         className="block w-full px-4 py-2 text-left text-sm text-red-200 hover:bg-white/5"

@@ -10,6 +10,7 @@ import PlayerTile from "../components/gamepage/PlayerTile";
 type ParticipantMedia =
 {
   peerId: string;
+  username?: string | null;
   stream: MediaStream | null;
   isSelf: boolean;
   hasVideo: boolean;
@@ -76,6 +77,14 @@ export default function GamePage()
         if (!data.ok || !data.game?._id) return;
 
         setGameId(data.game._id);
+
+        const joinGameResult = await apiPost(`/api/live-games/${data.game._id}/join`, {});
+
+        if (!joinGameResult.ok)
+        {
+          console.error("Failed to join live game:", joinGameResult.error);
+          return;
+        }
 
         if (socket.connected)
         {
@@ -167,25 +176,28 @@ export default function GamePage()
     {
       byPeerId.set(mediaSession.selfPeerId, {
         peerId: mediaSession.selfPeerId,
+        username: "You",
         stream: mediaSession.localStream,
         isSelf: true,
         hasVideo: mediaSession.localStream.getVideoTracks().length > 0,
         hasAudio: mediaSession.localStream.getAudioTracks().length > 0,
       });
     }
-
+    
     for (const remote of Object.values(mediaSession.remoteMedia))
-    {
-      if (!remote.peerId) continue;
-      if (remote.peerId === mediaSession.selfPeerId) continue;
-
-      byPeerId.set(remote.peerId, {
-        peerId: remote.peerId,
-        stream: remote.stream,
-        isSelf: false,
-        hasVideo: !!remote.videoTrack,
-        hasAudio: !!remote.audioTrack,
-      });
+      {
+        if (!remote.peerId) continue;
+        if (remote.peerId === mediaSession.selfPeerId) continue;
+        
+        byPeerId.set(remote.peerId, {
+          peerId: remote.peerId,
+          username: remote.username ?? `Unknown (${remote.peerId})`,
+          stream: remote.stream,
+          isSelf: false,
+          hasVideo: !!remote.videoTrack,
+          hasAudio: !!remote.audioTrack,
+        });
+        console.log("Remote media:", remote.username);
     }
 
     return Array.from(byPeerId.values());
@@ -222,7 +234,7 @@ export default function GamePage()
                 <PlayerTile
                   key={p.peerId}
                   isSelf={p.isSelf}
-                  title={p.isSelf ? "You" : `Player ${p.peerId}`}
+                  title={p.isSelf ? "You" : (p.username || `Player ${p.peerId.slice(0, 6)}`)}
                   stream={p.stream}
                 />
               ))}

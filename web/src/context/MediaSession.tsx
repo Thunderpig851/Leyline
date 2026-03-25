@@ -16,6 +16,7 @@ import {
   onConsumerClosed,
   getExistingProducers,
 } from "../lib/sfuClient";
+import { getStoredUsername } from "../lib/api";
 import { useGameSession } from "./GameSession";
 
 type MediaStatus = "idle" | "previewing" | "connecting" | "connected" | "error";
@@ -23,6 +24,7 @@ type MediaStatus = "idle" | "previewing" | "connecting" | "connected" | "error";
 type RemoteMediaEntry =
 {
   peerId: string;
+  username?: string | null;
   audioTrack: MediaStreamTrack | null;
   videoTrack: MediaStreamTrack | null;
   stream: MediaStream | null;
@@ -165,29 +167,29 @@ export function MediaSessionProvider({ children }: { children: React.ReactNode }
   {
     try
     {
-        setError(null);
-        stopPreview();
+      setError(null);
+      stopPreview();
 
-        const stream = await navigator.mediaDevices.getUserMedia(
-        {
-            video: selectedVideoId ? { deviceId: selectedVideoId } : true,
-            audio: selectedAudioId ? { deviceId: selectedAudioId } : true,
-        });
+      const stream = await navigator.mediaDevices.getUserMedia(
+      {
+        video: selectedVideoId ? { deviceId: selectedVideoId } : true,
+        audio: selectedAudioId ? { deviceId: selectedAudioId } : true,
+      });
 
-        stream.getVideoTracks().forEach((t) => { t.enabled = camEnabled; });
-        stream.getAudioTracks().forEach((t) => { t.enabled = micEnabled; });
+      stream.getVideoTracks().forEach((t) => { t.enabled = camEnabled; });
+      stream.getAudioTracks().forEach((t) => { t.enabled = micEnabled; });
 
-        localStreamRef.current = stream;
-        setLocalStream(stream);
-        setStatus("previewing");
+      localStreamRef.current = stream;
+      setLocalStream(stream);
+      setStatus("previewing");
     }
     catch (err: unknown)
     {
-        console.error("[MediaSession] failed to start preview", err);
-        setError(err instanceof Error ? err.message : "Failed to start preview.");
-        setStatus("error");
+      console.error("[MediaSession] failed to start preview", err);
+      setError(err instanceof Error ? err.message : "Failed to start preview.");
+      setStatus("error");
     }
-  }, [selectedVideoId, selectedAudioId, stopPreview]);
+  }, [selectedVideoId, selectedAudioId, camEnabled, micEnabled, stopPreview]);
 
   useEffect(() =>
   {
@@ -204,13 +206,14 @@ export function MediaSessionProvider({ children }: { children: React.ReactNode }
 
     const videoTrack = localStreamRef.current.getVideoTracks()[0];
     const audioTrack = localStreamRef.current.getAudioTracks()[0];
+    const username = getStoredUsername() || null;
 
     if (videoTrack && !videoProducerRef.current)
     {
       videoProducerRef.current = await produceTrack(
         sendTransportRef.current,
         videoTrack,
-        { mediaTag: "cam" }
+        { mediaTag: "cam", username }
       );
     }
 
@@ -219,7 +222,7 @@ export function MediaSessionProvider({ children }: { children: React.ReactNode }
       audioProducerRef.current = await produceTrack(
         sendTransportRef.current,
         audioTrack,
-        { mediaTag: "mic" }
+        { mediaTag: "mic", username }
       );
     }
   }, []);
@@ -227,13 +230,15 @@ export function MediaSessionProvider({ children }: { children: React.ReactNode }
   const attachConsumedTrackToPeer = useCallback((
     peerId: string,
     kind: "audio" | "video",
-    track: MediaStreamTrack
+    track: MediaStreamTrack,
+    username?: string | null
   ) =>
   {
     setRemoteMedia((prev) =>
     {
       const existing = prev[peerId] ?? {
         peerId,
+        username: username ?? null,
         audioTrack: null,
         videoTrack: null,
         stream: new MediaStream(),
@@ -251,6 +256,7 @@ export function MediaSessionProvider({ children }: { children: React.ReactNode }
         ...prev,
         [peerId]: {
           ...existing,
+          username: username ?? existing.username ?? null,
           audioTrack: kind === "audio" ? track : existing.audioTrack,
           videoTrack: kind === "video" ? track : existing.videoTrack,
           stream,
@@ -364,10 +370,13 @@ export function MediaSessionProvider({ children }: { children: React.ReactNode }
       sendTransportRef.current = sendTransport;
       recvTransportRef.current = recvTransport;
 
-      newProducerCleanupRef.current = onNewProducer(async ({ peerId, producerId, kind }) =>
+      newProducerCleanupRef.current = onNewProducer(async (payload: any) =>
       {
         try
         {
+          const { peerId, producerId, kind, appData } = payload ?? {};
+
+          if (!peerId || !producerId || !kind) return;
           if (peerId === peerIdRef.current) return;
 
           const currentRoomId = roomIdRef.current;
@@ -389,7 +398,12 @@ export function MediaSessionProvider({ children }: { children: React.ReactNode }
             kind,
           });
 
-          attachConsumedTrackToPeer(peerId, kind, consumer.track);
+          attachConsumedTrackToPeer(
+            peerId,
+            kind,
+            consumer.track,
+            appData?.username ?? null
+          );
         }
         catch (err)
         {
@@ -410,11 +424,12 @@ export function MediaSessionProvider({ children }: { children: React.ReactNode }
         removeTrackFromPeer(peerId, kind, consumer.track);
       });
 
-      const existingProducers = await getExistingProducers(roomId);
+      const existingProducers: any = await getExistingProducers(roomId);
 
-      for (const { producerId, peerId, kind } of existingProducers.producers)
+      for (const { producerId, peerId, kind, appData } of existingProducers.producers ?? [])
       {
         if (peerId === peerIdRef.current) continue;
+
         try
         {
           const consumer = await consumeTrack(
@@ -430,15 +445,19 @@ export function MediaSessionProvider({ children }: { children: React.ReactNode }
             kind,
           });
 
-          attachConsumedTrackToPeer(peerId, kind, consumer.track);
+          attachConsumedTrackToPeer(
+            peerId,
+            kind,
+            consumer.track,
+            appData?.username ?? null
+          );
         }
-        catch (err)        
+        catch (err)
         {
           console.error("Failed to consume existing producer:", err);
         }
       }
 
-      
       await publishLocalTracks();
       setPlayer(peerId);
       setStatus("connected");
@@ -485,6 +504,7 @@ export function MediaSessionProvider({ children }: { children: React.ReactNode }
     deviceRef.current = null;
     peerIdRef.current = null;
     roomIdRef.current = null;
+    setSelfPeerId(null);
     setRemoteMedia({});
 
     if (status === "connected" || status === "connecting")
