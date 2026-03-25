@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useMediaSession } from "../context/MediaSession";
 import { useGameSession } from "../context/GameSession";
-import { apiPost, apiGet } from "../lib/api";
+import { apiPost, apiGet, getStoredUserId, getStoredUsername } from "../lib/api";
 import { socket } from "../lib/socket";
 import SidePanel from "../components/gamepage/SidePanel";
 import PlayerTile from "../components/gamepage/PlayerTile";
@@ -52,7 +52,7 @@ export default function GamePage()
     {
       navigate(`/rooms/${roomId}`, {
         replace: true,
-        state: { reason: "session-lost" },
+        state: { reason: "refresh-reconnect" },
       });
     }
   }, [roomId, mediaSession.status, navigate]);
@@ -69,17 +69,13 @@ export default function GamePage()
       {
         const res = await apiGet<ActiveGameResponse>(`/api/live-games/room/${roomId}`);
 
-        if (!res.ok || !res.data?.game?._id) return;
-
-        const data = res.data;
-
+        if (!res.ok || !res.data?.ok || !res.data?.game?._id) return;
         if (cancelled) return;
-        if (!data.ok || !data.game?._id) return;
 
-        setGameId(data.game._id);
+        const activeGameId = res.data.game._id;
+        setGameId(activeGameId);
 
-        const joinGameResult = await apiPost(`/api/live-games/${data.game._id}/join`, {});
-
+        const joinGameResult = await apiPost(`/api/live-games/${activeGameId}/join`, {});
         if (!joinGameResult.ok)
         {
           console.error("Failed to join live game:", joinGameResult.error);
@@ -88,8 +84,12 @@ export default function GamePage()
 
         if (socket.connected)
         {
-          socket.emit("room:join", { roomId });
-          socket.emit("live-game:join", { gameId: data.game._id });
+          socket.emit("live-game:join", {
+            gameId: activeGameId,
+            roomId,
+            userId: getStoredUserId(),
+            username: getStoredUsername(),
+          });
         }
       }
       catch (err)
@@ -105,6 +105,70 @@ export default function GamePage()
       cancelled = true;
     };
   }, [roomId, mediaSession.status]);
+
+  useEffect(() =>
+  {
+    if (!gameId || !roomId) return;
+
+    const userId = getStoredUserId();
+    const username = getStoredUsername();
+
+    function sendHeartbeat(hidden = document.visibilityState === "hidden")
+    {
+      if (!socket.connected || !userId) return;
+
+      socket.emit("live-game:heartbeat", {
+        gameId,
+        roomId,
+        userId,
+        username,
+        hidden,
+      });
+    }
+
+    function handleSocketReconnect()
+    {
+      if (!socket.connected || !userId) return;
+
+      socket.emit("live-game:join", {
+        gameId,
+        roomId,
+        userId,
+        username,
+      });
+
+      sendHeartbeat(false);
+    }
+
+    sendHeartbeat(false);
+
+    const intervalId = window.setInterval(() =>
+    {
+      sendHeartbeat();
+    }, 15000);
+
+    function handleVisibilityChange()
+    {
+      sendHeartbeat(document.visibilityState === "hidden");
+    }
+
+    function handlePageHide()
+    {
+      sendHeartbeat(true);
+    }
+
+    socket.on("connect", handleSocketReconnect);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("pagehide", handlePageHide);
+
+    return () =>
+    {
+      socket.off("connect", handleSocketReconnect);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("pagehide", handlePageHide);
+      window.clearInterval(intervalId);
+    };
+  }, [gameId, roomId]);
 
   async function handleLeaveGame()
   {
@@ -140,17 +204,18 @@ export default function GamePage()
     }
     finally
     {
-      if (socket.connected)
+      if (socket.connected && gameId && roomId)
       {
-        if (gameId)
-        {
-          socket.emit("live-game:leave", { gameId });
-        }
+        socket.emit("live-game:leave", {
+          gameId,
+          roomId,
+          userId: getStoredUserId(),
+        });
+      }
 
-        if (roomId)
-        {
-          socket.emit("room:leave", { roomId });
-        }
+      if (typeof mediaSession.disconnectFromSFU === "function")
+      {
+        mediaSession.disconnectFromSFU();
       }
 
       if (typeof mediaSession.stopPreview === "function")
@@ -165,7 +230,15 @@ export default function GamePage()
 
   if (mediaSession.status !== "connected")
   {
-    return null;
+    return (
+      <div className="min-h-screen w-screen bg-slate-950 text-slate-100">
+        <div className="flex min-h-screen items-center justify-center">
+          <div className="rounded-2xl border border-white/10 bg-slate-900/70 px-6 py-4 text-sm text-slate-300 backdrop-blur">
+            Reconnecting session...
+          </div>
+        </div>
+      </div>
+    );
   }
 
   const participants = useMemo(() =>
@@ -183,21 +256,20 @@ export default function GamePage()
         hasAudio: mediaSession.localStream.getAudioTracks().length > 0,
       });
     }
-    
+
     for (const remote of Object.values(mediaSession.remoteMedia))
-      {
-        if (!remote.peerId) continue;
-        if (remote.peerId === mediaSession.selfPeerId) continue;
-        
-        byPeerId.set(remote.peerId, {
-          peerId: remote.peerId,
-          username: remote.username ?? `Unknown (${remote.peerId})`,
-          stream: remote.stream,
-          isSelf: false,
-          hasVideo: !!remote.videoTrack,
-          hasAudio: !!remote.audioTrack,
-        });
-        console.log("Remote media:", remote.username);
+    {
+      if (!remote.peerId) continue;
+      if (remote.peerId === mediaSession.selfPeerId) continue;
+
+      byPeerId.set(remote.peerId, {
+        peerId: remote.peerId,
+        username: remote.username ?? `Unknown (${remote.peerId})`,
+        stream: remote.stream,
+        isSelf: false,
+        hasVideo: !!remote.videoTrack,
+        hasAudio: !!remote.audioTrack,
+      });
     }
 
     return Array.from(byPeerId.values());

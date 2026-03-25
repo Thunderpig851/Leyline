@@ -318,7 +318,7 @@ router.post("/:gameId/disconnect", requireAuth, async (req, res) =>
       return res.status(404).json({ ok: false, error: "Player seat not found in game." });
     }
 
-    seat.connectionStatus = "disconnected";
+    seat.connectionStatus = "reconnecting";
     seat.lastSeenAt = new Date();
 
     await game.save();
@@ -331,7 +331,7 @@ router.post("/:gameId/disconnect", requireAuth, async (req, res) =>
   catch (err)
   {
     console.error("Error disconnecting player from game:", err);
-    return res.status(500).json({ ok: false, error: err.message || "Failed to mark player disconnected." });
+    return res.status(500).json({ ok: false, error: err.message || "Failed to mark player as reconnecting." });
   }
 });
 

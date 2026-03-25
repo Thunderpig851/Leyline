@@ -37,10 +37,7 @@ router.post("/create", requireAuth, async (req, res) =>
         {
           userID: hostId,
           role: "host",
-          connectionStatus: "connected",
-          joinedAt: new Date(),
-          lastSeenAt: new Date(),
-        }
+          joinedAt: new Date(),        }
       ],
 
       settings: settings,
@@ -142,7 +139,6 @@ router.post("/:id/join", requireAuth, async (req, res) =>
 
     if (existingMember)
     {
-      existingMember.connectionStatus = "connected";
       existingMember.lastSeenAt = new Date();
 
       room.status = normalizeRoomStatus(room);
@@ -162,9 +158,7 @@ router.post("/:id/join", requireAuth, async (req, res) =>
     room.members.push({
       userID: req.user._id,
       role: "player",
-      connectionStatus: "connected",
       joinedAt: new Date(),
-      lastSeenAt: new Date(),
     });
 
     room.status = normalizeRoomStatus(room);

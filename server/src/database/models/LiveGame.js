@@ -68,6 +68,14 @@ const GameSeatSchema = new mongoose.Schema(
     default: Date.now,
   },
 
+  connectionStatus:
+  {
+    type: String,
+    enum: ["connected", "reconnecting", "away"],
+    default: "connected",
+    required: true,
+  },
+
   isReady:
   {
     type: Boolean,

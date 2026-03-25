@@ -17,8 +17,10 @@ const RoomMemberSchema = new mongoose.Schema(
 
 const RoomSettingsSchema = new mongoose.Schema(
 {
-  format: 
-  { type: String, enum: 
+  format:
+  {
+    type: String,
+    enum:
     [
       "commander",
       "standard",
@@ -28,9 +30,9 @@ const RoomSettingsSchema = new mongoose.Schema(
       "vintage",
       "pioneer",
       "historic",
-    ], 
-    default: "commander", 
-    required: true 
+    ],
+    default: "commander",
+    required: true
   },
   bracket:
   {
@@ -78,7 +80,7 @@ const RoomSchema = new mongoose.Schema(
   activeSessionID: { type: mongoose.Schema.Types.ObjectId, ref: "GameSession", default: null },
 },
 {
-  timestamps: true 
+  timestamps: true
 });
 
 RoomSchema.index({ visibility: 1, status: 1, updatedAt: -1 });

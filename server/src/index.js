@@ -5,6 +5,7 @@ const { Server } = require("socket.io");
 
 const { createApp } = require("./app");
 const { registerSFUSignaling, getWorker } = require("./sfu");
+const { registerLiveGamePresence } = require("./middleware/liveGamePresence");
 
 async function start()
 {
@@ -42,8 +43,10 @@ async function start()
       socket.on("disconnect", () => console.log("socket disconnected:", socket.id));
     });
 
-    registerSFUSignaling(io);
+    
 
+    registerSFUSignaling(io);
+    registerLiveGamePresence(io);
     app.set("io", io);
 
     server.listen(port, () =>
