@@ -145,7 +145,14 @@ export default function GamePage()
     const userId = getStoredUserId();
     const username = getStoredUsername();
 
-    function sendHeartbeat(hidden = document.visibilityState === "hidden")
+    function sendHeartbeat(
+    {
+      hidden = document.visibilityState === "hidden",
+      page = hidden ? "hidden" : "game",
+    }: {
+      hidden?: boolean;
+      page?: "game" | "room" | "hidden";
+    } = {})
     {
       if (!socket.connected || !userId) return;
 
@@ -155,6 +162,7 @@ export default function GamePage()
         userId,
         username,
         hidden,
+        page,
       });
     }
 
@@ -169,10 +177,10 @@ export default function GamePage()
         username,
       });
 
-      sendHeartbeat(false);
+      sendHeartbeat({ hidden: false, page: "game" });
     }
 
-    sendHeartbeat(false);
+    sendHeartbeat({ hidden: false, page: "game" });
 
     const intervalId = window.setInterval(() =>
     {
@@ -181,12 +189,20 @@ export default function GamePage()
 
     function handleVisibilityChange()
     {
-      sendHeartbeat(document.visibilityState === "hidden");
+      const hidden = document.visibilityState === "hidden";
+
+      sendHeartbeat({
+        hidden,
+        page: hidden ? "hidden" : "game",
+      });
     }
 
     function handlePageHide()
     {
-      sendHeartbeat(true);
+      sendHeartbeat({
+        hidden: true,
+        page: "hidden",
+      });
     }
 
     socket.on("connect", handleSocketReconnect);
@@ -195,6 +211,14 @@ export default function GamePage()
 
     return () =>
     {
+      if (socket.connected && userId)
+      {
+        sendHeartbeat({
+          hidden: false,
+          page: "room",
+        });
+      }
+
       socket.off("connect", handleSocketReconnect);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("pagehide", handlePageHide);

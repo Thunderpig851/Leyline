@@ -6,6 +6,7 @@ const livePresence = new Map();
 const DISCONNECT_GRACE_MS = 90_000;
 const AWAY_GRACE_MS = 120_000;
 const SWEEP_INTERVAL_MS = 10_000;
+const HEARTBEATS_STALE_MS = 30_000;
 
 function makeKey(gameId, userId)
 {
@@ -165,17 +166,26 @@ async function handleJoin(io, socket, payload = {})
 
 async function handleHeartbeat(io, payload = {})
 {
-  const { gameId, roomId, userId, username, hidden = false } = payload;
+  const {
+    gameId,
+    roomId,
+    userId,
+    username,
+    hidden = false,
+    page = "game",
+  } = payload;
 
   if (!gameId || !roomId || !userId) return;
 
   const entry = getOrCreateEntry({ gameId, roomId, userId, username });
-
   entry.lastHeartbeatAt = Date.now();
 
-  if (hidden)
+  const shouldBeAway = hidden || page !== "game";
+
+  if (shouldBeAway)
   {
     entry.state = "away";
+    entry.disconnectDeadlineAt = null;
     entry.awayDeadlineAt = Date.now() + AWAY_GRACE_MS;
 
     const game = await markSeatState(gameId, userId, {
@@ -263,6 +273,26 @@ async function sweep(io)
 
   for (const [key, entry] of livePresence.entries())
   {
+    const heartbeatStale =
+      now - entry.lastHeartbeatAt >= HEARTBEAT_STALE_MS;
+
+    if (entry.state === "connected" && heartbeatStale)
+    {
+      entry.state = "away";
+      entry.awayDeadlineAt = now + AWAY_GRACE_MS;
+
+      const game = await markSeatState(entry.gameId, entry.userId, {
+        connectionStatus: "away",
+        lastSeenAt: new Date(),
+        awaySinceAt: new Date(),
+        disconnectDeadlineAt: null,
+      });
+
+      if (game) emitGameUpdated(io, game);
+      emitPresenceChanged(io, entry);
+      continue;
+    }
+
     const reconnectExpired =
       entry.state === "reconnecting" &&
       entry.disconnectDeadlineAt &&
