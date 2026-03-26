@@ -110,4 +110,36 @@ router.post("/rooms/:roomId/messages", requireAuth, async (req, res) =>
   }
 });
 
+router.delete("/rooms/:roomId/messages", requireAuth, async (req, res) =>
+{
+  try
+  {
+    const { roomId } = req.params;
+    const userId = req.user._id.toString();
+
+    const room = await RoomModel.findById(roomId).exec();
+    if (!room)
+    {
+      return res.status(404).json({ ok: false, error: "Room not found." });
+    }
+
+    if (!isRoomMember(room, userId))
+    {
+      return res.status(403).json({ ok: false, error: "You must be in the room to delete chat." });
+    }
+
+    await RoomChatMessageModel.deleteMany({ roomId }).exec();
+
+    return res.status(200).json({ ok: true });
+  }
+  catch (err)
+  {
+    console.error("Error deleting room chat:", err);
+    return res.status(500).json({
+      ok: false,
+      error: err.message || "Failed to delete room chat.",
+    });
+  }
+});
+
 module.exports = router;
