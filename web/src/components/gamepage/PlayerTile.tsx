@@ -32,36 +32,6 @@ export default function PlayerTile(
     video.srcObject = stream;
   }
 
-  // const track = stream.getVideoTracks()[0];
-
-  // console.log(title, {
-  //   track: track
-  //     ? {
-  //         enabled: track.enabled,
-  //         muted: track.muted,
-  //         readyState: track.readyState,
-  //       }
-  //     : null,
-  // });
-
-  // video.onloadedmetadata = () =>
-  // {
-  //   console.log(title, "metadata", {
-  //     width: video.videoWidth,
-  //     height: video.videoHeight,
-  //     readyState: video.readyState,
-  //   });
-  // };
-
-  // video.onplaying = () =>
-  // {
-  //   console.log(title, "playing", {
-  //     width: video.videoWidth,
-  //     height: video.videoHeight,
-  //     currentTime: video.currentTime,
-  //   });
-  // };
-
   const playPromise = video.play();
   playPromise?.catch((err) =>
   {

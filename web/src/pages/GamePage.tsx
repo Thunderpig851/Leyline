@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { act, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useMediaSession } from "../context/MediaSession";
 import { useGameSession } from "../context/GameSession";
@@ -7,16 +7,6 @@ import { socket } from "../lib/socket";
 import SidePanel from "../components/gamepage/SidePanel";
 import RightSidePanel from "../components/gamepage/RightSidePanel";
 import PlayerTile from "../components/gamepage/PlayerTile";
-
-type ParticipantMedia =
-{
-  peerId: string;
-  username?: string | null;
-  stream: MediaStream | null;
-  isSelf: boolean;
-  hasVideo: boolean;
-  hasAudio: boolean;
-};
 
 type ActiveGameResponse =
 {
@@ -28,15 +18,33 @@ type ActiveGameResponse =
   error?: string;
 };
 
+type ActiveGame =
+{
+  _id: string;
+  roomId: string;
+  seats: GameSeat[];
+}
+
+type GameSeat = 
+{
+  seatNumber: number;
+  userId: string;
+  username: string;
+  connectionStatus: "connected" | "reconnecting" | "away";
+}
+
 export default function GamePage()
 {
   const [leftOpen, setLeftOpen] = useState(false);
   const [rightOpen, setRightOpen] = useState(false);
+  const [game, setGame] = useState<ActiveGame | null>(null);
   const [gameId, setGameId] = useState("");
   const [leaving, setLeaving] = useState(false);
 
   const { session, reset } = useGameSession();
   const mediaSession = useMediaSession();
+
+  
 
   const navigate = useNavigate();
   const { roomId = "" } = useParams();
@@ -73,7 +81,10 @@ export default function GamePage()
         if (!res.ok || !res.data?.ok || !res.data?.game?._id) return;
         if (cancelled) return;
 
-        const activeGameId = res.data.game._id;
+        const activeGame = res.data.game;
+        const activeGameId = activeGame._id;
+
+        setGame(activeGame);
         setGameId(activeGameId);
 
         const joinGameResult = await apiPost(`/api/live-games/${activeGameId}/join`, {});
@@ -106,6 +117,26 @@ export default function GamePage()
       cancelled = true;
     };
   }, [roomId, mediaSession.status]);
+
+  useEffect(() =>
+  {
+    if (!gameId) return;
+
+    function handleGameUpdated(payload: { game?: ActiveGame })
+    {
+      if (!payload?.game) return;
+      if (payload.game._id !== gameId) return;
+
+      setGame(payload.game);
+    }
+
+    socket.on("game:updated", handleGameUpdated);
+
+    return () =>
+    {
+      socket.off("game:updated", handleGameUpdated);
+    };
+  }, [gameId]);
 
   useEffect(() =>
   {
@@ -242,39 +273,51 @@ export default function GamePage()
     );
   }
 
-  const participants = useMemo(() =>
+  const seatSlots = useMemo(() =>
   {
-    const byPeerId = new Map<string, ParticipantMedia>();
+    const selfUserId = getStoredUserId();
 
-    if (mediaSession.selfPeerId && mediaSession.localStream)
+    const remoteByUsername = new Map(
+      Object.values(mediaSession.remoteMedia)
+        .filter((remote) => remote.username)
+        .map((remote) => [String(remote.username).toLowerCase(), remote])
+    );
+
+    const orderedSeats = [...(game?.seats ?? [])].sort(
+      (a, b) => a.seatNumber - b.seatNumber
+    );
+
+    return [1, 2, 3, 4].map((seatNumber) =>
     {
-      byPeerId.set(mediaSession.selfPeerId, {
-        peerId: mediaSession.selfPeerId,
-        username: "You",
-        stream: mediaSession.localStream,
-        isSelf: true,
-        hasVideo: mediaSession.localStream.getVideoTracks().length > 0,
-        hasAudio: mediaSession.localStream.getAudioTracks().length > 0,
-      });
-    }
+      const seat = orderedSeats.find((entry) => entry.seatNumber === seatNumber);
 
-    for (const remote of Object.values(mediaSession.remoteMedia))
-    {
-      if (!remote.peerId) continue;
-      if (remote.peerId === mediaSession.selfPeerId) continue;
+      if (!seat)
+      {
+        return {
+          seatNumber,
+          title: `Seat ${seatNumber} · Open`,
+          stream: null,
+          isSelf: false,
+          status: "empty",
+        };
+      }
 
-      byPeerId.set(remote.peerId, {
-        peerId: remote.peerId,
-        username: remote.username ?? `Unknown (${remote.peerId})`,
-        stream: remote.stream,
-        isSelf: false,
-        hasVideo: !!remote.videoTrack,
-        hasAudio: !!remote.audioTrack,
-      });
-    }
+      const isSelf = seat.userId === selfUserId;
 
-    return Array.from(byPeerId.values());
-  }, [mediaSession.selfPeerId, mediaSession.localStream, mediaSession.remoteMedia]);
+      const remote =
+        !isSelf
+          ? remoteByUsername.get(seat.username.toLowerCase()) ?? null
+          : null;
+
+      return {
+        seatNumber,
+        title: isSelf ? `You` : `${seat.username}`,
+        stream: isSelf ? mediaSession.localStream : remote?.stream ?? null,
+        isSelf,
+        status: seat.connectionStatus,
+      };
+    });
+  }, [game, mediaSession.localStream, mediaSession.remoteMedia]);
 
   return (
     <div className="min-h-screen w-screen overflow-x-hidden bg-slate-950 text-slate-100">
@@ -283,9 +326,8 @@ export default function GamePage()
           <div className="min-w-0">
             <div className="text-sm font-semibold tracking-tight" />
             <div className="mt-0.5 truncate text-xs text-slate-400">
-              Room: <span className="text-slate-200">{session.roomTitle || "Placeholder Room"}</span>{" "}
+              <span className="text-slate-200">{session.roomTitle || "Placeholder Room"}</span>{" "}
               <span className="text-slate-600">·</span>{" "}
-              Turn: <span className="text-slate-200">1</span>
               <button
                 type="button"
                 onClick={() => { void handleLeaveGame(); }}
@@ -303,12 +345,12 @@ export default function GamePage()
         <main className="h-full w-full px-6 py-6">
           <div className="grid h-full grid-rows-[minmax(0,1fr)_auto] gap-4">
             <div className="grid min-h-0 grid-cols-2 grid-rows-2 gap-4">
-              {participants.map((p) => (
+              {seatSlots.map((slot) => (
                 <PlayerTile
-                  key={p.peerId}
-                  isSelf={p.isSelf}
-                  title={p.isSelf ? "You" : (p.username || `Player ${p.peerId.slice(0, 6)}`)}
-                  stream={p.stream}
+                  key={slot.seatNumber}
+                  isSelf={slot.isSelf}
+                  title={slot.title}
+                  stream={slot.stream}
                 />
               ))}
             </div>
