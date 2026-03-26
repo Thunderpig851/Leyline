@@ -6,7 +6,7 @@ const livePresence = new Map();
 const DISCONNECT_GRACE_MS = 90_000;
 const AWAY_GRACE_MS = 120_000;
 const SWEEP_INTERVAL_MS = 10_000;
-const HEARTBEATS_STALE_MS = 30_000;
+const HEARTBEAT_STALE_MS = 30_000;
 
 function makeKey(gameId, userId)
 {

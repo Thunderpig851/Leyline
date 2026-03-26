@@ -43,6 +43,105 @@ function emitGameEnded(io, game)
   });
 }
 
+function clampCounter(value, min, max)
+{
+  const numeric = Number(value);
+
+  if (!Number.isFinite(numeric))
+  {
+    return min;
+  }
+
+  return Math.max(min, Math.min(max, Math.round(numeric)));
+}
+
+function sanitizeCommanderEntry(raw)
+{
+  if (!raw) return null;
+
+  if (typeof raw === "string")
+  {
+    const name = raw.trim().slice(0, 120);
+    return name ? { name } : null;
+  }
+
+  if (typeof raw === "object")
+  {
+    const name = typeof raw.name === "string"
+      ? raw.name.trim().slice(0, 120)
+      : "";
+
+    return name ? { name } : null;
+  }
+
+  return null;
+}
+
+function sanitizeCommanders(raw)
+{
+  let source = [];
+
+  if (Array.isArray(raw))
+  {
+    source = raw;
+  }
+  else if (raw)
+  {
+    source = [raw];
+  }
+
+  const normalized = [];
+  const seen = new Set();
+
+  for (const entry of source)
+  {
+    const commander = sanitizeCommanderEntry(entry);
+    if (!commander) continue;
+
+    const key = commander.name.toLowerCase();
+    if (seen.has(key)) continue;
+
+    seen.add(key);
+    normalized.push(commander);
+
+    if (normalized.length >= 2)
+    {
+      break;
+    }
+  }
+
+  return normalized;
+}
+
+function sanitizeCommanderDamageMap(rawValue, game, seat)
+{
+  if (!rawValue || typeof rawValue !== "object" || Array.isArray(rawValue))
+  {
+    return {};
+  }
+
+  const validOpponentIds = new Set(
+    game.seats
+      .filter((entry) => entry.userId?.toString() !== seat.userId?.toString())
+      .map((entry) => entry.userId?.toString())
+      .filter(Boolean)
+  );
+
+  const sanitized = {};
+
+  for (const [userId, value] of Object.entries(rawValue))
+  {
+    if (!validOpponentIds.has(userId))
+    {
+      continue;
+    }
+
+    sanitized[userId] = clampCounter(value, 0, 99);
+  }
+
+  return sanitized;
+}
+
 router.get("/room/:roomId", requireAuth, async (req, res) =>
 {
   try
@@ -125,11 +224,10 @@ router.post("/start", requireAuth, async (req, res) =>
           connectionStatus: "connected",
           isReady: false,
           deck: null,
-
+          commanders: [],
           stats: {
             commanderDamage: {},
             commanderCastCount: 0,
-
             life: startingLife,
             poison: 0,
             energy: 0,
@@ -240,6 +338,7 @@ router.post("/:gameId/join", requireAuth, async (req, res) =>
       connectionStatus: "connected",
       isReady: false,
       deck: null,
+      commanders: [],
       stats: {
         commanderDamage: {},
         commanderCastCount: 0,
@@ -369,6 +468,84 @@ router.post("/:gameId/reconnect", requireAuth, async (req, res) =>
   {
     console.error("Error reconnecting player to game:", err);
     return res.status(500).json({ ok: false, error: err.message || "Failed to mark player connected." });
+  }
+});
+
+router.post("/:gameId/seats/:seatNumber/state", requireAuth, async (req, res) =>
+{
+  try
+  {
+    const game = await LiveGameModel.findById(req.params.gameId).exec();
+    if (!game)
+    {
+      return res.status(404).json({ ok: false, error: "Game not found." });
+    }
+
+    const requesterSeat = game.seats.find(
+      (entry) => entry.userId?.toString() === req.user._id.toString()
+    );
+
+    if (!requesterSeat)
+    {
+      return res.status(403).json({ ok: false, error: "You must be seated in the game to update player state." });
+    }
+
+    const seatNumber = Number(req.params.seatNumber);
+
+    if (requesterSeat.seatNumber !== seatNumber)
+    {
+      return res.status(403).json({ ok: false, error: "You can only update your own seat state." });
+    }
+
+    const seat = game.seats.find((entry) => entry.seatNumber === seatNumber);
+
+    if (!seat)
+    {
+      return res.status(404).json({ ok: false, error: "Target seat not found." });
+    }
+
+    if (!seat.stats)
+    {
+      seat.stats = {};
+    }
+
+    const { life, poison, commanderDamage, commanders, commander } = req.body || {};
+
+    if (life !== undefined)
+    {
+      seat.stats.life = clampCounter(life, 0, 999);
+    }
+
+    if (poison !== undefined)
+    {
+      seat.stats.poison = clampCounter(poison, 0, 99);
+    }
+
+    if (commanderDamage !== undefined)
+    {
+      seat.stats.commanderDamage = sanitizeCommanderDamageMap(commanderDamage, game, seat);
+    }
+
+    if (commanders !== undefined)
+    {
+      seat.commanders = sanitizeCommanders(commanders);
+    }
+    else if (commander !== undefined)
+    {
+      seat.commanders = sanitizeCommanders(commander);
+    }
+
+    await game.save();
+
+    const io = req.app.get("io");
+    emitGameUpdated(io, game);
+
+    return res.status(200).json({ ok: true, game });
+  }
+  catch (err)
+  {
+    console.error("Error updating player state:", err);
+    return res.status(500).json({ ok: false, error: err.message || "Failed to update player state." });
   }
 });
 

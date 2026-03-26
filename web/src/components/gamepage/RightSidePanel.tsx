@@ -239,18 +239,18 @@ function CardSearchWidget({
       </div>
 
       <form onSubmit={onSubmit} className="border-b border-white/10 p-4">
-        <div className="flex gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row">
           <input
             type="text"
             value={value}
             onChange={(e) => onChange(e.target.value)}
             placeholder='Try "sol ring", "t:dragon mv<=4", or "o:draw c:u"'
-            className="h-12 flex-1 rounded-2xl border border-white/10 bg-slate-900/80 px-4 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-teal-300/40 focus:bg-slate-900"
+            className="h-12 min-w-0 w-full flex-1 rounded-2xl border border-white/10 bg-slate-900/80 px-4 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-teal-300/40 focus:bg-slate-900"
           />
           <button
             type="submit"
             disabled={loading}
-            className="inline-flex h-12 items-center gap-2 rounded-2xl border border-teal-300/30 bg-teal-400/15 px-5 text-sm font-semibold text-teal-100 transition hover:border-teal-200 hover:bg-teal-300 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex h-12 w-full shrink-0 items-center justify-center gap-2 rounded-2xl border border-teal-300/30 bg-teal-400/15 px-5 text-sm font-semibold text-teal-100 transition hover:border-teal-200 hover:bg-teal-300 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
           >
             <Search size={14} />
             {loading ? "Searching..." : "Search"}
@@ -319,14 +319,17 @@ function ScryfallImageCard({ card }: { card: ScryfallCard })
           className="h-full w-full object-contain transition duration-200 group-hover:scale-[1.015]"
         />
 
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-between bg-gradient-to-t from-black/80 via-black/35 to-transparent px-4 py-3">
-          <div className="min-w-0 pr-3 text-sm font-semibold text-white">
-            <span className="block truncate">{card.name}</span>
-          </div>
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/35 to-transparent p-4">
+          <div className="flex items-end justify-between gap-3">
+            <div className="min-w-0">
+              <div className="truncate text-sm font-semibold text-slate-100">
+                {card.name}
+              </div>
+            </div>
 
-          <div className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-white/15 bg-black/35 px-2 py-1 text-[11px] font-medium text-slate-100">
-            Open
-            <ExternalLink size={12} />
+            <div className="rounded-full border border-white/15 bg-black/35 p-2 text-slate-200">
+              <ExternalLink size={14} />
+            </div>
           </div>
         </div>
       </div>

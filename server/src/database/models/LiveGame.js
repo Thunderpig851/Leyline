@@ -25,6 +25,18 @@ const GameSettingsSchema = new mongoose.Schema(
 { _id: false }
 );
 
+const CommanderCardSchema = new mongoose.Schema(
+{
+  name:
+  {
+    type: String,
+    trim: true,
+    default: "",
+  },
+},
+{ _id: false }
+);
+
 const GameStatsSchema = new mongoose.Schema(
 {
   commanderDamage: { type: Map, of: Number, default: {} },
@@ -89,6 +101,27 @@ const GameSeatSchema = new mongoose.Schema(
     default: null,
   },
 
+  commanders:
+  {
+    type: [CommanderCardSchema],
+    default: [],
+    validate:
+    {
+      validator: function(commanders)
+      {
+        if (!Array.isArray(commanders)) return false;
+        if (commanders.length > 2) return false;
+
+        const names = commanders
+          .map((entry) => entry?.name?.trim().toLowerCase())
+          .filter(Boolean);
+
+        return new Set(names).size === names.length;
+      },
+      message: "Commanders must be unique and limited to 2.",
+    },
+  },
+
   stats:
   {
     type: GameStatsSchema,
@@ -106,6 +139,7 @@ const GameSeatSchema = new mongoose.Schema(
     type: Date,
     default: Date.now,
   },
+
   disconnectDeadlineAt:
   {
     type: Date,

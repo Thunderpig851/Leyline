@@ -1,36 +1,101 @@
-import { act, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useMediaSession } from "../context/MediaSession";
 import { useGameSession } from "../context/GameSession";
-import { apiPost, apiGet, getStoredUserId, getStoredUsername } from "../lib/api";
+import { apiGet, apiPost, getStoredUserId, getStoredUsername } from "../lib/api";
 import { socket } from "../lib/socket";
 import SidePanel from "../components/gamepage/SidePanel";
 import RightSidePanel from "../components/gamepage/RightSidePanel";
 import PlayerTile from "../components/gamepage/PlayerTile";
+import CommanderPanel from "../components/gamepage/CommanderPanel";
 
-type ActiveGameResponse =
+type CommanderCard =
 {
-  ok: boolean;
-  game?: {
-    _id: string;
-    roomId: string;
-  };
-  error?: string;
+  name: string;
+};
+
+type GameStats =
+{
+  commanderDamage?: Record<string, number>;
+  commanderCastCount?: number;
+  life?: number;
+  poison?: number;
+  energy?: number;
+  experience?: number;
+};
+
+type GameSeat =
+{
+  seatNumber: number;
+  userId: string;
+  username: string;
+  connectionStatus: "connected" | "reconnecting" | "away";
+  commanders?: CommanderCard[] | null;
+  commander?: CommanderCard | null;
+  stats?: GameStats | null;
 };
 
 type ActiveGame =
 {
   _id: string;
   roomId: string;
+  settings?: {
+    format?: string;
+  };
   seats: GameSeat[];
+};
+
+type ActiveGameResponse =
+{
+  ok: boolean;
+  game?: ActiveGame;
+  error?: string;
+};
+
+type SeatStateResponse =
+{
+  ok: boolean;
+  game?: ActiveGame;
+  error?: string;
+};
+
+type CommanderDamageOption =
+{
+  userId: string;
+  label: string;
+  amount: number;
+};
+
+function clampCounter(value: number, min: number, max: number)
+{
+  if (!Number.isFinite(value))
+  {
+    return min;
+  }
+
+  return Math.max(min, Math.min(max, Math.round(value)));
 }
 
-type GameSeat = 
+function getStartingLife(format?: string)
 {
-  seatNumber: number;
-  userId: string;
-  username: string;
-  connectionStatus: "connected" | "reconnecting" | "away";
+  return format === "commander" ? 40 : 20;
+}
+
+function getSeatCommanders(seat?: GameSeat | null)
+{
+  if (!seat) return [];
+
+  if (Array.isArray(seat.commanders) && seat.commanders.length > 0)
+  {
+    return seat.commanders;
+  }
+
+  if (seat.commander?.name)
+  {
+    return [seat.commander];
+  }
+
+  return [];
 }
 
 export default function GamePage()
@@ -40,11 +105,12 @@ export default function GamePage()
   const [game, setGame] = useState<ActiveGame | null>(null);
   const [gameId, setGameId] = useState("");
   const [leaving, setLeaving] = useState(false);
+  const [savingSeatNumbers, setSavingSeatNumbers] = useState<number[]>([]);
+  const [commanderPanelOpen, setCommanderPanelOpen] = useState(false);
+  const [commanderPanelSeatNumber, setCommanderPanelSeatNumber] = useState<number | null>(null);
 
   const { session, reset } = useGameSession();
   const mediaSession = useMediaSession();
-
-  
 
   const navigate = useNavigate();
   const { roomId = "" } = useParams();
@@ -59,7 +125,8 @@ export default function GamePage()
 
     if (mediaSession.status !== "connected")
     {
-      navigate(`/rooms/${roomId}`, {
+      navigate(`/rooms/${roomId}`,
+      {
         replace: true,
         state: { reason: "refresh-reconnect" },
       });
@@ -96,7 +163,8 @@ export default function GamePage()
 
         if (socket.connected)
         {
-          socket.emit("live-game:join", {
+          socket.emit("live-game:join",
+          {
             gameId: activeGameId,
             roomId,
             userId: getStoredUserId(),
@@ -156,7 +224,8 @@ export default function GamePage()
     {
       if (!socket.connected || !userId) return;
 
-      socket.emit("live-game:heartbeat", {
+      socket.emit("live-game:heartbeat",
+      {
         gameId,
         roomId,
         userId,
@@ -170,7 +239,8 @@ export default function GamePage()
     {
       if (!socket.connected || !userId) return;
 
-      socket.emit("live-game:join", {
+      socket.emit("live-game:join",
+      {
         gameId,
         roomId,
         userId,
@@ -226,6 +296,103 @@ export default function GamePage()
     };
   }, [gameId, roomId]);
 
+  function setSeatSaving(seatNumber: number, isSaving: boolean)
+  {
+    setSavingSeatNumbers((current) =>
+    {
+      if (isSaving)
+      {
+        return current.includes(seatNumber) ? current : [...current, seatNumber];
+      }
+
+      return current.filter((value) => value !== seatNumber);
+    });
+  }
+
+  async function updateSeatState(
+    seatNumber: number,
+    payload: {
+      life?: number;
+      poison?: number;
+      commanderDamage?: Record<string, number>;
+      commanders?: CommanderCard[];
+    }
+  )
+  {
+    if (!gameId) return;
+
+    setSeatSaving(seatNumber, true);
+
+    try
+    {
+      const res = await apiPost<SeatStateResponse>(
+        `/api/live-games/${gameId}/seats/${seatNumber}/state`,
+        payload
+      );
+
+      if (!res.ok)
+      {
+        console.error("Failed to update seat state:", res.error);
+        return;
+      }
+
+      if (res.data?.ok && res.data.game)
+      {
+        setGame(res.data.game);
+      }
+    }
+    catch (err)
+    {
+      console.error("Failed to update seat state:", err);
+    }
+    finally
+    {
+      setSeatSaving(seatNumber, false);
+    }
+  }
+
+  async function handleCommandersChange(
+    seatNumber: number,
+    nextCommanders: CommanderCard[]
+  )
+  {
+    await updateSeatState(seatNumber, { commanders: nextCommanders });
+  }
+
+  async function handleLifeChange(seatNumber: number, nextLife: number)
+  {
+    await updateSeatState(seatNumber,
+    {
+      life: clampCounter(nextLife, 0, 999),
+    });
+  }
+
+  async function handlePoisonChange(seatNumber: number, nextPoison: number)
+  {
+    await updateSeatState(seatNumber,
+    {
+      poison: clampCounter(nextPoison, 0, 99),
+    });
+  }
+
+  async function handleCommanderDamageChange(
+    seatNumber: number,
+    nextCommanderDamage: Record<string, number>
+  )
+  {
+    const sanitized: Record<string, number> = {};
+
+    for (const [userId, value] of Object.entries(nextCommanderDamage))
+    {
+      sanitized[userId] = clampCounter(value, 0, 99);
+    }
+
+    await updateSeatState(seatNumber,
+    {
+      commanderDamage: sanitized,
+    });
+  }
+
   async function handleLeaveGame()
   {
     if (leaving) return;
@@ -262,7 +429,8 @@ export default function GamePage()
     {
       if (socket.connected && gameId && roomId)
       {
-        socket.emit("live-game:leave", {
+        socket.emit("live-game:leave",
+        {
           gameId,
           roomId,
           userId: getStoredUserId(),
@@ -284,19 +452,6 @@ export default function GamePage()
     }
   }
 
-  if (mediaSession.status !== "connected")
-  {
-    return (
-      <div className="min-h-screen w-screen bg-slate-950 text-slate-100">
-        <div className="flex min-h-screen items-center justify-center">
-          <div className="rounded-2xl border border-white/10 bg-slate-900/70 px-6 py-4 text-sm text-slate-300 backdrop-blur">
-            Reconnecting session...
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   const seatSlots = useMemo(() =>
   {
     const selfUserId = getStoredUserId();
@@ -311,6 +466,8 @@ export default function GamePage()
       (a, b) => a.seatNumber - b.seatNumber
     );
 
+    const defaultLife = getStartingLife(game?.settings?.format);
+
     return [1, 2, 3, 4].map((seatNumber) =>
     {
       const seat = orderedSeats.find((entry) => entry.seatNumber === seatNumber);
@@ -322,7 +479,12 @@ export default function GamePage()
           title: `Seat ${seatNumber} · Open`,
           stream: null,
           isSelf: false,
-          status: "empty",
+          status: "empty" as const,
+          life: defaultLife,
+          poison: 0,
+          commanders: [] as CommanderCard[],
+          commanderDamageOptions: [] as CommanderDamageOption[],
+          isSaving: false,
         };
       }
 
@@ -333,15 +495,49 @@ export default function GamePage()
           ? remoteByUsername.get(seat.username.toLowerCase()) ?? null
           : null;
 
+      const commanderDamageMap = seat.stats?.commanderDamage ?? {};
+
+      const commanderDamageOptions: CommanderDamageOption[] = orderedSeats
+        .filter((entry) => entry.userId !== seat.userId)
+        .map((entry) => ({
+          userId: entry.userId,
+          label: getSeatCommanders(entry).map((card) => card.name).join(" / ") || entry.username,
+          amount: commanderDamageMap[entry.userId] ?? 0,
+        }));
+
       return {
         seatNumber,
-        title: isSelf ? `You` : `${seat.username}`,
+        title: isSelf ? "You" : seat.username,
         stream: isSelf ? mediaSession.localStream : remote?.stream ?? null,
         isSelf,
         status: seat.connectionStatus,
+        life: seat.stats?.life ?? defaultLife,
+        poison: seat.stats?.poison ?? 0,
+        commanders: getSeatCommanders(seat),
+        commanderDamageOptions,
+        isSaving: savingSeatNumbers.includes(seatNumber),
       };
     });
-  }, [game, mediaSession.localStream, mediaSession.remoteMedia]);
+  }, [game, mediaSession.localStream, mediaSession.remoteMedia, savingSeatNumbers]);
+
+  const activeCommanderSeat = useMemo(() =>
+  {
+    if (commanderPanelSeatNumber == null) return null;
+    return seatSlots.find((slot) => slot.seatNumber === commanderPanelSeatNumber) || null;
+  }, [seatSlots, commanderPanelSeatNumber]);
+
+  if (mediaSession.status !== "connected")
+  {
+    return (
+      <div className="min-h-screen w-screen bg-slate-950 text-slate-100">
+        <div className="flex min-h-screen items-center justify-center">
+          <div className="rounded-2xl border border-white/10 bg-slate-900/70 px-6 py-4 text-sm text-slate-300 backdrop-blur">
+            Reconnecting session...
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen w-screen overflow-x-hidden bg-slate-950 text-slate-100">
@@ -375,23 +571,75 @@ export default function GamePage()
                   isSelf={slot.isSelf}
                   title={slot.title}
                   stream={slot.stream}
+                  status={slot.status}
+                  life={slot.life}
+                  poison={slot.poison}
+                  commanders={slot.commanders}
+                  commanderDamageOptions={slot.commanderDamageOptions}
+                  isSaving={slot.isSaving}
+                  onLifeChange={
+                    slot.isSelf
+                      ? (nextLife) => { void handleLifeChange(slot.seatNumber, nextLife); }
+                      : undefined
+                  }
+                  onPoisonChange={
+                    slot.isSelf
+                      ? (nextPoison) => { void handlePoisonChange(slot.seatNumber, nextPoison); }
+                      : undefined
+                  }
+                  onCommanderDamageChange={
+                    slot.isSelf
+                      ? (nextCommanderDamage) =>
+                        {
+                          void handleCommanderDamageChange(slot.seatNumber, nextCommanderDamage);
+                        }
+                      : undefined
+                  }
+                  onOpenCommanderPanel={
+                    slot.isSelf
+                      ? () =>
+                        {
+                          setCommanderPanelSeatNumber(slot.seatNumber);
+                          setCommanderPanelOpen(true);
+                        }
+                      : undefined
+                  }
                 />
               ))}
             </div>
           </div>
         </main>
 
+        <CommanderPanel
+          open={commanderPanelOpen}
+          seatTitle={activeCommanderSeat?.title || "You"}
+          commanders={activeCommanderSeat?.commanders || []}
+          canEdit={Boolean(activeCommanderSeat?.isSelf)}
+          onClose={() =>
+          {
+            setCommanderPanelOpen(false);
+            setCommanderPanelSeatNumber(null);
+          }}
+          onChange={(nextCommanders) =>
+          {
+            if (commanderPanelSeatNumber != null)
+            {
+              void handleCommandersChange(commanderPanelSeatNumber, nextCommanders);
+            }
+          }}
+        />
+
         <SidePanel
           side="left"
           open={leftOpen}
           title="Left Panel"
           description="Placeholder for chat, card log, notifications."
-          onToggle={() => setLeftOpen((v) => !v)}
+          onToggle={() => setLeftOpen((value) => !value)}
         />
 
         <RightSidePanel
           open={rightOpen}
-          onToggle={() => setRightOpen((v) => !v)}
+          onToggle={() => setRightOpen((value) => !value)}
           roomId={roomId}
         />
       </div>
