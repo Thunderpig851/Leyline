@@ -189,7 +189,7 @@ export function MediaSessionProvider({ children }: { children: React.ReactNode }
       setError(err instanceof Error ? err.message : "Failed to start preview.");
       setStatus("error");
     }
-  }, [selectedVideoId, selectedAudioId, camEnabled, micEnabled, stopPreview]);
+  }, [selectedVideoId, selectedAudioId, stopPreview]);
 
   useEffect(() =>
   {

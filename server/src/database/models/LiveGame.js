@@ -179,6 +179,26 @@ const LiveGameSchema = new mongoose.Schema(
     default: () => ({})
   },
 
+  boardOrder:
+  {
+    type: [Number],
+    default: () => [1, 2, 3, 4],
+    validate:
+    {
+      validator: function(boardOrder)
+      {
+        if (!Array.isArray(boardOrder)) return false;
+        if (boardOrder.length !== 4) return false;
+
+        const values = boardOrder.map((value) => Number(value));
+        const valid = values.every((value) => Number.isInteger(value) && value >= 1 && value <= 4);
+
+        return valid && new Set(values).size === 4;
+      },
+      message: "boardOrder must contain each seat number from 1 to 4 exactly once.",
+    },
+  },
+
   seats:
   {
     type: [GameSeatSchema],

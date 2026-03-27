@@ -80,7 +80,6 @@ async function fetchNamedCard(name: string): Promise<ScryfallCard | null>
 export default function CommanderPanel(
 {
   open,
-  seatTitle = "You",
   commanders,
   canEdit = false,
   onClose,
@@ -279,9 +278,6 @@ export default function CommanderPanel(
           <div>
             <div className="text-sm font-semibold text-slate-100">
               Commander Search
-            </div>
-            <div className="mt-0.5 text-xs text-slate-400">
-              {seatTitle} · choose one commander or a partner pair
             </div>
           </div>
 

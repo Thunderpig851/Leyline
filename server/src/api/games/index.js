@@ -43,6 +43,21 @@ function emitGameEnded(io, game)
   });
 }
 
+function emitBoardOrderRandomized(io, game)
+{
+  io.to(`live-game:${game._id}`).emit("game:player-order-randomized", {
+    gameId: game._id,
+    roomId: game.roomId,
+    boardOrder: game.boardOrder,
+  });
+
+  io.to(`room:${game.roomId}`).emit("game:player-order-randomized", {
+    gameId: game._id,
+    roomId: game.roomId,
+    boardOrder: game.boardOrder,
+  });
+}
+
 function clampCounter(value, min, max)
 {
   const numeric = Number(value);
@@ -142,6 +157,62 @@ function sanitizeCommanderDamageMap(rawValue, game, seat)
   return sanitized;
 }
 
+function normalizeBoardOrder(game)
+{
+  const defaultOrder = [1, 2, 3, 4];
+  const occupiedSeatNumbers = new Set(
+    (Array.isArray(game?.seats) ? game.seats : [])
+      .map((seat) => Number(seat?.seatNumber))
+      .filter((value) => Number.isInteger(value) && value >= 1 && value <= 4)
+  );
+
+  const baseOrderSource = Array.isArray(game?.boardOrder) && game.boardOrder.length > 0
+    ? game.boardOrder
+    : defaultOrder;
+
+  const baseOrder = [];
+
+  for (const value of baseOrderSource)
+  {
+    const seatNumber = Number(value);
+    if (!Number.isInteger(seatNumber) || seatNumber < 1 || seatNumber > 4) continue;
+    if (baseOrder.includes(seatNumber)) continue;
+    baseOrder.push(seatNumber);
+  }
+
+  for (const seatNumber of defaultOrder)
+  {
+    if (!baseOrder.includes(seatNumber))
+    {
+      baseOrder.push(seatNumber);
+    }
+  }
+
+  const occupied = baseOrder.filter((seatNumber) => occupiedSeatNumbers.has(seatNumber));
+  const empty = baseOrder.filter((seatNumber) => !occupiedSeatNumbers.has(seatNumber));
+
+  return [...occupied, ...empty];
+}
+
+function syncBoardOrder(game)
+{
+  game.boardOrder = normalizeBoardOrder(game);
+  return game.boardOrder;
+}
+
+function shuffleSeatNumbers(values)
+{
+  const next = [...values];
+
+  for (let i = next.length - 1; i > 0; i -= 1)
+  {
+    const j = Math.floor(Math.random() * (i + 1));
+    [next[i], next[j]] = [next[j], next[i]];
+  }
+
+  return next;
+}
+
 router.get("/room/:roomId", requireAuth, async (req, res) =>
 {
   try
@@ -155,6 +226,8 @@ router.get("/room/:roomId", requireAuth, async (req, res) =>
     {
       return res.status(404).json({ ok: false, error: "No active game found for this room." });
     }
+
+    syncBoardOrder(game);
 
     return res.status(200).json({ ok: true, game });
   }
@@ -198,6 +271,7 @@ router.post("/start", requireAuth, async (req, res) =>
 
     if (existingGame)
     {
+      syncBoardOrder(existingGame);
       return res.status(200).json({ ok: true, game: existingGame, alreadyActive: true });
     }
 
@@ -214,6 +288,8 @@ router.post("/start", requireAuth, async (req, res) =>
         trackInitiative: false,
         trackExperience: false,
       },
+
+      boardOrder: [1, 2, 3, 4],
 
       seats: [
         {
@@ -236,6 +312,9 @@ router.post("/start", requireAuth, async (req, res) =>
         }
       ]
     });
+
+    syncBoardOrder(game);
+    await game.save();
 
     const io = req.app.get("io");
     emitGameStarted(io, game);
@@ -292,6 +371,7 @@ router.post("/:gameId/join", requireAuth, async (req, res) =>
       existingSeat.lastSeenAt = new Date();
       if (!existingSeat.joinedAt) existingSeat.joinedAt = new Date();
 
+      syncBoardOrder(game);
       await game.save();
 
       const io = req.app.get("io");
@@ -349,6 +429,7 @@ router.post("/:gameId/join", requireAuth, async (req, res) =>
       }
     });
 
+    syncBoardOrder(game);
     await game.save();
 
     const io = req.app.get("io");
@@ -384,6 +465,7 @@ router.post("/:gameId/leave", requireAuth, async (req, res) =>
 
     game.seats.splice(seatIndex, 1);
 
+    syncBoardOrder(game);
     await game.save();
 
     const io = req.app.get("io");
@@ -546,6 +628,65 @@ router.post("/:gameId/seats/:seatNumber/state", requireAuth, async (req, res) =>
   {
     console.error("Error updating player state:", err);
     return res.status(500).json({ ok: false, error: err.message || "Failed to update player state." });
+  }
+});
+
+router.post("/:gameId/randomize-player-order", requireAuth, async (req, res) =>
+{
+  try
+  {
+    const game = await LiveGameModel.findById(req.params.gameId).exec();
+    if (!game)
+    {
+      return res.status(404).json({ ok: false, error: "Game not found." });
+    }
+
+    if (game.status !== "active")
+    {
+      return res.status(400).json({ ok: false, error: "Game is not active." });
+    }
+
+    const room = await RoomModel.findById(game.roomId).exec();
+    if (!room)
+    {
+      return res.status(404).json({ ok: false, error: "Room not found for game." });
+    }
+
+    if (room.hostID.toString() !== req.user._id.toString())
+    {
+      return res.status(403).json({ ok: false, error: "Only the room host can randomize player order." });
+    }
+
+    const normalizedBoardOrder = normalizeBoardOrder(game);
+    const occupiedSeatNumbers = normalizedBoardOrder.filter((seatNumber) =>
+      game.seats.some((seat) => Number(seat.seatNumber) === Number(seatNumber))
+    );
+
+    if (occupiedSeatNumbers.length < 2)
+    {
+      syncBoardOrder(game);
+      await game.save();
+      return res.status(200).json({ ok: true, game, unchanged: true });
+    }
+
+    const shuffledOccupied = shuffleSeatNumbers(occupiedSeatNumbers);
+    const emptySeatNumbers = normalizedBoardOrder.filter(
+      (seatNumber) => !occupiedSeatNumbers.includes(seatNumber)
+    );
+
+    game.boardOrder = [...shuffledOccupied, ...emptySeatNumbers];
+    await game.save();
+
+    const io = req.app.get("io");
+    emitBoardOrderRandomized(io, game);
+    emitGameUpdated(io, game);
+
+    return res.status(200).json({ ok: true, game });
+  }
+  catch (err)
+  {
+    console.error("Error randomizing player order:", err);
+    return res.status(500).json({ ok: false, error: err.message || "Failed to randomize player order." });
   }
 });
 

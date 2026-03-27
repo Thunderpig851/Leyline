@@ -1,13 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { DoorOpen } from "lucide-react";
 import { useMediaSession } from "../context/MediaSession";
 import { useGameSession } from "../context/GameSession";
 import { apiGet, apiPost, getStoredUserId, getStoredUsername } from "../lib/api";
 import { socket } from "../lib/socket";
-import SidePanel from "../components/gamepage/SidePanel";
+import LeftSidePanel from "../components/gamepage/LeftSidePanel";
 import RightSidePanel from "../components/gamepage/RightSidePanel";
 import PlayerTile from "../components/gamepage/PlayerTile";
 import CommanderPanel from "../components/gamepage/CommanderPanel";
+import PlayerOrderShuffleOverlay from "../components/gamepage/PlayerOrderShuffleOverlay";
 
 type CommanderCard =
 {
@@ -39,16 +41,43 @@ type ActiveGame =
 {
   _id: string;
   roomId: string;
+  boardOrder?: number[];
   settings?: {
     format?: string;
   };
   seats: GameSeat[];
 };
 
+type RoomMember =
+{
+  userID: string;
+  role?: string;
+};
+
+type RoomData =
+{
+  _id: string;
+  title: string;
+  hostID: string;
+  hostName: string;
+  settings?: {
+    maxPlayers?: number;
+    format?: string;
+  };
+  members?: RoomMember[];
+};
+
 type ActiveGameResponse =
 {
   ok: boolean;
   game?: ActiveGame;
+  error?: string;
+};
+
+type RoomResponse =
+{
+  ok: boolean;
+  room?: RoomData;
   error?: string;
 };
 
@@ -64,6 +93,21 @@ type CommanderDamageOption =
   userId: string;
   label: string;
   amount: number;
+};
+
+type PlayerOrderRandomizedPayload =
+{
+  gameId?: string;
+  roomId?: string;
+  boardOrder?: number[];
+};
+
+type ShuffleOverlayState =
+{
+  open: boolean;
+  phase: "rolling" | "result";
+  rollingLabel: string;
+  finalOrder: string[];
 };
 
 function clampCounter(value: number, min: number, max: number)
@@ -98,22 +142,87 @@ function getSeatCommanders(seat?: GameSeat | null)
   return [];
 }
 
+function getNormalizedBoardOrder(boardOrder?: number[])
+{
+  const baseOrder = Array.isArray(boardOrder) ? boardOrder : [];
+  const normalized: number[] = [];
+
+  for (const value of baseOrder)
+  {
+    const seatNumber = Number(value);
+
+    if (!Number.isInteger(seatNumber) || seatNumber < 1 || seatNumber > 4)
+    {
+      continue;
+    }
+
+    if (!normalized.includes(seatNumber))
+    {
+      normalized.push(seatNumber);
+    }
+  }
+
+  for (const seatNumber of [1, 2, 3, 4])
+  {
+    if (!normalized.includes(seatNumber))
+    {
+      normalized.push(seatNumber);
+    }
+  }
+
+  return normalized;
+}
+
 export default function GamePage()
 {
   const [leftOpen, setLeftOpen] = useState(false);
   const [rightOpen, setRightOpen] = useState(false);
   const [game, setGame] = useState<ActiveGame | null>(null);
+  const [room, setRoom] = useState<RoomData | null>(null);
   const [gameId, setGameId] = useState("");
   const [leaving, setLeaving] = useState(false);
+  const [endingGame, setEndingGame] = useState(false);
+  const [randomizingOrder, setRandomizingOrder] = useState(false);
   const [savingSeatNumbers, setSavingSeatNumbers] = useState<number[]>([]);
+  const [shuffleOverlay, setShuffleOverlay] = useState<ShuffleOverlayState>({
+    open: false,
+    phase: "rolling",
+    rollingLabel: "",
+    finalOrder: [],
+  });
   const [commanderPanelOpen, setCommanderPanelOpen] = useState(false);
   const [commanderPanelSeatNumber, setCommanderPanelSeatNumber] = useState<number | null>(null);
+
+  const shuffleIntervalRef = useRef<number | null>(null);
+  const shuffleTimeoutRef = useRef<number | null>(null);
+  const shuffleCloseTimeoutRef = useRef<number | null>(null);
 
   const { session, reset } = useGameSession();
   const mediaSession = useMediaSession();
 
   const navigate = useNavigate();
   const { roomId = "" } = useParams();
+
+  useEffect(() =>
+  {
+    return () =>
+    {
+      if (shuffleIntervalRef.current != null)
+      {
+        window.clearInterval(shuffleIntervalRef.current);
+      }
+
+      if (shuffleTimeoutRef.current != null)
+      {
+        window.clearTimeout(shuffleTimeoutRef.current);
+      }
+
+      if (shuffleCloseTimeoutRef.current != null)
+      {
+        window.clearTimeout(shuffleCloseTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() =>
   {
@@ -132,6 +241,37 @@ export default function GamePage()
       });
     }
   }, [roomId, mediaSession.status, navigate]);
+
+  useEffect(() =>
+  {
+    if (!roomId) return;
+
+    let cancelled = false;
+
+    async function loadRoom()
+    {
+      try
+      {
+        const res = await apiGet<RoomResponse>(`/api/rooms/${roomId}`);
+
+        if (!res.ok || !res.data?.ok || !res.data.room) return;
+        if (cancelled) return;
+
+        setRoom(res.data.room);
+      }
+      catch (err)
+      {
+        console.error("Failed to load room:", err);
+      }
+    }
+
+    void loadRoom();
+
+    return () =>
+    {
+      cancelled = true;
+    };
+  }, [roomId]);
 
   useEffect(() =>
   {
@@ -198,13 +338,135 @@ export default function GamePage()
       setGame(payload.game);
     }
 
+    function handlePlayerOrderRandomized(payload: PlayerOrderRandomizedPayload)
+    {
+      if (payload?.gameId !== gameId) return;
+
+      const normalizedOrder = getNormalizedBoardOrder(payload.boardOrder);
+      const currentSeatMap = new Map(
+        (game?.seats ?? []).map((seat) => [seat.seatNumber, seat])
+      );
+
+      const rollingLabels = normalizedOrder
+        .map((seatNumber) => currentSeatMap.get(seatNumber)?.username)
+        .filter((value): value is string => Boolean(value));
+
+      if (rollingLabels.length === 0)
+      {
+        return;
+      }
+
+      if (shuffleIntervalRef.current != null)
+      {
+        window.clearInterval(shuffleIntervalRef.current);
+      }
+
+      if (shuffleTimeoutRef.current != null)
+      {
+        window.clearTimeout(shuffleTimeoutRef.current);
+      }
+
+      if (shuffleCloseTimeoutRef.current != null)
+      {
+        window.clearTimeout(shuffleCloseTimeoutRef.current);
+      }
+
+      let currentIndex = 0;
+
+      setRandomizingOrder(true);
+      setShuffleOverlay({
+        open: true,
+        phase: "rolling",
+        rollingLabel: rollingLabels[0] || "",
+        finalOrder: [],
+      });
+
+      shuffleIntervalRef.current = window.setInterval(() =>
+      {
+        currentIndex = (currentIndex + 1) % rollingLabels.length;
+
+        setShuffleOverlay((current) => ({
+          ...current,
+          rollingLabel: rollingLabels[currentIndex] || current.rollingLabel,
+        }));
+      }, 110);
+
+      shuffleTimeoutRef.current = window.setTimeout(() =>
+      {
+        if (shuffleIntervalRef.current != null)
+        {
+          window.clearInterval(shuffleIntervalRef.current);
+          shuffleIntervalRef.current = null;
+        }
+
+        setShuffleOverlay({
+          open: true,
+          phase: "result",
+          rollingLabel: "",
+          finalOrder: rollingLabels,
+        });
+
+        shuffleCloseTimeoutRef.current = window.setTimeout(() =>
+        {
+          setShuffleOverlay({
+            open: false,
+            phase: "rolling",
+            rollingLabel: "",
+            finalOrder: [],
+          });
+          setRandomizingOrder(false);
+        }, 900);
+      }, 1400);
+    }
+
     socket.on("game:updated", handleGameUpdated);
+    socket.on("game:player-order-randomized", handlePlayerOrderRandomized);
 
     return () =>
     {
       socket.off("game:updated", handleGameUpdated);
+      socket.off("game:player-order-randomized", handlePlayerOrderRandomized);
     };
-  }, [gameId]);
+  }, [gameId, game]);
+
+  useEffect(() =>
+  {
+    if (!gameId || !roomId) return;
+
+    function handleGameEnded(payload: { gameId?: string; roomId?: string })
+    {
+      if (payload?.gameId !== gameId) return;
+
+      if (socket.connected)
+      {
+        socket.emit("live-game:leave",
+        {
+          gameId,
+          roomId,
+          userId: getStoredUserId(),
+        });
+      }
+
+      if (typeof mediaSession.disconnectFromSFU === "function")
+      {
+        mediaSession.disconnectFromSFU();
+      }
+
+      if (typeof mediaSession.stopPreview === "function")
+      {
+        mediaSession.stopPreview();
+      }
+
+      navigate(`/rooms/${roomId}`, { replace: true });
+    }
+
+    socket.on("game:ended", handleGameEnded);
+
+    return () =>
+    {
+      socket.off("game:ended", handleGameEnded);
+    };
+  }, [gameId, roomId, mediaSession, navigate]);
 
   useEffect(() =>
   {
@@ -393,6 +655,75 @@ export default function GamePage()
     });
   }
 
+  async function handleRandomizePlayerOrder()
+  {
+    if (!gameId || !isHost || randomizingOrder) return;
+
+    const res = await apiPost<ActiveGameResponse>(
+      `/api/live-games/${gameId}/randomize-player-order`,
+      {}
+    );
+
+    if (!res.ok)
+    {
+      console.error("Failed to randomize player order:", res.error);
+      return;
+    }
+
+    if (res.data?.ok && res.data.game)
+    {
+      setGame(res.data.game);
+    }
+  }
+
+  async function handleEndGame()
+  {
+    if (!gameId || !roomId || endingGame) return;
+
+    setEndingGame(true);
+
+    try
+    {
+      const res = await apiPost(`/api/live-games/${gameId}/end`, {});
+
+      if (!res.ok)
+      {
+        console.error("Failed to end game:", res.error);
+        return;
+      }
+
+      if (socket.connected)
+      {
+        socket.emit("live-game:leave",
+        {
+          gameId,
+          roomId,
+          userId: getStoredUserId(),
+        });
+      }
+
+      if (typeof mediaSession.disconnectFromSFU === "function")
+      {
+        mediaSession.disconnectFromSFU();
+      }
+
+      if (typeof mediaSession.stopPreview === "function")
+      {
+        mediaSession.stopPreview();
+      }
+
+      navigate(`/rooms/${roomId}`, { replace: true });
+    }
+    catch (err)
+    {
+      console.error("Failed to end game:", err);
+    }
+    finally
+    {
+      setEndingGame(false);
+    }
+  }
+
   async function handleLeaveGame()
   {
     if (leaving) return;
@@ -450,6 +781,11 @@ export default function GamePage()
       reset();
       navigate("/lobby", { replace: true });
     }
+  }
+
+  function handleToggleSelfMic()
+  {
+    mediaSession.toggleMic();
   }
 
   const seatSlots = useMemo(() =>
@@ -520,6 +856,16 @@ export default function GamePage()
     });
   }, [game, mediaSession.localStream, mediaSession.remoteMedia, savingSeatNumbers]);
 
+  const displaySeatSlots = useMemo(() =>
+  {
+    const normalizedBoardOrder = getNormalizedBoardOrder(game?.boardOrder);
+    const seatSlotMap = new Map(seatSlots.map((slot) => [slot.seatNumber, slot]));
+
+    return normalizedBoardOrder
+      .map((seatNumber) => seatSlotMap.get(seatNumber))
+      .filter((slot): slot is (typeof seatSlots)[number] => Boolean(slot));
+  }, [game?.boardOrder, seatSlots]);
+
   const activeCommanderSeat = useMemo(() =>
   {
     if (commanderPanelSeatNumber == null) return null;
@@ -539,76 +885,92 @@ export default function GamePage()
     );
   }
 
+  const roomTitle = room?.title || session.roomTitle || "Placeholder Room";
+  const isHost = room?.hostID === getStoredUserId();
+  const hostName = room?.hostName || "";
+  const maxPlayers = Number(room?.settings?.maxPlayers ?? 4);
+  const playerCount =
+    game?.seats?.filter((seat) => Boolean(seat.userId)).length ??
+    room?.members?.length ??
+    0;
+
   return (
     <div className="min-h-screen w-screen overflow-x-hidden bg-slate-950 text-slate-100">
-      <header className="sticky top-0 z-40 border-b border-white/10 bg-slate-950/70 backdrop-blur">
-        <div className="flex w-full items-center justify-between px-6 py-3">
-          <div className="min-w-0">
-            <div className="text-sm font-semibold tracking-tight" />
-            <div className="mt-0.5 truncate text-xs text-slate-400">
-              <span className="text-slate-200">{session.roomTitle || "Placeholder Room"}</span>{" "}
-              <span className="text-slate-600">·</span>{" "}
-              <button
-                type="button"
-                onClick={() => { void handleLeaveGame(); }}
-                disabled={leaving}
-                className="ml-2 text-slate-200 transition-colors hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {leaving ? "Leaving..." : "Leave Game"}
-              </button>
-            </div>
+      <header className="sticky top-0 z-40 border-b border-white/10 bg-slate-950/78 backdrop-blur-xl">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(45,212,191,0.10),transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0))]" />
+
+        <div className="relative flex w-full items-center justify-between gap-4 px-5 py-3">
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-xl font-semibold tracking-tight text-white drop-shadow-[0_1px_10px_rgba(255,255,255,0.08)] sm:text-2xl">
+              {roomTitle}
+            </h1>
           </div>
+
+          <button
+            type="button"
+            onClick={() => { void handleLeaveGame(); }}
+            disabled={leaving}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:border-red-400/40 hover:bg-red-500/12 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <DoorOpen className="h-3.5 w-3.5" />
+            {leaving ? "Leaving..." : "Leave"}
+          </button>
         </div>
       </header>
 
-      <div className="relative h-[calc(100vh-57px)] w-full overflow-hidden">
-        <main className="h-full w-full px-6 py-6">
-          <div className="grid h-full grid-rows-[minmax(0,1fr)_auto] gap-4">
-            <div className="grid min-h-0 grid-cols-2 grid-rows-2 gap-4">
-              {seatSlots.map((slot) => (
-                <PlayerTile
-                  key={slot.seatNumber}
-                  isSelf={slot.isSelf}
-                  title={slot.title}
-                  stream={slot.stream}
-                  status={slot.status}
-                  life={slot.life}
-                  poison={slot.poison}
-                  commanders={slot.commanders}
-                  commanderDamageOptions={slot.commanderDamageOptions}
-                  isSaving={slot.isSaving}
-                  onLifeChange={
-                    slot.isSelf
-                      ? (nextLife) => { void handleLifeChange(slot.seatNumber, nextLife); }
-                      : undefined
-                  }
-                  onPoisonChange={
-                    slot.isSelf
-                      ? (nextPoison) => { void handlePoisonChange(slot.seatNumber, nextPoison); }
-                      : undefined
-                  }
-                  onCommanderDamageChange={
-                    slot.isSelf
-                      ? (nextCommanderDamage) =>
-                        {
-                          void handleCommanderDamageChange(slot.seatNumber, nextCommanderDamage);
-                        }
-                      : undefined
-                  }
-                  onOpenCommanderPanel={
-                    slot.isSelf
-                      ? () =>
-                        {
-                          setCommanderPanelSeatNumber(slot.seatNumber);
-                          setCommanderPanelOpen(true);
-                        }
-                      : undefined
-                  }
-                />
-              ))}
-            </div>
+      <div className="relative h-[calc(100vh-86px)] w-full overflow-hidden">
+        <main className="h-full w-full px-5 py-4">
+          <div className="grid h-full grid-cols-2 grid-rows-2 gap-3">
+            {displaySeatSlots.map((slot) => (
+              <PlayerTile
+                key={slot.seatNumber}
+                isSelf={slot.isSelf}
+                title={slot.title}
+                stream={slot.stream}
+                status={slot.status}
+                life={slot.life}
+                poison={slot.poison}
+                commanders={slot.commanders}
+                commanderDamageOptions={slot.commanderDamageOptions}
+                isSaving={slot.isSaving}
+                onLifeChange={
+                  slot.isSelf
+                    ? (nextLife) => { void handleLifeChange(slot.seatNumber, nextLife); }
+                    : undefined
+                }
+                onPoisonChange={
+                  slot.isSelf
+                    ? (nextPoison) => { void handlePoisonChange(slot.seatNumber, nextPoison); }
+                    : undefined
+                }
+                onCommanderDamageChange={
+                  slot.isSelf
+                    ? (nextCommanderDamage) =>
+                    {
+                      void handleCommanderDamageChange(slot.seatNumber, nextCommanderDamage);
+                    }
+                    : undefined
+                }
+                onOpenCommanderPanel={
+                  slot.isSelf
+                    ? () =>
+                    {
+                      setCommanderPanelSeatNumber(slot.seatNumber);
+                      setCommanderPanelOpen(true);
+                    }
+                    : undefined
+                }
+              />
+            ))}
           </div>
         </main>
+
+        <PlayerOrderShuffleOverlay
+          open={shuffleOverlay.open}
+          phase={shuffleOverlay.phase}
+          rollingLabel={shuffleOverlay.rollingLabel}
+          finalOrder={shuffleOverlay.finalOrder}
+        />
 
         <CommanderPanel
           open={commanderPanelOpen}
@@ -629,12 +991,19 @@ export default function GamePage()
           }}
         />
 
-        <SidePanel
-          side="left"
+        <LeftSidePanel
           open={leftOpen}
-          title="Left Panel"
-          description="Placeholder for chat, card log, notifications."
           onToggle={() => setLeftOpen((value) => !value)}
+          hostName={hostName}
+          isHost={Boolean(isHost)}
+          playerCount={playerCount}
+          maxPlayers={maxPlayers}
+          randomizingOrder={randomizingOrder}
+          endingGame={endingGame}
+          micEnabled={mediaSession.micEnabled}
+          onRandomizePlayerOrder={() => { void handleRandomizePlayerOrder(); }}
+          onEndGame={() => { void handleEndGame(); }}
+          onToggleSelfMic={handleToggleSelfMic}
         />
 
         <RightSidePanel

@@ -1,4 +1,5 @@
-import { CSSProperties, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import { Pencil, Swords } from "lucide-react";
 
 type CommanderCard =
@@ -45,7 +46,7 @@ const MTG_TEXT_COLORS: Record<string, string> =
   U: "#67b7ff",
   B: "#b78cff",
   R: "#ff7b72",
-  G: "#5fd18c",
+  G: "#49c47a",
 };
 
 function clampCounter(value: number, min: number, max: number)
@@ -140,7 +141,7 @@ function getStatusMeta(status: PlayerTileProps["status"])
   return {
     dot: "bg-slate-500",
     text: "text-slate-400",
-    label: "Open Seat",
+    label: "Open",
   };
 }
 
@@ -428,7 +429,7 @@ export default function PlayerTile(
         ) : (
           <div className="flex h-full w-full items-center justify-center bg-black/20">
             <span className="text-xs text-slate-400">
-              {status === "empty" ? "Open seat" : "No stream"}
+              {status === "empty" ? "" : "No stream"}
             </span>
           </div>
         )}
