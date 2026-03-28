@@ -3,6 +3,8 @@ const router = require("express").Router();
 
 const LiveGameModel = require("../../database/models/LiveGame");
 const RoomModel = require("../../database/models/Room");
+const RoomChatMessageModel = require("../../database/models/RoomChatMessage");
+const { clearPresenceForGame } = require("../../middleware/liveGamePresence");
 
 router.get("/", (req, res) => res.json({ ok: true, route: "live-games" }));
 
@@ -68,6 +70,16 @@ function clampCounter(value, min, max)
   }
 
   return Math.max(min, Math.min(max, Math.round(numeric)));
+}
+
+function sanitizeTrackedCounterFlag(value, fallback)
+{
+  if (value === undefined)
+  {
+    return fallback;
+  }
+
+  return Boolean(value);
 }
 
 function sanitizeCommanderEntry(raw)
@@ -591,7 +603,7 @@ router.post("/:gameId/seats/:seatNumber/state", requireAuth, async (req, res) =>
       seat.stats = {};
     }
 
-    const { life, poison, commanderDamage, commanders, commander } = req.body || {};
+    const { life, poison, energy, experience, commanderDamage, commanders, commander } = req.body || {};
 
     if (life !== undefined)
     {
@@ -601,6 +613,16 @@ router.post("/:gameId/seats/:seatNumber/state", requireAuth, async (req, res) =>
     if (poison !== undefined)
     {
       seat.stats.poison = clampCounter(poison, 0, 99);
+    }
+
+    if (energy !== undefined)
+    {
+      seat.stats.energy = clampCounter(energy, 0, 999);
+    }
+
+    if (experience !== undefined)
+    {
+      seat.stats.experience = clampCounter(experience, 0, 999);
     }
 
     if (commanderDamage !== undefined)
@@ -690,6 +712,124 @@ router.post("/:gameId/randomize-player-order", requireAuth, async (req, res) =>
   }
 });
 
+
+router.post("/:gameId/settings", requireAuth, async (req, res) =>
+{
+  try
+  {
+    const game = await LiveGameModel.findById(req.params.gameId).exec();
+    if (!game)
+    {
+      return res.status(404).json({ ok: false, error: "Game not found." });
+    }
+
+    const room = await RoomModel.findById(game.roomId).exec();
+    if (!room)
+    {
+      return res.status(404).json({ ok: false, error: "Room not found for game." });
+    }
+
+    if (room.hostID.toString() !== req.user._id.toString())
+    {
+      return res.status(403).json({ ok: false, error: "Only the room host can update game settings." });
+    }
+
+    if (!game.settings)
+    {
+      game.settings = {};
+    }
+
+    const { trackEnergy, trackExperience } = req.body || {};
+
+    game.settings.trackEnergy = sanitizeTrackedCounterFlag(
+      trackEnergy,
+      game.settings.trackEnergy
+    );
+    game.settings.trackExperience = sanitizeTrackedCounterFlag(
+      trackExperience,
+      game.settings.trackExperience
+    );
+
+    await game.save();
+
+    const io = req.app.get("io");
+    emitGameUpdated(io, game);
+
+    return res.status(200).json({ ok: true, game });
+  }
+  catch (err)
+  {
+    console.error("Error updating game settings:", err);
+    return res.status(500).json({ ok: false, error: err.message || "Failed to update game settings." });
+  }
+});
+
+router.patch("/:gameId/shared-markers", requireAuth, async (req, res) =>
+{
+  try
+  {
+    const { gameId } = req.params;
+    const { monarchSeatNumber, initiativeSeatNumber } = req.body;
+
+    const game = await LiveGameModel.findById(gameId);
+    if (!game)
+    {
+      return res.status(404).json({ ok: false, error: "Game not found." });
+    }
+
+    const isUserInGame = game.seats.some(
+      (seat) => String(seat.userId) === String(req.user._id)
+    );
+
+    if (!isUserInGame)
+    {
+      return res.status(403).json({ ok: false, error: "You are not in this game." });
+    }
+
+    function isValidSeatNumber(value)
+    {
+      if (value === null) return true;
+      if (typeof value !== "number") return false;
+
+      return game.seats.some(
+        (seat) => seat.seatNumber === value && seat.userId
+      );
+    }
+
+    if (monarchSeatNumber !== undefined && !isValidSeatNumber(monarchSeatNumber))
+    {
+      return res.status(400).json({ ok: false, error: "Invalid monarch seat." });
+    }
+
+    if (initiativeSeatNumber !== undefined && !isValidSeatNumber(initiativeSeatNumber))
+    {
+      return res.status(400).json({ ok: false, error: "Invalid initiative seat." });
+    }
+
+    if (monarchSeatNumber !== undefined)
+    {
+      game.monarchSeatNumber = monarchSeatNumber;
+    }
+
+    if (initiativeSeatNumber !== undefined)
+    {
+      game.initiativeSeatNumber = initiativeSeatNumber;
+    }
+
+    await game.save();
+
+    const io = req.app.get("io");
+    io.to(`live-game:${game._id}`).emit("live-game:updated", game);
+
+    return res.json({ ok: true, game });
+  }
+  catch (err)
+  {
+    console.error("PATCH /live-games/:gameId/shared-markers failed", err);
+    return res.status(500).json({ ok: false, error: "Failed to update shared markers." });
+  }
+});
+
 router.post("/:gameId/end", requireAuth, async (req, res) =>
 {
   try
@@ -711,15 +851,30 @@ router.post("/:gameId/end", requireAuth, async (req, res) =>
       return res.status(403).json({ ok: false, error: "Only the room host can end the game." });
     }
 
-    game.status = "inactive";
-    game.endedAt = new Date();
-
-    await game.save();
-
     const io = req.app.get("io");
-    emitGameEnded(io, game);
 
-    return res.status(200).json({ ok: true, game });
+    emitGameEnded(io, game);
+    io.to(`room:${game.roomId}`).emit("room:deleted",
+    {
+      roomId: String(game.roomId),
+    });
+
+    clearPresenceForGame(game._id);
+
+    await Promise.all([
+      RoomChatMessageModel.deleteMany({ roomId: game.roomId }).exec(),
+      LiveGameModel.deleteOne({ _id: game._id }).exec(),
+      RoomModel.deleteOne({ _id: game.roomId }).exec(),
+    ]);
+
+    io.emit("rooms:changed");
+
+    return res.status(200).json({
+      ok: true,
+      gameId: String(game._id),
+      roomId: String(game.roomId),
+      roomDeleted: true,
+    });
   }
   catch (err)
   {

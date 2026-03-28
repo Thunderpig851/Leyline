@@ -6,13 +6,16 @@ import "./index.css";
 
 import { GameSessionProvider } from "./context/GameSession";
 import { MediaSessionProvider } from "./context/MediaSession";
+import ErrorBoundary from "./components/ErrorBoundary";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <GameSessionProvider>
-      <MediaSessionProvider>
-        <RouterProvider router={router} />
-      </MediaSessionProvider>
-    </GameSessionProvider>
+    <ErrorBoundary>
+      <GameSessionProvider>
+        <MediaSessionProvider>
+          <RouterProvider router={router} />
+        </MediaSessionProvider>
+      </GameSessionProvider>
+    </ErrorBoundary>
   </React.StrictMode>
 );

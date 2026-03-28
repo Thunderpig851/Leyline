@@ -18,8 +18,8 @@ const GameSettingsSchema = new mongoose.Schema(
   },
 
   trackEnergy: { type: Boolean, default: false },
-  trackMonarch: { type: Boolean, default: false },
-  trackInitiative: { type: Boolean, default: false },
+  trackMonarch: { type: Boolean, default: true },
+  trackInitiative: { type: Boolean, default: true },
   trackExperience: { type: Boolean, default: false },
 },
 { _id: false }
@@ -214,6 +214,22 @@ const LiveGameSchema = new mongoose.Schema(
       },
       message: "Seats must be unique and cannot exceed 4 players.",
     },
+  },
+
+  monarchSeatNumber:
+  {
+    type: Number,
+    min: 1,
+    max: 4,
+    default: null,
+  },
+
+  initiativeSeatNumber:
+  {
+    type: Number,
+    min: 1,
+    max: 4,
+    default: null,
   },
 },
 { timestamps: true }

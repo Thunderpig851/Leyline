@@ -79,8 +79,22 @@ async function removePlayerFromGameAndRoom(gameId, roomId, userId)
 
   if (game)
   {
+    const removedSeat = game.seats.find((seat) => seat.userId?.toString() === userId) || null;
     const before = game.seats.length;
     game.seats = game.seats.filter((seat) => seat.userId?.toString() !== userId);
+
+    if (removedSeat)
+    {
+      if (Number(game.monarchSeatNumber) === Number(removedSeat.seatNumber))
+      {
+        game.monarchSeatNumber = null;
+      }
+
+      if (Number(game.initiativeSeatNumber) === Number(removedSeat.seatNumber))
+      {
+        game.initiativeSeatNumber = null;
+      }
+    }
 
     if (game.seats.length !== before)
     {
@@ -126,6 +140,21 @@ function emitRoomUpdated(io, room)
 {
   io.to(`room:${room._id}`).emit("room:updated", { room });
   io.emit("rooms:changed");
+}
+
+function clearPresenceForGame(gameId)
+{
+  if (!gameId) return;
+
+  const normalizedGameId = String(gameId);
+
+  for (const [key, entry] of livePresence.entries())
+  {
+    if (String(entry.gameId) === normalizedGameId)
+    {
+      livePresence.delete(key);
+    }
+  }
 }
 
 async function handleJoin(io, socket, payload = {})
@@ -366,5 +395,6 @@ function registerLiveGamePresence(io)
 
 module.exports =
 {
+  clearPresenceForGame,
   registerLiveGamePresence,
 };

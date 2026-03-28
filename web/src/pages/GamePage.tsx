@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { DoorOpen } from "lucide-react";
 import { useMediaSession } from "../context/MediaSession";
 import { useGameSession } from "../context/GameSession";
 import { apiGet, apiPost, getStoredUserId, getStoredUsername } from "../lib/api";
@@ -44,7 +43,13 @@ type ActiveGame =
   boardOrder?: number[];
   settings?: {
     format?: string;
+    trackEnergy?: boolean;
+    trackMonarch?: boolean;
+    trackInitiative?: boolean;
+    trackExperience?: boolean;
   };
+  monarchSeatNumber?: number | null;
+  initiativeSeatNumber?: number | null;
   seats: GameSeat[];
 };
 
@@ -457,7 +462,8 @@ export default function GamePage()
         mediaSession.stopPreview();
       }
 
-      navigate(`/rooms/${roomId}`, { replace: true });
+      reset();
+      navigate("/lobby", { replace: true });
     }
 
     socket.on("game:ended", handleGameEnded);
@@ -573,9 +579,12 @@ export default function GamePage()
 
   async function updateSeatState(
     seatNumber: number,
-    payload: {
+    payload: 
+    {
       life?: number;
       poison?: number;
+      energy?: number;
+      experience?: number;
       commanderDamage?: Record<string, number>;
       commanders?: CommanderCard[];
     }
@@ -659,10 +668,7 @@ export default function GamePage()
   {
     if (!gameId || !isHost || randomizingOrder) return;
 
-    const res = await apiPost<ActiveGameResponse>(
-      `/api/live-games/${gameId}/randomize-player-order`,
-      {}
-    );
+    const res = await apiPost<ActiveGameResponse>(`/api/live-games/${gameId}/randomize-player-order`, {});
 
     if (!res.ok)
     {
@@ -712,7 +718,8 @@ export default function GamePage()
         mediaSession.stopPreview();
       }
 
-      navigate(`/rooms/${roomId}`, { replace: true });
+      reset();
+      navigate("/lobby", { replace: true });
     }
     catch (err)
     {
@@ -788,6 +795,67 @@ export default function GamePage()
     mediaSession.toggleMic();
   }
 
+  function handleToggleSelfCam()
+  {
+    mediaSession.toggleCam();
+  }
+
+  async function handleSetMonarch(seatNumber: number | null)
+  {
+    if (!gameId) return;
+
+    try
+    {
+      const res = await apiPost<ActiveGameResponse>(
+        `/api/live-games/${gameId}/markers`,
+        { monarchSeatNumber: seatNumber }
+      );
+
+      if (!res.ok)
+      {
+        console.error("Failed to update monarch:", res.error);
+        return;
+      }
+
+      if (res.data?.ok && res.data.game)
+      {
+        setGame(res.data.game);
+      }
+    }
+    catch (err)
+    {
+      console.error("Failed to update monarch:", err);
+    }
+  }
+
+  async function handleSetInitiative(seatNumber: number | null)
+  {
+    if (!gameId) return;
+
+    try
+    {
+      const res = await apiPost<ActiveGameResponse>(
+        `/api/live-games/${gameId}/markers`,
+        { initiativeSeatNumber: seatNumber }
+      );
+
+      if (!res.ok)
+      {
+        console.error("Failed to update initiative:", res.error);
+        return;
+      }
+
+      if (res.data?.ok && res.data.game)
+      {
+        setGame(res.data.game);
+      }
+    }
+    catch (err)
+    {
+      console.error("Failed to update initiative:", err);
+    }
+  }
+
   const seatSlots = useMemo(() =>
   {
     const selfUserId = getStoredUserId();
@@ -818,8 +886,14 @@ export default function GamePage()
           status: "empty" as const,
           life: defaultLife,
           poison: 0,
+          energy: 0,
+          experience: 0,
+          trackEnergy: false,
+          trackExperience: false,
           commanders: [] as CommanderCard[],
           commanderDamageOptions: [] as CommanderDamageOption[],
+          hasMonarch: false,
+          hasInitiative: false,
           isSaving: false,
         };
       }
@@ -849,8 +923,14 @@ export default function GamePage()
         status: seat.connectionStatus,
         life: seat.stats?.life ?? defaultLife,
         poison: seat.stats?.poison ?? 0,
+        energy: seat.stats?.energy ?? 0,
+        experience: seat.stats?.experience ?? 0,
+        trackEnergy: Boolean(game?.settings?.trackEnergy),
+        trackExperience: Boolean(game?.settings?.trackExperience),
         commanders: getSeatCommanders(seat),
         commanderDamageOptions,
+        hasMonarch: game?.monarchSeatNumber === seatNumber,
+        hasInitiative: game?.initiativeSeatNumber === seatNumber,
         isSaving: savingSeatNumbers.includes(seatNumber),
       };
     });
@@ -887,7 +967,6 @@ export default function GamePage()
 
   const roomTitle = room?.title || session.roomTitle || "Placeholder Room";
   const isHost = room?.hostID === getStoredUserId();
-  const hostName = room?.hostName || "";
   const maxPlayers = Number(room?.settings?.maxPlayers ?? 4);
   const playerCount =
     game?.seats?.filter((seat) => Boolean(seat.userId)).length ??
@@ -895,13 +974,13 @@ export default function GamePage()
     0;
 
   return (
-    <div className="min-h-screen w-screen overflow-x-hidden bg-slate-950 text-slate-100">
+    <div className="h-[100dvh] w-screen overflow-hidden bg-slate-950 text-slate-100">
       <header className="sticky top-0 z-40 border-b border-white/10 bg-slate-950/78 backdrop-blur-xl">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(45,212,191,0.10),transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0))]" />
 
-        <div className="relative flex w-full items-center justify-between gap-4 px-5 py-3">
+        <div className="relative flex w-full items-center justify-between gap-4 px-5 py-2.5">
           <div className="min-w-0 flex-1">
-            <h1 className="truncate text-xl font-semibold tracking-tight text-white drop-shadow-[0_1px_10px_rgba(255,255,255,0.08)] sm:text-2xl">
+            <h1 className="truncate text-lg font-semibold tracking-tight text-white drop-shadow-[0_1px_10px_rgba(255,255,255,0.08)] sm:text-xl">
               {roomTitle}
             </h1>
           </div>
@@ -910,28 +989,34 @@ export default function GamePage()
             type="button"
             onClick={() => { void handleLeaveGame(); }}
             disabled={leaving}
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:border-red-400/40 hover:bg-red-500/12 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex shrink-0 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:border-red-400/40 hover:bg-red-500/12 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <DoorOpen className="h-3.5 w-3.5" />
             {leaving ? "Leaving..." : "Leave"}
           </button>
         </div>
       </header>
 
-      <div className="relative h-[calc(100vh-86px)] w-full overflow-hidden">
-        <main className="h-full w-full px-5 py-4">
-          <div className="grid h-full grid-cols-2 grid-rows-2 gap-3">
+      <div className="relative h-[calc(100dvh-74px)] w-full overflow-hidden">
+        <main className="h-full w-full px-4 py-3">
+          <div className="grid h-full grid-cols-2 grid-rows-2 gap-2.5">
             {displaySeatSlots.map((slot) => (
               <PlayerTile
                 key={slot.seatNumber}
+                seatNumber={slot.seatNumber}
                 isSelf={slot.isSelf}
                 title={slot.title}
                 stream={slot.stream}
                 status={slot.status}
                 life={slot.life}
                 poison={slot.poison}
+                energy={slot.energy}
+                experience={slot.experience}
+                trackEnergy={slot.trackEnergy}
+                trackExperience={slot.trackExperience}
                 commanders={slot.commanders}
                 commanderDamageOptions={slot.commanderDamageOptions}
+                hasMonarch={slot.hasMonarch}
+                hasInitiative={slot.hasInitiative}
                 isSaving={slot.isSaving}
                 onLifeChange={
                   slot.isSelf
@@ -949,6 +1034,16 @@ export default function GamePage()
                     {
                       void handleCommanderDamageChange(slot.seatNumber, nextCommanderDamage);
                     }
+                    : undefined
+                }
+                onSetMonarch={
+                  slot.isSelf
+                    ? (nextSeatNumber) => { void handleSetMonarch(nextSeatNumber); }
+                    : undefined
+                }
+                onSetInitiative={
+                  slot.isSelf
+                    ? (nextSeatNumber) => { void handleSetInitiative(nextSeatNumber); }
                     : undefined
                 }
                 onOpenCommanderPanel={
@@ -994,16 +1089,17 @@ export default function GamePage()
         <LeftSidePanel
           open={leftOpen}
           onToggle={() => setLeftOpen((value) => !value)}
-          hostName={hostName}
           isHost={Boolean(isHost)}
           playerCount={playerCount}
           maxPlayers={maxPlayers}
           randomizingOrder={randomizingOrder}
           endingGame={endingGame}
           micEnabled={mediaSession.micEnabled}
+          camEnabled={mediaSession.camEnabled}
           onRandomizePlayerOrder={() => { void handleRandomizePlayerOrder(); }}
           onEndGame={() => { void handleEndGame(); }}
           onToggleSelfMic={handleToggleSelfMic}
+          onToggleSelfCam={handleToggleSelfCam}
         />
 
         <RightSidePanel

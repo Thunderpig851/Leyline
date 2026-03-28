@@ -1,36 +1,55 @@
 import type { ReactNode } from "react";
-import { Crown, Flag, Mic, MicOff, Shuffle } from "lucide-react";
+import {
+  Flag,
+  Mic,
+  MicOff,
+  Shuffle,
+  Video,
+  VideoOff,
+} from "lucide-react";
 import SidePanel from "./SidePanel";
 
 type LeftSidePanelProps =
 {
   open: boolean;
   onToggle: () => void;
-  hostName?: string;
   isHost: boolean;
   playerCount: number;
   maxPlayers: number;
   randomizingOrder?: boolean;
   endingGame?: boolean;
   micEnabled: boolean;
+  camEnabled: boolean;
   onRandomizePlayerOrder?: () => void;
   onEndGame?: () => void;
   onToggleSelfMic?: () => void;
+  onToggleSelfCam?: () => void;
 };
 
 export default function LeftSidePanel({
   open,
   onToggle,
-  hostName,
   isHost,
+  playerCount,
+  maxPlayers,
   randomizingOrder = false,
   endingGame = false,
   micEnabled,
+  camEnabled,
   onRandomizePlayerOrder,
   onEndGame,
   onToggleSelfMic,
+  onToggleSelfCam,
 }: LeftSidePanelProps)
 {
+  const micButtonClass = micEnabled
+    ? "border-emerald-300/25 bg-emerald-500/12 text-emerald-100 hover:border-emerald-200/45 hover:bg-emerald-500/18"
+    : "border-red-400/25 bg-red-500/12 text-red-100 hover:border-red-300/45 hover:bg-red-500/18";
+
+  const camButtonClass = camEnabled
+    ? "border-emerald-300/25 bg-emerald-500/12 text-emerald-100 hover:border-emerald-200/45 hover:bg-emerald-500/18"
+    : "border-red-400/25 bg-red-500/12 text-red-100 hover:border-red-300/45 hover:bg-red-500/18";
+
   return (
     <SidePanel
       side="left"
@@ -38,31 +57,7 @@ export default function LeftSidePanel({
       title="Game Settings"
       onToggle={onToggle}
     >
-      <div className="mt-4 flex h-[calc(100vh-150px)] min-h-0 flex-col gap-4">
-        <section className="rounded-3xl border border-white/10 bg-gradient-to-b from-white/[0.07] to-white/[0.03] p-4 shadow-[0_12px_28px_rgba(0,0,0,0.28)]">
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                Host
-              </div>
-
-              <div className="mt-2 truncate text-base font-semibold text-slate-100">
-                {hostName || "Unknown"}
-              </div>
-            </div>
-
-            <div
-              className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border ${
-                isHost
-                  ? "border-amber-300/30 bg-amber-400/10 text-amber-200"
-                  : "border-white/10 bg-white/[0.04] text-slate-300"
-              }`}
-            >
-              <Crown className="h-5 w-5" />
-            </div>
-          </div>
-        </section>
-
+      <div className="mt-4 flex h-[calc(100vh-150px)] min-h-0 flex-col gap-4 overflow-y-auto pr-1">
         <section
           className={`rounded-3xl border p-4 transition ${
             isHost
@@ -71,14 +66,20 @@ export default function LeftSidePanel({
           }`}
         >
           <div className="mb-3 flex items-center justify-between gap-3">
-            <div className="text-sm font-semibold text-slate-100">
-              Host Controls
+            <div>
+              <div className="text-sm font-semibold text-slate-100">
+                Host Controls
+              </div>
+              <div className="mt-1 text-xs text-slate-400">
+                {playerCount}/{maxPlayers} players seated
+              </div>
             </div>
           </div>
 
           <div className="space-y-3">
             <ControlCard
               title="Randomize Player Order"
+              description="Shuffle the shared board order for every seat."
               icon={<Shuffle className="h-4 w-4" />}
               buttonLabel={randomizingOrder ? "Rolling..." : "Shuffle Order"}
               disabled={!isHost || !onRandomizePlayerOrder || randomizingOrder}
@@ -88,6 +89,7 @@ export default function LeftSidePanel({
 
             <ControlCard
               title="End Game"
+              description="Delete the active room and return everyone to the lobby."
               icon={<Flag className="h-4 w-4" />}
               buttonLabel={endingGame ? "Ending..." : "End Game"}
               disabled={!isHost || !onEndGame || endingGame}
@@ -106,34 +108,35 @@ export default function LeftSidePanel({
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-sm font-medium text-slate-100">
-                  Microphone
+                  Self Media
                 </div>
-              </div>
-
-              <div
-                className={`rounded-full border px-2.5 py-1 text-[11px] font-medium ${
-                  micEnabled
-                    ? "border-emerald-400/20 bg-emerald-500/10 text-emerald-200"
-                    : "border-red-400/20 bg-red-500/10 text-red-200"
-                }`}
-              >
-                {micEnabled ? "Live" : "Muted"}
+                <div className="mt-1 text-xs leading-5 text-slate-400">
+                  Toggle your own microphone and camera feed.
+                </div>
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={onToggleSelfMic}
-              disabled={!onToggleSelfMic}
-              className={`mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold transition ${
-                micEnabled
-                  ? "border-white/10 bg-white/[0.05] text-slate-100 hover:border-red-400/35 hover:bg-red-500/12 hover:text-red-100"
-                  : "border-white/10 bg-white/[0.05] text-slate-100 hover:border-emerald-400/35 hover:bg-emerald-500/12 hover:text-emerald-100"
-              } disabled:cursor-not-allowed disabled:opacity-50`}
-            >
-              {micEnabled ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-              {micEnabled ? "Mute Microphone" : "Unmute Microphone"}
-            </button>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={onToggleSelfMic}
+                disabled={!onToggleSelfMic}
+                className={`inline-flex items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold transition ${micButtonClass} disabled:cursor-not-allowed disabled:opacity-50`}
+              >
+                {micEnabled ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
+                {micEnabled ? "Mic On" : "Mic Off"}
+              </button>
+
+              <button
+                type="button"
+                onClick={onToggleSelfCam}
+                disabled={!onToggleSelfCam}
+                className={`inline-flex items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold transition ${camButtonClass} disabled:cursor-not-allowed disabled:opacity-50`}
+              >
+                {camEnabled ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}
+                {camEnabled ? "Screen On" : "Screen Off"}
+              </button>
+            </div>
           </div>
         </section>
       </div>
@@ -151,7 +154,7 @@ function ControlCard({
   tone,
 }: {
   title: string;
-  description: string;
+  description?: string;
   icon: ReactNode;
   buttonLabel: string;
   disabled: boolean;
@@ -173,7 +176,10 @@ function ControlCard({
 
         <div className="min-w-0 flex-1">
           <div className="text-sm font-medium text-slate-100">{title}</div>
-          <div className="mt-1 text-xs leading-5 text-slate-400">{description}</div>
+
+          {description ? (
+            <div className="mt-1 text-xs leading-5 text-slate-400">{description}</div>
+          ) : null}
 
           <button
             type="button"

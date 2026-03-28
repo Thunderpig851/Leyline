@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties } from "react";
-import { Pencil, Swords } from "lucide-react";
+import type { CSSProperties, ReactNode } from "react";
+import { Crown, Pencil, Swords } from "lucide-react";
 
 type CommanderCard =
 {
@@ -16,18 +16,29 @@ type CommanderDamageOption =
 
 type PlayerTileProps =
 {
+  seatNumber?: number;
   title?: string;
   stream?: MediaStream | null;
   isSelf?: boolean;
   status?: "connected" | "reconnecting" | "away" | "empty";
   life?: number;
   poison?: number;
+  energy?: number;
+  experience?: number;
+  trackEnergy?: boolean;
+  trackExperience?: boolean;
   commanders?: CommanderCard[];
   commanderDamageOptions?: CommanderDamageOption[];
+  hasMonarch?: boolean;
+  hasInitiative?: boolean;
   isSaving?: boolean;
   onLifeChange?: (nextLife: number) => void;
   onPoisonChange?: (nextPoison: number) => void;
+  onEnergyChange?: (nextEnergy: number) => void;
+  onExperienceChange?: (nextExperience: number) => void;
   onCommanderDamageChange?: (nextCommanderDamage: Record<string, number>) => void;
+  onSetMonarch?: (seatNumber: number | null) => void;
+  onSetInitiative?: (seatNumber: number | null) => void;
   onOpenCommanderPanel?: () => void;
 };
 
@@ -206,20 +217,30 @@ function buildCommanderTextStyle(colors: string[]): CSSProperties
   };
 }
 
-export default function PlayerTile(
-{
+export default function PlayerTile({
+  seatNumber = 0,
   title = "Player",
   stream = null,
   isSelf = false,
   status = "connected",
   life = 40,
   poison = 0,
+  energy = 0,
+  experience = 0,
+  trackEnergy = false,
+  trackExperience = false,
   commanders = [],
   commanderDamageOptions = [],
+  hasMonarch = false,
+  hasInitiative = false,
   isSaving = false,
   onLifeChange,
   onPoisonChange,
+  onEnergyChange,
+  onExperienceChange,
   onCommanderDamageChange,
+  onSetMonarch,
+  onSetInitiative,
   onOpenCommanderPanel,
 }: PlayerTileProps)
 {
@@ -231,8 +252,26 @@ export default function PlayerTile(
   const [hoveredCommanderName, setHoveredCommanderName] = useState<string | null>(null);
   const [commanderVisualMap, setCommanderVisualMap] = useState<Record<string, CommanderVisual | null>>({});
 
-  const canEdit = Boolean(isSelf && onLifeChange && onCommanderDamageChange);
-  const canOpenCounters = commanderDamageOptions.length > 0 || poison > 0;
+  const canEditLife = Boolean(isSelf && onLifeChange);
+  const canEditCommander = Boolean(isSelf && onOpenCommanderPanel);
+  const canEditCounters = Boolean(
+    isSelf && (onPoisonChange || onEnergyChange || onExperienceChange || onCommanderDamageChange)
+  );
+  const showEnergy = trackEnergy || energy > 0;
+  const showExperience = trackExperience || experience > 0;
+  const canManageSharedStates = Boolean(
+    isSelf &&
+    Number.isInteger(seatNumber) &&
+    seatNumber > 0 &&
+    (onSetMonarch || onSetInitiative)
+  );
+
+  const canOpenCounters =
+    commanderDamageOptions.length > 0 ||
+    poison > 0 ||
+    showEnergy ||
+    showExperience ||
+    canManageSharedStates;
 
   useEffect(() =>
   {
@@ -374,6 +413,18 @@ export default function PlayerTile(
     onPoisonChange(clampCounter(poison + delta, 0, 99));
   }
 
+  function adjustEnergy(delta: number)
+  {
+    if (!onEnergyChange) return;
+    onEnergyChange(clampCounter(energy + delta, 0, 999));
+  }
+
+  function adjustExperience(delta: number)
+  {
+    if (!onExperienceChange) return;
+    onExperienceChange(clampCounter(experience + delta, 0, 999));
+  }
+
   function commitLifeInput()
   {
     const parsed = Number(lifeInput);
@@ -414,7 +465,7 @@ export default function PlayerTile(
   }
 
   return (
-    <div className="relative min-h-0 rounded-2xl border border-white/10 bg-slate-900/40 ring-1 ring-white/5">
+    <div className="relative h-full min-h-0 rounded-2xl border border-white/10 bg-slate-900/40 ring-1 ring-white/5">
       <div className="absolute inset-0 overflow-hidden rounded-2xl">
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/5 via-transparent to-transparent" />
 
@@ -440,7 +491,30 @@ export default function PlayerTile(
       <div className="absolute left-3 right-3 top-3 z-10 flex items-start justify-between gap-3">
         <div className="rounded-xl border border-white/10 bg-slate-950/75 px-3 py-2 text-xs text-slate-100 shadow-lg backdrop-blur">
           <div className="flex items-center gap-2">
-            <div className="font-semibold tracking-tight">{title}</div>
+            <div className="flex min-w-0 items-center gap-1.5">
+              <div className="truncate font-semibold tracking-tight">{title}</div>
+
+              {hasMonarch ? (
+                <span
+                  className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-amber-400/20 bg-amber-400/10 text-amber-200"
+                  title="Monarch"
+                  aria-label="Monarch"
+                >
+                  <Crown className="h-3 w-3" />
+                </span>
+              ) : null}
+
+              {hasInitiative ? (
+                <span
+                  className="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full border border-sky-400/20 bg-sky-400/10 px-1 text-[10px] font-black leading-none text-sky-100"
+                  title="Initiative"
+                  aria-label="Initiative"
+                >
+                  !
+                </span>
+              ) : null}
+            </div>
+
             <span className={`h-2 w-2 rounded-full ${statusMeta.dot}`} />
             <span className={`text-[11px] ${statusMeta.text}`}>
               {statusMeta.label}
@@ -501,7 +575,7 @@ export default function PlayerTile(
                       <div className="absolute inset-0">
                         <button
                           type="button"
-                          onClick={canEdit ? onOpenCommanderPanel : undefined}
+                          onClick={canEditCommander ? onOpenCommanderPanel : undefined}
                           className="h-full max-w-[13.5rem] whitespace-normal break-words px-2 py-1 text-left text-[11px] font-medium leading-tight text-transparent"
                         >
                           {commander.name}
@@ -509,20 +583,11 @@ export default function PlayerTile(
                       </div>
 
                       {hoveredCommanderName === commander.name && commanderVisualMap[commander.name]?.imageUrl ? (
-                        <div className="absolute right-0 top-full z-30 mt-2 w-48 overflow-hidden rounded-xl border border-white/10 bg-slate-950/95 shadow-2xl">
-                          <a
-                            href={commanderVisualMap[commander.name]?.scryfallUri || commanderVisualMap[commander.name]?.imageUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="block"
-                          >
-                            <img
-                              src={commanderVisualMap[commander.name]?.imageUrl}
-                              alt={commander.name}
-                              className="w-full object-cover"
-                            />
-                          </a>
-                        </div>
+                        <HoverPreview
+                          href={commanderVisualMap[commander.name]?.scryfallUri || commanderVisualMap[commander.name]?.imageUrl}
+                          src={commanderVisualMap[commander.name]?.imageUrl || ""}
+                          alt={commander.name}
+                        />
                       ) : null}
                     </div>
                   );
@@ -555,7 +620,7 @@ export default function PlayerTile(
                       >
                         <button
                           type="button"
-                          onClick={canEdit ? onOpenCommanderPanel : undefined}
+                          onClick={canEditCommander ? onOpenCommanderPanel : undefined}
                           className="text-[11px] font-medium text-transparent"
                         >
                           {index > 0 ? " / " : ""}
@@ -563,20 +628,11 @@ export default function PlayerTile(
                         </button>
 
                         {hoveredCommanderName === commander.name && commanderVisualMap[commander.name]?.imageUrl ? (
-                          <div className="absolute right-0 top-full z-30 mt-2 w-48 overflow-hidden rounded-xl border border-white/10 bg-slate-950/95 shadow-2xl">
-                            <a
-                              href={commanderVisualMap[commander.name]?.scryfallUri || commanderVisualMap[commander.name]?.imageUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="block"
-                            >
-                              <img
-                                src={commanderVisualMap[commander.name]?.imageUrl}
-                                alt={commander.name}
-                                className="w-full object-cover"
-                              />
-                            </a>
-                          </div>
+                          <HoverPreview
+                            href={commanderVisualMap[commander.name]?.scryfallUri || commanderVisualMap[commander.name]?.imageUrl}
+                            src={commanderVisualMap[commander.name]?.imageUrl || ""}
+                            alt={commander.name}
+                          />
                         ) : null}
                       </div>
                     ))}
@@ -586,10 +642,10 @@ export default function PlayerTile(
             ) : (
               <button
                 type="button"
-                onClick={canEdit ? onOpenCommanderPanel : undefined}
-                disabled={!canEdit}
+                onClick={canEditCommander ? onOpenCommanderPanel : undefined}
+                disabled={!canEditCommander}
                 className={`rounded-lg border px-2.5 py-1 text-[11px] ${
-                  canEdit
+                  canEditCommander
                     ? "border-dashed border-white/15 bg-slate-900/90 text-slate-300 hover:border-emerald-400/35 hover:text-slate-100"
                     : "border-white/10 bg-slate-900/90 text-slate-500"
                 }`}
@@ -598,7 +654,7 @@ export default function PlayerTile(
               </button>
             )}
 
-            {canEdit ? (
+            {canEditCommander ? (
               <button
                 type="button"
                 onClick={onOpenCommanderPanel}
@@ -638,43 +694,64 @@ export default function PlayerTile(
             {countersOpen ? (
               <div className="absolute right-0 top-full z-40 mt-2 w-72 rounded-2xl border border-white/10 bg-slate-950/92 p-3 shadow-2xl backdrop-blur">
                 <div className="grid gap-3">
-                  <div className="flex items-center justify-between gap-3">
+                  <CounterStepper
+                    title="Poison"
+                    value={poison}
+                    editable={Boolean(onPoisonChange && canEditCounters)}
+                    disabled={!onPoisonChange || isSaving}
+                    onDecrement={() => adjustPoison(-1)}
+                    onIncrement={() => adjustPoison(1)}
+                  />
+
+                  {showEnergy ? (
+                    <CounterStepper
+                      title="Energy"
+                      value={energy}
+                      editable={Boolean(onEnergyChange && canEditCounters)}
+                      disabled={!onEnergyChange || isSaving}
+                      onDecrement={() => adjustEnergy(-1)}
+                      onIncrement={() => adjustEnergy(1)}
+                    />
+                  ) : null}
+
+                  {showExperience ? (
+                    <CounterStepper
+                      title="Experience"
+                      value={experience}
+                      editable={Boolean(onExperienceChange && canEditCounters)}
+                      disabled={!onExperienceChange || isSaving}
+                      onDecrement={() => adjustExperience(-1)}
+                      onIncrement={() => adjustExperience(1)}
+                    />
+                  ) : null}
+
+                  {canManageSharedStates ? (
                     <div>
-                      <div className="text-sm font-medium text-slate-100">Poison</div>
-                      <div className="text-xs text-slate-400">
+                      <div className="text-sm font-medium text-slate-100">
+                        Shared states
+                      </div>
+
+                      <div className="mt-3 grid gap-2">
+                        <SharedStateButton
+                          label="Monarch"
+                          active={hasMonarch}
+                          accent="amber"
+                          icon={<Crown className="h-3.5 w-3.5" />}
+                          onClick={() => onSetMonarch?.(hasMonarch ? null : seatNumber)}
+                          disabled={!onSetMonarch || isSaving}
+                        />
+
+                        <SharedStateButton
+                          label="Initiative"
+                          active={hasInitiative}
+                          accent="sky"
+                          icon={<span className="text-sm font-black leading-none">!</span>}
+                          onClick={() => onSetInitiative?.(hasInitiative ? null : seatNumber)}
+                          disabled={!onSetInitiative || isSaving}
+                        />
                       </div>
                     </div>
-
-                    {canEdit ? (
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => adjustPoison(-1)}
-                          disabled={!onPoisonChange || isSaving}
-                          className="rounded-lg border border-white/10 bg-slate-950 px-3 py-1.5 text-sm text-slate-200 transition hover:border-white/20 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          -
-                        </button>
-
-                        <div className="w-10 text-center text-sm font-semibold text-slate-100">
-                          {poison}
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => adjustPoison(1)}
-                          disabled={!onPoisonChange || isSaving}
-                          className="rounded-lg border border-white/10 bg-slate-950 px-3 py-1.5 text-sm text-slate-200 transition hover:border-white/20 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          +
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="rounded-lg border border-white/10 bg-slate-950/80 px-3 py-1.5 text-sm font-semibold text-slate-100">
-                        {poison}
-                      </div>
-                    )}
-                  </div>
+                  ) : null}
 
                   <div>
                     <div className="text-sm font-medium text-slate-100">
@@ -694,7 +771,7 @@ export default function PlayerTile(
                               </div>
                             </div>
 
-                            {canEdit ? (
+                            {canEditCounters ? (
                               <select
                                 value={option.amount}
                                 onChange={(e) =>
@@ -756,7 +833,7 @@ export default function PlayerTile(
                   commitLifeInput();
                 }
               }}
-              disabled={!onLifeChange}
+              disabled={!canEditLife}
               className="w-12 bg-transparent px-1 text-center text-base font-semibold text-slate-50 outline-none disabled:text-slate-300"
             />
 
@@ -771,6 +848,136 @@ export default function PlayerTile(
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function SharedStateButton({
+  label,
+  active,
+  accent,
+  icon,
+  disabled,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  accent: "amber" | "sky";
+  icon: ReactNode;
+  disabled: boolean;
+  onClick: () => void;
+})
+{
+  const activeClass =
+    accent === "amber"
+      ? "border-amber-400/30 bg-amber-400/15 text-amber-100"
+      : "border-sky-400/30 bg-sky-400/15 text-sky-100";
+
+  const inactiveClass =
+    "border-white/10 bg-slate-950/80 text-slate-200 hover:border-white/20 hover:bg-slate-900";
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${
+        active ? activeClass : inactiveClass
+      }`}
+    >
+      <span className="inline-flex items-center gap-2">
+        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-current/20 bg-black/10">
+          {icon}
+        </span>
+        {label}
+      </span>
+
+      <span className="text-xs font-semibold uppercase tracking-[0.16em]">
+        {active ? "Clear" : "Take"}
+      </span>
+    </button>
+  );
+}
+
+function HoverPreview({
+  href,
+  src,
+  alt,
+}: {
+  href: string;
+  src: string;
+  alt: string;
+})
+{
+  return (
+    <div className="absolute right-0 top-full z-30 mt-2 w-48 overflow-hidden rounded-xl border border-white/10 bg-slate-950/95 shadow-2xl">
+      <a
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        className="block"
+      >
+        <img
+          src={src}
+          alt={alt}
+          className="w-full object-cover"
+        />
+      </a>
+    </div>
+  );
+}
+
+function CounterStepper({
+  title,
+  value,
+  editable,
+  disabled,
+  onDecrement,
+  onIncrement,
+}: {
+  title: string;
+  value: number;
+  editable: boolean;
+  disabled: boolean;
+  onDecrement: () => void;
+  onIncrement: () => void;
+})
+{
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <div>
+        <div className="text-sm font-medium text-slate-100">{title}</div>
+      </div>
+
+      {editable ? (
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onDecrement}
+            disabled={disabled}
+            className="rounded-lg border border-white/10 bg-slate-950 px-3 py-1.5 text-sm text-slate-200 transition hover:border-white/20 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            -
+          </button>
+
+          <div className="w-10 text-center text-sm font-semibold text-slate-100">
+            {value}
+          </div>
+
+          <button
+            type="button"
+            onClick={onIncrement}
+            disabled={disabled}
+            className="rounded-lg border border-white/10 bg-slate-950 px-3 py-1.5 text-sm text-slate-200 transition hover:border-white/20 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            +
+          </button>
+        </div>
+      ) : (
+        <div className="rounded-lg border border-white/10 bg-slate-950/80 px-3 py-1.5 text-sm font-semibold text-slate-100">
+          {value}
+        </div>
+      )}
     </div>
   );
 }

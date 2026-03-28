@@ -34,7 +34,7 @@ export default function JoinRoomPage()
   const navigate = useNavigate();
   const { roomId = "" } = useParams();
 
-  const { setRoom } = useGameSession();
+  const { setRoom, reset } = useGameSession();
 
   const {
     videoInputs,
@@ -132,6 +132,28 @@ export default function JoinRoomPage()
     return () => { cancelled = true; };
   }, [roomId, ensurePermissionAndListDevices]);
 
+
+  useEffect(() =>
+  {
+    if (!roomId) return;
+
+    function handleRoomDeleted(payload: { roomId?: string })
+    {
+      if (payload?.roomId !== roomId) return;
+
+      stopPreview();
+      reset();
+      navigate("/lobby", { replace: true });
+    }
+
+    socket.on("room:deleted", handleRoomDeleted);
+
+    return () =>
+    {
+      socket.off("room:deleted", handleRoomDeleted);
+    };
+  }, [roomId, navigate, reset, stopPreview]);
+
   async function joinGame()
   {
     if (!roomId) return;
@@ -192,6 +214,7 @@ export default function JoinRoomPage()
       }
 
       stopPreview();
+      reset();
       navigate("/lobby");
     }
   }
