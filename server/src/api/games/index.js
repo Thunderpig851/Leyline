@@ -225,6 +225,29 @@ function shuffleSeatNumbers(values)
   return next;
 }
 
+function clearSeatMarkersIfNeeded(game, seatNumber)
+{
+  if (Number(game.monarchSeatNumber) === Number(seatNumber))
+  {
+    game.monarchSeatNumber = null;
+  }
+
+  if (Number(game.initiativeSeatNumber) === Number(seatNumber))
+  {
+    game.initiativeSeatNumber = null;
+  }
+}
+
+function isValidOccupiedSeat(game, seatNumber)
+{
+  if (seatNumber === null) return true;
+  if (!Number.isInteger(Number(seatNumber))) return false;
+
+  return game.seats.some(
+    (seat) => Number(seat.seatNumber) === Number(seatNumber) && Boolean(seat.userId)
+  );
+}
+
 router.get("/room/:roomId", requireAuth, async (req, res) =>
 {
   try
@@ -296,8 +319,8 @@ router.post("/start", requireAuth, async (req, res) =>
       settings: {
         format,
         trackEnergy: false,
-        trackMonarch: false,
-        trackInitiative: false,
+        trackMonarch: true,
+        trackInitiative: true,
         trackExperience: false,
       },
 
@@ -475,6 +498,8 @@ router.post("/:gameId/leave", requireAuth, async (req, res) =>
       return res.status(200).json({ ok: true, game, alreadyLeft: true });
     }
 
+    const leavingSeat = game.seats[seatIndex];
+    clearSeatMarkersIfNeeded(game, leavingSeat?.seatNumber);
     game.seats.splice(seatIndex, 1);
 
     syncBoardOrder(game);
@@ -712,6 +737,64 @@ router.post("/:gameId/randomize-player-order", requireAuth, async (req, res) =>
   }
 });
 
+router.post("/:gameId/markers", requireAuth, async (req, res) =>
+{
+  try
+  {
+    const game = await LiveGameModel.findById(req.params.gameId).exec();
+    if (!game)
+    {
+      return res.status(404).json({ ok: false, error: "Game not found." });
+    }
+
+    const requesterSeat = game.seats.find(
+      (entry) => entry.userId?.toString() === req.user._id.toString()
+    );
+
+    if (!requesterSeat)
+    {
+      return res.status(403).json({ ok: false, error: "You must be seated in the game to update shared markers." });
+    }
+
+    const { monarchSeatNumber, initiativeSeatNumber } = req.body || {};
+
+    if (monarchSeatNumber !== undefined && !isValidOccupiedSeat(game, monarchSeatNumber))
+    {
+      return res.status(400).json({ ok: false, error: "Invalid monarch seat." });
+    }
+
+    if (initiativeSeatNumber !== undefined && !isValidOccupiedSeat(game, initiativeSeatNumber))
+    {
+      return res.status(400).json({ ok: false, error: "Invalid initiative seat." });
+    }
+
+    if (monarchSeatNumber !== undefined)
+    {
+      game.monarchSeatNumber = monarchSeatNumber === null
+        ? null
+        : Number(monarchSeatNumber);
+    }
+
+    if (initiativeSeatNumber !== undefined)
+    {
+      game.initiativeSeatNumber = initiativeSeatNumber === null
+        ? null
+        : Number(initiativeSeatNumber);
+    }
+
+    await game.save();
+
+    const io = req.app.get("io");
+    emitGameUpdated(io, game);
+
+    return res.status(200).json({ ok: true, game });
+  }
+  catch (err)
+  {
+    console.error("Error updating shared markers:", err);
+    return res.status(500).json({ ok: false, error: err.message || "Failed to update shared markers." });
+  }
+});
 
 router.post("/:gameId/settings", requireAuth, async (req, res) =>
 {
@@ -761,72 +844,6 @@ router.post("/:gameId/settings", requireAuth, async (req, res) =>
   {
     console.error("Error updating game settings:", err);
     return res.status(500).json({ ok: false, error: err.message || "Failed to update game settings." });
-  }
-});
-
-router.patch("/:gameId/shared-markers", requireAuth, async (req, res) =>
-{
-  try
-  {
-    const { gameId } = req.params;
-    const { monarchSeatNumber, initiativeSeatNumber } = req.body;
-
-    const game = await LiveGameModel.findById(gameId);
-    if (!game)
-    {
-      return res.status(404).json({ ok: false, error: "Game not found." });
-    }
-
-    const isUserInGame = game.seats.some(
-      (seat) => String(seat.userId) === String(req.user._id)
-    );
-
-    if (!isUserInGame)
-    {
-      return res.status(403).json({ ok: false, error: "You are not in this game." });
-    }
-
-    function isValidSeatNumber(value)
-    {
-      if (value === null) return true;
-      if (typeof value !== "number") return false;
-
-      return game.seats.some(
-        (seat) => seat.seatNumber === value && seat.userId
-      );
-    }
-
-    if (monarchSeatNumber !== undefined && !isValidSeatNumber(monarchSeatNumber))
-    {
-      return res.status(400).json({ ok: false, error: "Invalid monarch seat." });
-    }
-
-    if (initiativeSeatNumber !== undefined && !isValidSeatNumber(initiativeSeatNumber))
-    {
-      return res.status(400).json({ ok: false, error: "Invalid initiative seat." });
-    }
-
-    if (monarchSeatNumber !== undefined)
-    {
-      game.monarchSeatNumber = monarchSeatNumber;
-    }
-
-    if (initiativeSeatNumber !== undefined)
-    {
-      game.initiativeSeatNumber = initiativeSeatNumber;
-    }
-
-    await game.save();
-
-    const io = req.app.get("io");
-    io.to(`live-game:${game._id}`).emit("live-game:updated", game);
-
-    return res.json({ ok: true, game });
-  }
-  catch (err)
-  {
-    console.error("PATCH /live-games/:gameId/shared-markers failed", err);
-    return res.status(500).json({ ok: false, error: "Failed to update shared markers." });
   }
 });
 

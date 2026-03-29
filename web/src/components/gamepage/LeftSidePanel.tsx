@@ -79,7 +79,7 @@ export default function LeftSidePanel({
           <div className="space-y-3">
             <ControlCard
               title="Randomize Player Order"
-              description="Shuffle the shared board order for every seat."
+              description=""
               icon={<Shuffle className="h-4 w-4" />}
               buttonLabel={randomizingOrder ? "Rolling..." : "Shuffle Order"}
               disabled={!isHost || !onRandomizePlayerOrder || randomizingOrder}
@@ -89,7 +89,7 @@ export default function LeftSidePanel({
 
             <ControlCard
               title="End Game"
-              description="Delete the active room and return everyone to the lobby."
+              description=""
               icon={<Flag className="h-4 w-4" />}
               buttonLabel={endingGame ? "Ending..." : "End Game"}
               disabled={!isHost || !onEndGame || endingGame}
@@ -108,10 +108,7 @@ export default function LeftSidePanel({
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-sm font-medium text-slate-100">
-                  Self Media
-                </div>
-                <div className="mt-1 text-xs leading-5 text-slate-400">
-                  Toggle your own microphone and camera feed.
+                  Media
                 </div>
               </div>
             </div>

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
-import { Crown, Pencil, Swords } from "lucide-react";
+import { Crown, Pencil, Swords, X } from "lucide-react";
 
 type CommanderCard =
 {
@@ -245,7 +245,8 @@ export default function PlayerTile({
 }: PlayerTileProps)
 {
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const countersWidgetRef = useRef<HTMLDivElement | null>(null);
+  const counterButtonRef = useRef<HTMLButtonElement | null>(null);
+  const countersOverlayRef = useRef<HTMLDivElement | null>(null);
 
   const [countersOpen, setCountersOpen] = useState(false);
   const [lifeInput, setLifeInput] = useState(String(life));
@@ -257,8 +258,48 @@ export default function PlayerTile({
   const canEditCounters = Boolean(
     isSelf && (onPoisonChange || onEnergyChange || onExperienceChange || onCommanderDamageChange)
   );
-  const showEnergy = trackEnergy || energy > 0;
-  const showExperience = trackExperience || experience > 0;
+
+  const showEnergy = status !== "empty" && (trackEnergy || energy >= 0);
+  const showExperience = status !== "empty" && (trackExperience || experience >= 0);
+
+  const compactCounters = [
+    {
+      key: "poison",
+      label: "Poison",
+      shortLabel: "P",
+      value: poison,
+      visible: status !== "empty",
+      onDec: () => adjustPoison(-1),
+      onInc: () => adjustPoison(1),
+      enabled: Boolean(onPoisonChange),
+      accent: "emerald" as const,
+    },
+    {
+      key: "energy",
+      label: "Energy",
+      shortLabel: "E",
+      value: energy,
+      visible: showEnergy,
+      onDec: () => adjustEnergy(-1),
+      onInc: () => adjustEnergy(1),
+      enabled: Boolean(onEnergyChange),
+      accent: "sky" as const,
+    },
+    {
+      key: "experience",
+      label: "Experience",
+      shortLabel: "XP",
+      value: experience,
+      visible: showExperience,
+      onDec: () => adjustExperience(-1),
+      onInc: () => adjustExperience(1),
+      enabled: Boolean(onExperienceChange),
+      accent: "violet" as const,
+    },
+  ].filter((entry) => entry.visible);
+
+  const visibleTopCounters = compactCounters.filter((entry) => entry.value > 0);
+
   const canManageSharedStates = Boolean(
     isSelf &&
     Number.isInteger(seatNumber) &&
@@ -268,9 +309,7 @@ export default function PlayerTile({
 
   const canOpenCounters =
     commanderDamageOptions.length > 0 ||
-    poison > 0 ||
-    showEnergy ||
-    showExperience ||
+    compactCounters.length > 0 ||
     canManageSharedStates;
 
   useEffect(() =>
@@ -310,10 +349,10 @@ export default function PlayerTile({
     {
       const target = event.target as Node;
 
-      if (
-        countersWidgetRef.current &&
-        !countersWidgetRef.current.contains(target)
-      )
+      const clickedOverlay = countersOverlayRef.current?.contains(target);
+      const clickedButton = counterButtonRef.current?.contains(target);
+
+      if (!clickedOverlay && !clickedButton)
       {
         setCountersOpen(false);
       }
@@ -465,7 +504,7 @@ export default function PlayerTile({
   }
 
   return (
-    <div className="relative h-full min-h-0 rounded-2xl border border-white/10 bg-slate-900/40 ring-1 ring-white/5">
+    <div className="relative h-full min-h-0 overflow-hidden rounded-2xl border border-white/10 bg-slate-900/40 ring-1 ring-white/5">
       <div className="absolute inset-0 overflow-hidden rounded-2xl">
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/5 via-transparent to-transparent" />
 
@@ -489,68 +528,84 @@ export default function PlayerTile({
       </div>
 
       <div className="absolute left-3 right-3 top-3 z-10 flex items-start justify-between gap-3">
-        <div className="rounded-xl border border-white/10 bg-slate-950/75 px-3 py-2 text-xs text-slate-100 shadow-lg backdrop-blur">
-          <div className="flex items-center gap-2">
-            <div className="flex min-w-0 items-center gap-1.5">
-              <div className="truncate font-semibold tracking-tight">{title}</div>
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <div className="rounded-xl border border-white/10 bg-slate-950/75 px-3 py-2 text-xs text-slate-100 shadow-lg backdrop-blur">
+            <div className="flex items-center gap-2">
+              <div className="flex min-w-0 items-center gap-1.5">
+                <div className="truncate font-semibold tracking-tight">{title}</div>
 
-              {hasMonarch ? (
-                <span
-                  className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-amber-400/20 bg-amber-400/10 text-amber-200"
-                  title="Monarch"
-                  aria-label="Monarch"
-                >
-                  <Crown className="h-3 w-3" />
-                </span>
-              ) : null}
+                {hasMonarch ? (
+                  <span
+                    className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-amber-400/20 bg-amber-400/10 text-amber-200"
+                    title="Monarch"
+                    aria-label="Monarch"
+                  >
+                    <Crown className="h-3 w-3" />
+                  </span>
+                ) : null}
 
-              {hasInitiative ? (
-                <span
-                  className="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full border border-sky-400/20 bg-sky-400/10 px-1 text-[10px] font-black leading-none text-sky-100"
-                  title="Initiative"
-                  aria-label="Initiative"
+                {hasInitiative ? (
+                  <span
+                    className="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full border border-sky-400/20 bg-sky-400/10 px-1 text-[10px] font-black leading-none text-sky-100"
+                    title="Initiative"
+                    aria-label="Initiative"
+                  >
+                    !
+                  </span>
+                ) : null}
+              </div>
+
+              <span className={`h-2 w-2 rounded-full ${statusMeta.dot}`} />
+              <span className={`text-[11px] ${statusMeta.text}`}>
+                {statusMeta.label}
+              </span>
+
+              {isSaving ? (
+                <svg
+                  className="h-3.5 w-3.5 animate-spin text-emerald-400"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  aria-hidden="true"
                 >
-                  !
-                </span>
+                  <path
+                    d="M21 12a9 9 0 1 1-2.64-6.36"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                  <path
+                    d="M21 3v6h-6"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
               ) : null}
             </div>
-
-            <span className={`h-2 w-2 rounded-full ${statusMeta.dot}`} />
-            <span className={`text-[11px] ${statusMeta.text}`}>
-              {statusMeta.label}
-            </span>
-
-            {isSaving ? (
-              <svg
-                className="h-3.5 w-3.5 animate-spin text-emerald-400"
-                viewBox="0 0 24 24"
-                fill="none"
-                aria-hidden="true"
-              >
-                <path
-                  d="M21 12a9 9 0 1 1-2.64-6.36"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-                <path
-                  d="M21 3v6h-6"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            ) : null}
           </div>
+
+          {visibleTopCounters.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5">
+              {visibleTopCounters.map((counter) => (
+                <VisibleCounterChip
+                  key={`visible-${counter.key}`}
+                  label={counter.shortLabel}
+                  value={counter.value}
+                  accent={counter.accent}
+                />
+              ))}
+            </div>
+          ) : null}
         </div>
 
         <div className="flex items-start gap-2">
           <div className="relative flex items-start gap-2 rounded-xl border border-white/10 bg-slate-950/92 px-2 py-2 shadow-lg backdrop-blur">
             {commanders.length > 0 ? (
               commanders.length === 1 ? (
-                commanders.map((commander) => {
+                commanders.map((commander) =>
+                {
                   const visual = commanderVisualMap[commander.name];
                   const textStyle = buildCommanderTextStyle(visual?.colors || []);
 
@@ -666,148 +721,27 @@ export default function PlayerTile({
             ) : null}
           </div>
 
-          <div
-            ref={countersWidgetRef}
-            className="relative"
-          >
-            <button
-              type="button"
-              onClick={() =>
+          <button
+            ref={counterButtonRef}
+            type="button"
+            onClick={() =>
+            {
+              if (canOpenCounters)
               {
-                if (canOpenCounters)
-                {
-                  setCountersOpen((value) => !value);
-                }
-              }}
-              disabled={!canOpenCounters}
-              className={`flex h-10 w-10 items-center justify-center rounded-xl border shadow-lg backdrop-blur transition ${
-                canOpenCounters
-                  ? "border-white/10 bg-slate-950/82 text-slate-200 hover:border-white/20 hover:bg-slate-900"
-                  : "border-white/10 bg-slate-950/60 text-slate-500"
-              }`}
-              aria-label="Open counters"
-              title="Open counters"
-            >
-              <Swords className="h-4.5 w-4.5" />
-            </button>
-
-            {countersOpen ? (
-              <div className="absolute right-0 top-full z-40 mt-2 w-72 rounded-2xl border border-white/10 bg-slate-950/92 p-3 shadow-2xl backdrop-blur">
-                <div className="grid gap-3">
-                  <CounterStepper
-                    title="Poison"
-                    value={poison}
-                    editable={Boolean(onPoisonChange && canEditCounters)}
-                    disabled={!onPoisonChange || isSaving}
-                    onDecrement={() => adjustPoison(-1)}
-                    onIncrement={() => adjustPoison(1)}
-                  />
-
-                  {showEnergy ? (
-                    <CounterStepper
-                      title="Energy"
-                      value={energy}
-                      editable={Boolean(onEnergyChange && canEditCounters)}
-                      disabled={!onEnergyChange || isSaving}
-                      onDecrement={() => adjustEnergy(-1)}
-                      onIncrement={() => adjustEnergy(1)}
-                    />
-                  ) : null}
-
-                  {showExperience ? (
-                    <CounterStepper
-                      title="Experience"
-                      value={experience}
-                      editable={Boolean(onExperienceChange && canEditCounters)}
-                      disabled={!onExperienceChange || isSaving}
-                      onDecrement={() => adjustExperience(-1)}
-                      onIncrement={() => adjustExperience(1)}
-                    />
-                  ) : null}
-
-                  {canManageSharedStates ? (
-                    <div>
-                      <div className="text-sm font-medium text-slate-100">
-                        Shared states
-                      </div>
-
-                      <div className="mt-3 grid gap-2">
-                        <SharedStateButton
-                          label="Monarch"
-                          active={hasMonarch}
-                          accent="amber"
-                          icon={<Crown className="h-3.5 w-3.5" />}
-                          onClick={() => onSetMonarch?.(hasMonarch ? null : seatNumber)}
-                          disabled={!onSetMonarch || isSaving}
-                        />
-
-                        <SharedStateButton
-                          label="Initiative"
-                          active={hasInitiative}
-                          accent="sky"
-                          icon={<span className="text-sm font-black leading-none">!</span>}
-                          onClick={() => onSetInitiative?.(hasInitiative ? null : seatNumber)}
-                          disabled={!onSetInitiative || isSaving}
-                        />
-                      </div>
-                    </div>
-                  ) : null}
-
-                  <div>
-                    <div className="text-sm font-medium text-slate-100">
-                      Commander damage
-                    </div>
-
-                    <div className="mt-3 grid gap-2">
-                      {commanderDamageOptions.length > 0 ? (
-                        commanderDamageOptions.map((option) => (
-                          <div
-                            key={option.userId}
-                            className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-slate-950/80 px-3 py-2"
-                          >
-                            <div className="min-w-0">
-                              <div className="truncate text-sm text-slate-200">
-                                {option.label}
-                              </div>
-                            </div>
-
-                            {canEditCounters ? (
-                              <select
-                                value={option.amount}
-                                onChange={(e) =>
-                                {
-                                  updateCommanderDamage(
-                                    option.userId,
-                                    Number(e.target.value)
-                                  );
-                                }}
-                                disabled={!onCommanderDamageChange || isSaving}
-                                className="rounded-lg border border-white/10 bg-slate-900 px-2 py-1.5 text-sm text-slate-100 outline-none focus:border-emerald-400/40 disabled:cursor-not-allowed disabled:opacity-50"
-                              >
-                                {Array.from({ length: 22 }, (_, index) => (
-                                  <option key={index} value={index}>
-                                    {index}
-                                  </option>
-                                ))}
-                              </select>
-                            ) : (
-                              <div className="rounded-lg border border-white/10 bg-slate-900 px-3 py-1.5 text-sm font-semibold text-slate-100">
-                                {option.amount}
-                              </div>
-                            )}
-                          </div>
-                        ))
-                      ) : (
-                        <div className="rounded-lg border border-dashed border-white/10 px-3 py-3 text-xs text-slate-500">
-                          Commander damage options appear when opponents are seated.
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ) : null}
-          </div>
+                setCountersOpen((value) => !value);
+              }
+            }}
+            disabled={!canOpenCounters}
+            className={`flex h-10 w-10 items-center justify-center rounded-xl border shadow-lg backdrop-blur transition ${
+              canOpenCounters
+                ? "border-white/10 bg-slate-950/82 text-slate-200 hover:border-white/20 hover:bg-slate-900"
+                : "border-white/10 bg-slate-950/60 text-slate-500"
+            }`}
+            aria-label="Open counters"
+            title="Open counters"
+          >
+            <Swords className="h-4.5 w-4.5" />
+          </button>
 
           <div className="flex items-center overflow-hidden rounded-xl border border-emerald-400/20 bg-slate-950/80 shadow-lg backdrop-blur">
             <button
@@ -848,54 +782,75 @@ export default function PlayerTile({
           </div>
         </div>
       </div>
+
+      {countersOpen ? (
+        <div
+          ref={countersOverlayRef}
+          className="absolute right-3 top-16 z-30 w-[min(16.5rem,calc(100%-1.5rem))] rounded-2xl border border-white/10 bg-slate-950/95 p-2 shadow-2xl backdrop-blur-xl"
+        >
+          <div className="grid gap-1.5">
+            {compactCounters.length > 0 ? (
+              <div className={`grid gap-1.5 ${compactCounters.length >= 3 ? "grid-cols-3" : compactCounters.length === 2 ? "grid-cols-2" : "grid-cols-1"}`}>
+                {compactCounters.map((counter) => (
+                  <MiniCounterCard
+                    key={counter.key}
+                    label={counter.label}
+                    value={counter.value}
+                    onDecrement={counter.onDec}
+                    onIncrement={counter.onInc}
+                    disabled={!canEditCounters || !counter.enabled || isSaving}
+                  />
+                ))}
+              </div>
+            ) : null}
+
+            {canManageSharedStates ? (
+              <div className="flex gap-1.5">
+                <SharedStateButton
+                  label="Monarch"
+                  active={hasMonarch}
+                  accent="amber"
+                  icon={<Crown className="h-3 w-3" />}
+                  onClick={() => onSetMonarch?.(hasMonarch ? null : seatNumber)}
+                  disabled={!onSetMonarch || isSaving}
+                />
+
+                <SharedStateButton
+                  label="Initiative"
+                  active={hasInitiative}
+                  accent="sky"
+                  icon={<span className="text-[10px] font-black leading-none">!</span>}
+                  onClick={() => onSetInitiative?.(hasInitiative ? null : seatNumber)}
+                  disabled={!onSetInitiative || isSaving}
+                />
+              </div>
+            ) : null}
+
+            {commanderDamageOptions.length > 0 ? (
+              <div className="rounded-xl border border-white/10 bg-black/20 p-1.5">
+                <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                  Commander Damage
+                </div>
+
+                <div className="grid gap-1">
+                  {commanderDamageOptions.map((option) => (
+                    <DamageRow
+                      key={option.userId}
+                      label={option.label}
+                      value={option.amount}
+                      editable={canEditCounters}
+                      disabled={!onCommanderDamageChange || isSaving}
+                      onDecrement={() => updateCommanderDamage(option.userId, option.amount - 1)}
+                      onIncrement={() => updateCommanderDamage(option.userId, option.amount + 1)}
+                    />
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
     </div>
-  );
-}
-
-function SharedStateButton({
-  label,
-  active,
-  accent,
-  icon,
-  disabled,
-  onClick,
-}: {
-  label: string;
-  active: boolean;
-  accent: "amber" | "sky";
-  icon: ReactNode;
-  disabled: boolean;
-  onClick: () => void;
-})
-{
-  const activeClass =
-    accent === "amber"
-      ? "border-amber-400/30 bg-amber-400/15 text-amber-100"
-      : "border-sky-400/30 bg-sky-400/15 text-sky-100";
-
-  const inactiveClass =
-    "border-white/10 bg-slate-950/80 text-slate-200 hover:border-white/20 hover:bg-slate-900";
-
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className={`flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${
-        active ? activeClass : inactiveClass
-      }`}
-    >
-      <span className="inline-flex items-center gap-2">
-        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-current/20 bg-black/10">
-          {icon}
-        </span>
-        {label}
-      </span>
-
-      <span className="text-xs font-semibold uppercase tracking-[0.16em]">
-        {active ? "Clear" : "Take"}
-      </span>
-    </button>
   );
 }
 
@@ -927,15 +882,125 @@ function HoverPreview({
   );
 }
 
-function CounterStepper({
-  title,
+function VisibleCounterChip({
+  label,
+  value,
+  accent,
+}: {
+  label: string;
+  value: number;
+  accent: "emerald" | "sky" | "violet";
+})
+{
+  const accentClass =
+    accent === "emerald"
+      ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-100"
+      : accent === "sky"
+        ? "border-sky-400/20 bg-sky-400/10 text-sky-100"
+        : "border-violet-400/20 bg-violet-400/10 text-violet-100";
+
+  return (
+    <div className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-semibold shadow-lg backdrop-blur ${accentClass}`}>
+      <span className="opacity-80">{label}</span>
+      <span>{value}</span>
+    </div>
+  );
+}
+
+function MiniCounterCard({
+  label,
+  value,
+  onDecrement,
+  onIncrement,
+  disabled,
+}: {
+  label: string;
+  value: number;
+  onDecrement: () => void;
+  onIncrement: () => void;
+  disabled: boolean;
+})
+{
+  return (
+    <div className="rounded-xl border border-white/10 bg-black/20 px-1.5 py-1">
+      <div className="text-center text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+        {label}
+      </div>
+
+      <div className="mt-0.5 flex items-center justify-between gap-1">
+        <button
+          type="button"
+          onClick={onDecrement}
+          disabled={disabled}
+          className="inline-flex h-5 w-5 items-center justify-center rounded-md border border-white/10 bg-slate-950 text-[10px] text-slate-200 transition hover:border-white/20 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          -
+        </button>
+
+        <div className="min-w-[1.25rem] text-center text-xs font-semibold text-slate-100">
+          {value}
+        </div>
+
+        <button
+          type="button"
+          onClick={onIncrement}
+          disabled={disabled}
+          className="inline-flex h-5 w-5 items-center justify-center rounded-md border border-white/10 bg-slate-950 text-[10px] text-slate-200 transition hover:border-white/20 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          +
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function SharedStateButton({
+  label,
+  active,
+  accent,
+  icon,
+  onClick,
+  disabled,
+}: {
+  label: string;
+  active: boolean;
+  accent: "amber" | "sky";
+  icon: ReactNode;
+  onClick?: () => void;
+  disabled?: boolean;
+})
+{
+  const activeClass =
+    accent === "amber"
+      ? "border-amber-400/30 bg-amber-400/14 text-amber-100"
+      : "border-sky-400/30 bg-sky-400/14 text-sky-100";
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`inline-flex min-w-0 flex-1 items-center justify-center gap-1 rounded-lg border px-2 py-1.5 text-[10px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+        active
+          ? activeClass
+          : "border-white/10 bg-white/[0.05] text-slate-200 hover:border-white/20 hover:bg-white/[0.08]"
+      }`}
+    >
+      {icon}
+      <span className="truncate">{label}</span>
+    </button>
+  );
+}
+
+function DamageRow({
+  label,
   value,
   editable,
   disabled,
   onDecrement,
   onIncrement,
 }: {
-  title: string;
+  label: string;
   value: number;
   editable: boolean;
   disabled: boolean;
@@ -944,23 +1009,23 @@ function CounterStepper({
 })
 {
   return (
-    <div className="flex items-center justify-between gap-3">
-      <div>
-        <div className="text-sm font-medium text-slate-100">{title}</div>
+    <div className="flex items-center justify-between gap-1.5 rounded-lg border border-white/10 bg-slate-950/70 px-1.5 py-1">
+      <div className="min-w-0 flex-1 truncate text-[10px] text-slate-200">
+        {label}
       </div>
 
       {editable ? (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
           <button
             type="button"
             onClick={onDecrement}
             disabled={disabled}
-            className="rounded-lg border border-white/10 bg-slate-950 px-3 py-1.5 text-sm text-slate-200 transition hover:border-white/20 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex h-5 w-5 items-center justify-center rounded-md border border-white/10 bg-slate-900 text-[10px] text-slate-200 transition hover:border-white/20 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
           >
             -
           </button>
 
-          <div className="w-10 text-center text-sm font-semibold text-slate-100">
+          <div className="w-5 text-center text-[10px] font-semibold text-slate-100">
             {value}
           </div>
 
@@ -968,13 +1033,13 @@ function CounterStepper({
             type="button"
             onClick={onIncrement}
             disabled={disabled}
-            className="rounded-lg border border-white/10 bg-slate-950 px-3 py-1.5 text-sm text-slate-200 transition hover:border-white/20 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex h-5 w-5 items-center justify-center rounded-md border border-white/10 bg-slate-900 text-[10px] text-slate-200 transition hover:border-white/20 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
           >
             +
           </button>
         </div>
       ) : (
-        <div className="rounded-lg border border-white/10 bg-slate-950/80 px-3 py-1.5 text-sm font-semibold text-slate-100">
+        <div className="rounded-md border border-white/10 bg-slate-900 px-1.5 py-0.5 text-[10px] font-semibold text-slate-100">
           {value}
         </div>
       )}

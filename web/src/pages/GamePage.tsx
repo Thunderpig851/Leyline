@@ -472,7 +472,7 @@ export default function GamePage()
     {
       socket.off("game:ended", handleGameEnded);
     };
-  }, [gameId, roomId, mediaSession, navigate]);
+  }, [gameId, roomId, mediaSession, navigate, reset]);
 
   useEffect(() =>
   {
@@ -579,7 +579,7 @@ export default function GamePage()
 
   async function updateSeatState(
     seatNumber: number,
-    payload: 
+    payload:
     {
       life?: number;
       poison?: number;
@@ -643,6 +643,22 @@ export default function GamePage()
     await updateSeatState(seatNumber,
     {
       poison: clampCounter(nextPoison, 0, 99),
+    });
+  }
+
+  async function handleEnergyChange(seatNumber: number, nextEnergy: number)
+  {
+    await updateSeatState(seatNumber,
+    {
+      energy: clampCounter(nextEnergy, 0, 999),
+    });
+  }
+
+  async function handleExperienceChange(seatNumber: number, nextExperience: number)
+  {
+    await updateSeatState(seatNumber,
+    {
+      experience: clampCounter(nextExperience, 0, 999),
     });
   }
 
@@ -1026,6 +1042,16 @@ export default function GamePage()
                 onPoisonChange={
                   slot.isSelf
                     ? (nextPoison) => { void handlePoisonChange(slot.seatNumber, nextPoison); }
+                    : undefined
+                }
+                onEnergyChange={
+                  slot.isSelf
+                    ? (nextEnergy) => { void handleEnergyChange(slot.seatNumber, nextEnergy); }
+                    : undefined
+                }
+                onExperienceChange={
+                  slot.isSelf
+                    ? (nextExperience) => { void handleExperienceChange(slot.seatNumber, nextExperience); }
                     : undefined
                 }
                 onCommanderDamageChange={
