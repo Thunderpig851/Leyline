@@ -10,8 +10,6 @@ import PlayerTile from "../components/gamepage/PlayerTile";
 import CommanderPanel from "../components/gamepage/CommanderPanel";
 import PlayerOrderShuffleOverlay from "../components/gamepage/PlayerOrderShuffleOverlay";
 
-import { Moon, Sun } from "lucide-react";
-
 type CommanderCard =
 {
   name: string;
@@ -165,6 +163,7 @@ export default function GamePage()
   const [leaving, setLeaving] = useState(false);
   const [endingGame, setEndingGame] = useState(false);
   const [randomizingOrder, setRandomizingOrder] = useState(false);
+  const [resettingGame, setResettingGame] = useState(false);
   const [savingSeatNumbers, setSavingSeatNumbers] = useState<number[]>([]);
   const [shuffleOverlay, setShuffleOverlay] = useState<ShuffleOverlayState>({
     open: false,
@@ -422,111 +421,30 @@ export default function GamePage()
 
   useEffect(() =>
   {
-    if (!gameId || !roomId) return;
+    if (!gameId || !roomId || !socket.connected) return;
 
-    const userId = getStoredUserId();
-    const username = getStoredUsername();
-
-    function sendHeartbeat(
+    socket.emit("live-game:join",
     {
-      hidden = document.visibilityState === "hidden",
-      page = hidden ? "hidden" : "game",
-    }: {
-      hidden?: boolean;
-      page?: "game" | "room" | "hidden";
-    } = {})
-    {
-      if (!socket.connected || !userId) return;
-
-      socket.emit("live-game:heartbeat",
-      {
-        gameId,
-        roomId,
-        userId,
-        username,
-        hidden,
-        page,
-      });
-    }
-
-    function handleSocketReconnect()
-    {
-      if (!socket.connected || !userId) return;
-
-      socket.emit("live-game:join",
-      {
-        gameId,
-        roomId,
-        userId,
-        username,
-      });
-
-      sendHeartbeat({ hidden: false, page: "game" });
-    }
-
-    sendHeartbeat({ hidden: false, page: "game" });
-
-    const intervalId = window.setInterval(() =>
-    {
-      sendHeartbeat();
-    }, 15000);
-
-    function handleVisibilityChange()
-    {
-      const hidden = document.visibilityState === "hidden";
-
-      sendHeartbeat({
-        hidden,
-        page: hidden ? "hidden" : "game",
-      });
-    }
-
-    function handlePageHide()
-    {
-      sendHeartbeat({
-        hidden: true,
-        page: "hidden",
-      });
-    }
-
-    socket.on("connect", handleSocketReconnect);
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    window.addEventListener("pagehide", handlePageHide);
+      gameId,
+      roomId,
+      userId: getStoredUserId(),
+      username: getStoredUsername(),
+    });
 
     return () =>
     {
-      if (socket.connected && userId)
+      socket.emit("live-game:leave",
       {
-        sendHeartbeat({
-          hidden: false,
-          page: "room",
-        });
-      }
-
-      socket.off("connect", handleSocketReconnect);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      window.removeEventListener("pagehide", handlePageHide);
-      window.clearInterval(intervalId);
+        gameId,
+        roomId,
+        userId: getStoredUserId(),
+      });
     };
   }, [gameId, roomId]);
 
-  function setSeatSaving(seatNumber: number, isSaving: boolean)
-  {
-    setSavingSeatNumbers((current) =>
-    {
-      if (isSaving)
-      {
-        return current.includes(seatNumber) ? current : [...current, seatNumber];
-      }
-
-      return current.filter((value) => value !== seatNumber);
-    });
-  }
-
   async function updateSeatState(
     seatNumber: number,
-    payload:
-    {
+    nextState: {
       life?: number;
       poison?: number;
       energy?: number;
@@ -538,13 +456,13 @@ export default function GamePage()
   {
     if (!gameId) return;
 
-    setSeatSaving(seatNumber, true);
+    setSavingSeatNumbers((prev) => [...new Set([...prev, seatNumber])]);
 
     try
     {
       const res = await apiPost<SeatStateResponse>(
         `/api/live-games/${gameId}/seats/${seatNumber}/state`,
-        payload
+        nextState
       );
 
       if (!res.ok)
@@ -558,20 +476,13 @@ export default function GamePage()
         setGame(res.data.game);
       }
     }
-    catch (err)
-    {
-      console.error("Failed to update seat state:", err);
-    }
     finally
     {
-      setSeatSaving(seatNumber, false);
+      setSavingSeatNumbers((prev) => prev.filter((value) => value !== seatNumber));
     }
   }
 
-  async function handleCommandersChange(
-    seatNumber: number,
-    nextCommanders: CommanderCard[]
-  )
+  async function handleCommandersChange(seatNumber: number, nextCommanders: CommanderCard[])
   {
     await updateSeatState(seatNumber, { commanders: nextCommanders });
   }
@@ -608,17 +519,14 @@ export default function GamePage()
     });
   }
 
-  async function handleCommanderDamageChange(
-    seatNumber: number,
-    nextCommanderDamage: Record<string, number>
-  )
+  async function handleCommanderDamageChange(seatNumber: number, nextCommanderDamage: Record<string, number>)
   {
-    const sanitized: Record<string, number> = {};
-
-    for (const [userId, value] of Object.entries(nextCommanderDamage))
-    {
-      sanitized[userId] = clampCounter(value, 0, 99);
-    }
+    const sanitized = Object.fromEntries(
+      Object.entries(nextCommanderDamage).map(([userId, amount]) => [
+        userId,
+        clampCounter(amount, 0, 99),
+      ])
+    );
 
     await updateSeatState(seatNumber,
     {
@@ -647,6 +555,37 @@ export default function GamePage()
     if (res.data?.ok && res.data.game)
     {
       setGame(res.data.game);
+    }
+  }
+
+  async function handleResetGame()
+  {
+    if (!gameId || !isHost || resettingGame || endingGame) return;
+
+    setResettingGame(true);
+
+    try
+    {
+      const res = await apiPost<ActiveGameResponse>(`/api/live-games/${gameId}/reset`, {});
+
+      if (!res.ok)
+      {
+        console.error("Failed to reset game:", res.error);
+        return;
+      }
+
+      if (res.data?.ok && res.data.game)
+      {
+        setGame(res.data.game);
+      }
+    }
+    catch (err)
+    {
+      console.error("Failed to reset game:", err);
+    }
+    finally
+    {
+      setResettingGame(false);
     }
   }
 
@@ -760,17 +699,29 @@ export default function GamePage()
 
   function handleToggleSelfMic()
   {
-    mediaSession.toggleMic();
+    if (mediaSession.micEnabled)
+    {
+      void mediaSession.disableMic();
+      return;
+    }
+
+    void mediaSession.enableMic();
   }
 
   function handleToggleSelfCam()
   {
-    mediaSession.toggleCam();
+    if (mediaSession.camEnabled)
+    {
+      void mediaSession.disableCam();
+      return;
+    }
+
+    void mediaSession.enableCam();
   }
 
   async function handleSetMonarch(seatNumber: number | null)
   {
-    if (!gameId) return;
+    if (!gameId || !isSeatedPlayer) return;
 
     try
     {
@@ -798,7 +749,7 @@ export default function GamePage()
 
   async function handleSetInitiative(seatNumber: number | null)
   {
-    if (!gameId) return;
+    if (!gameId || !isSeatedPlayer) return;
 
     try
     {
@@ -828,9 +779,10 @@ export default function GamePage()
   {
     if (!gameId || !isSeatedPlayer) return;
 
-    const nextState = game?.dayNightState === "day"
-      ? "night"
-      : "day";
+    const nextState =
+      game?.dayNightState === "day"
+        ? "night"
+        : "day";
 
     try
     {
@@ -841,7 +793,7 @@ export default function GamePage()
 
       if (!res.ok)
       {
-        console.error("Failed to update day/night state:", res.error);
+        console.error("Failed to update day/night:", res.error);
         return;
       }
 
@@ -852,17 +804,15 @@ export default function GamePage()
     }
     catch (err)
     {
-      console.error("Failed to update day/night state:", err);
+      console.error("Failed to update day/night:", err);
     }
   }
 
   const seatSlots = useMemo(() =>
   {
     const selfUserId = getStoredUserId();
-
     const remoteByUsername = new Map(
       Object.values(mediaSession.remoteMedia)
-        .filter((remote) => remote.username)
         .map((remote) => [String(remote.username).toLowerCase(), remote])
     );
 
@@ -976,7 +926,7 @@ export default function GamePage()
 
   return (
     <div className="h-[100dvh] w-screen overflow-hidden bg-slate-950 text-slate-100">
-           <header className="sticky top-0 z-40 border-b border-white/10 bg-slate-950/78 backdrop-blur-xl">
+      <header className="sticky top-0 z-40 border-b border-white/10 bg-slate-950/78 backdrop-blur-xl">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(45,212,191,0.10),transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0))]" />
 
         <div className="relative flex w-full items-center justify-between gap-4 px-5 py-2.5">
@@ -985,36 +935,6 @@ export default function GamePage()
               {roomTitle}
             </h1>
           </div>
-
-          {game?.dayNightState ? (
-            <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-              <div
-                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold shadow-lg ${
-                  game.dayNightState === "day"
-                    ? "border-amber-300/35 bg-amber-400/12 text-amber-100"
-                    : "border-indigo-300/35 bg-indigo-400/12 text-indigo-100"
-                }`}
-              >
-                <span
-                  className={`inline-flex h-7 w-7 items-center justify-center rounded-full border ${
-                    game.dayNightState === "day"
-                      ? "border-amber-200/30 bg-amber-300/12"
-                      : "border-indigo-200/30 bg-indigo-300/12"
-                  }`}
-                >
-                  {game.dayNightState === "day" ? (
-                    <Sun className="h-4 w-4" />
-                  ) : (
-                    <Moon className="h-4 w-4" />
-                  )}
-                </span>
-
-                <span className="hidden sm:inline">
-                  {game.dayNightState === "day" ? "Day" : "Night"}
-                </span>
-              </div>
-            </div>
-          ) : null}
 
           <div className="flex items-center gap-2">
             <button
@@ -1136,11 +1056,13 @@ export default function GamePage()
           playerCount={playerCount}
           maxPlayers={maxPlayers}
           randomizingOrder={randomizingOrder}
+          resettingGame={resettingGame}
           endingGame={endingGame}
           dayNightState={game?.dayNightState ?? null}
           micEnabled={mediaSession.micEnabled}
           camEnabled={mediaSession.camEnabled}
           onRandomizePlayerOrder={() => { void handleRandomizePlayerOrder(); }}
+          onResetGame={() => { void handleResetGame(); }}
           onEndGame={() => { void handleEndGame(); }}
           onToggleDayNight={
             isSeatedPlayer
@@ -1154,7 +1076,7 @@ export default function GamePage()
         <RightSidePanel
           open={rightOpen}
           onToggle={() => setRightOpen((value) => !value)}
-          chatTargetId={gameId || roomId}
+          roomId={roomId}
         />
       </div>
     </div>

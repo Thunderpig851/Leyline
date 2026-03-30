@@ -288,6 +288,34 @@ function sanitizeDayNightState(value)
   return { provided: true, valid: false };
 }
 
+function resetSeatForFormat(seat, format)
+{
+  const startingLife = getStartingLife(format);
+
+  seat.commanders = [];
+  seat.stats = {
+    commanderDamage: {},
+    commanderCastCount: 0,
+    life: startingLife,
+    poison: 0,
+    energy: 0,
+    experience: 0,
+  };
+}
+
+function resetGameState(game)
+{
+  const format = game?.settings?.format;
+
+  for (const seat of game.seats || [])
+  {
+    resetSeatForFormat(seat, format);
+  }
+
+  game.monarchSeatNumber = null;
+  game.initiativeSeatNumber = null;
+}
+
 router.get("/room/:roomId", requireAuth, async (req, res) =>
 {
   try
@@ -443,9 +471,10 @@ router.post("/:gameId/join", requireAuth, async (req, res) =>
     if (existingSeat)
     {
       existingSeat.connectionStatus = "connected";
-      existingSeat.username = req.user.username;
       existingSeat.lastSeenAt = new Date();
-      if (!existingSeat.joinedAt) existingSeat.joinedAt = new Date();
+      existingSeat.lastActiveAt = new Date();
+      existingSeat.awaySinceAt = null;
+      existingSeat.disconnectDeadlineAt = null;
 
       syncBoardOrder(game);
       await game.save();
@@ -453,44 +482,37 @@ router.post("/:gameId/join", requireAuth, async (req, res) =>
       const io = req.app.get("io");
       emitGameUpdated(io, game);
 
-      return res.status(200).json({ ok: true, game, alreadySeated: true });
+      return res.status(200).json({ ok: true, game, seatNumber: existingSeat.seatNumber, alreadyJoined: true });
     }
 
-    const maxPlayers = Number(room.settings?.maxPlayers ?? 4);
-    const takenSeatNumbers = new Set(game.seats.map((seat) => seat.seatNumber));
+    let requestedSeatNumber = Number(seatNumber);
 
-    let assignedSeatNumber = seatNumber;
-
-    if (!assignedSeatNumber)
+    if (!Number.isInteger(requestedSeatNumber) || requestedSeatNumber < 1 || requestedSeatNumber > 4)
     {
-      for (let i = 1; i <= maxPlayers; i += 1)
-      {
-        if (!takenSeatNumbers.has(i))
-        {
-          assignedSeatNumber = i;
-          break;
-        }
-      }
+      requestedSeatNumber = null;
     }
 
-    if (!assignedSeatNumber)
+    const occupiedSeatNumbers = new Set(game.seats.map((seat) => seat.seatNumber));
+
+    let targetSeatNumber = requestedSeatNumber;
+
+    if (!targetSeatNumber || occupiedSeatNumbers.has(targetSeatNumber))
     {
-      return res.status(400).json({ ok: false, error: "No open seats available." });
+      targetSeatNumber = [1, 2, 3, 4].find((value) => !occupiedSeatNumbers.has(value)) ?? null;
     }
 
-    if (takenSeatNumbers.has(assignedSeatNumber))
+    if (!targetSeatNumber)
     {
-      return res.status(400).json({ ok: false, error: "Seat is already taken." });
+      return res.status(400).json({ ok: false, error: "No seats available." });
     }
 
     const startingLife = getStartingLife(game.settings?.format);
 
     game.seats.push({
-      seatNumber: assignedSeatNumber,
+      seatNumber: targetSeatNumber,
       userId: req.user._id,
       username: req.user.username,
       joinedAt: new Date(),
-      lastSeenAt: new Date(),
       connectionStatus: "connected",
       isReady: false,
       deck: null,
@@ -502,7 +524,11 @@ router.post("/:gameId/join", requireAuth, async (req, res) =>
         poison: 0,
         energy: 0,
         experience: 0,
-      }
+      },
+      lastSeenAt: new Date(),
+      lastActiveAt: new Date(),
+      awaySinceAt: null,
+      disconnectDeadlineAt: null,
     });
 
     syncBoardOrder(game);
@@ -511,12 +537,12 @@ router.post("/:gameId/join", requireAuth, async (req, res) =>
     const io = req.app.get("io");
     emitGameUpdated(io, game);
 
-    return res.status(200).json({ ok: true, game });
+    return res.status(200).json({ ok: true, game, seatNumber: targetSeatNumber });
   }
   catch (err)
   {
-    console.error("Error joining game seat:", err);
-    return res.status(500).json({ ok: false, error: err.message || "Failed to join game seat." });
+    console.error("Error joining live game:", err);
+    return res.status(500).json({ ok: false, error: err.message || "Failed to join live game." });
   }
 });
 
@@ -530,8 +556,10 @@ router.post("/:gameId/leave", requireAuth, async (req, res) =>
       return res.status(404).json({ ok: false, error: "Game not found." });
     }
 
+    const leavingUserId = req.user._id.toString();
+
     const seatIndex = game.seats.findIndex(
-      (seat) => seat.userId?.toString() === req.user._id.toString()
+      (seat) => seat.userId?.toString() === leavingUserId
     );
 
     if (seatIndex === -1)
@@ -539,46 +567,10 @@ router.post("/:gameId/leave", requireAuth, async (req, res) =>
       return res.status(200).json({ ok: true, game, alreadyLeft: true });
     }
 
-    const leavingSeat = game.seats[seatIndex];
-    clearSeatMarkersIfNeeded(game, leavingSeat?.seatNumber);
-    game.seats.splice(seatIndex, 1);
+    const [removedSeat] = game.seats.splice(seatIndex, 1);
 
+    clearSeatMarkersIfNeeded(game, removedSeat.seatNumber);
     syncBoardOrder(game);
-    await game.save();
-
-    const io = req.app.get("io");
-    emitGameUpdated(io, game);
-
-    return res.status(200).json({ ok: true, game });
-  }
-  catch (err)
-  {
-    console.error("Error leaving game:", err);
-    return res.status(500).json({ ok: false, error: err.message || "Failed to leave game." });
-  }
-});
-
-router.post("/:gameId/disconnect", requireAuth, async (req, res) =>
-{
-  try
-  {
-    const game = await LiveGameModel.findById(req.params.gameId).exec();
-    if (!game)
-    {
-      return res.status(404).json({ ok: false, error: "Game not found." });
-    }
-
-    const seat = game.seats.find(
-      (entry) => entry.userId?.toString() === req.user._id.toString()
-    );
-
-    if (!seat)
-    {
-      return res.status(404).json({ ok: false, error: "Player seat not found in game." });
-    }
-
-    seat.connectionStatus = "reconnecting";
-    seat.lastSeenAt = new Date();
 
     await game.save();
 
@@ -589,8 +581,8 @@ router.post("/:gameId/disconnect", requireAuth, async (req, res) =>
   }
   catch (err)
   {
-    console.error("Error disconnecting player from game:", err);
-    return res.status(500).json({ ok: false, error: err.message || "Failed to mark player as reconnecting." });
+    console.error("Error leaving live game:", err);
+    return res.status(500).json({ ok: false, error: err.message || "Failed to leave live game." });
   }
 });
 
@@ -610,12 +602,14 @@ router.post("/:gameId/reconnect", requireAuth, async (req, res) =>
 
     if (!seat)
     {
-      return res.status(404).json({ ok: false, error: "Player seat not found in game." });
+      return res.status(404).json({ ok: false, error: "No seat found for this player." });
     }
 
     seat.connectionStatus = "connected";
     seat.lastSeenAt = new Date();
-    seat.username = req.user.username;
+    seat.lastActiveAt = new Date();
+    seat.awaySinceAt = null;
+    seat.disconnectDeadlineAt = null;
 
     await game.save();
 
@@ -939,6 +933,50 @@ router.post("/:gameId/settings", requireAuth, async (req, res) =>
   {
     console.error("Error updating game settings:", err);
     return res.status(500).json({ ok: false, error: err.message || "Failed to update game settings." });
+  }
+});
+
+router.post("/:gameId/reset", requireAuth, async (req, res) =>
+{
+  try
+  {
+    const game = await LiveGameModel.findById(req.params.gameId).exec();
+    if (!game)
+    {
+      return res.status(404).json({ ok: false, error: "Game not found." });
+    }
+
+    if (game.status !== "active")
+    {
+      return res.status(400).json({ ok: false, error: "Game is not active." });
+    }
+
+    const room = await RoomModel.findById(game.roomId).exec();
+    const hostUserId = getHostUserIdForGame(game, room);
+
+    if (!hostUserId)
+    {
+      return res.status(403).json({ ok: false, error: "Unable to determine game host." });
+    }
+
+    if (hostUserId !== req.user._id.toString())
+    {
+      return res.status(403).json({ ok: false, error: "Only the room host can reset the game." });
+    }
+
+    resetGameState(game);
+    syncBoardOrder(game);
+    await game.save();
+
+    const io = req.app.get("io");
+    emitGameUpdated(io, game);
+
+    return res.status(200).json({ ok: true, game });
+  }
+  catch (err)
+  {
+    console.error("Error resetting game:", err);
+    return res.status(500).json({ ok: false, error: err.message || "Failed to reset game." });
   }
 });
 

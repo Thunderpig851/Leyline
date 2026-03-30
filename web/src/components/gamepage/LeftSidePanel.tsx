@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import {
   Flag,
+  RotateCcw,
   Mic,
   MicOff,
   Shuffle,
@@ -18,11 +19,13 @@ type LeftSidePanelProps =
   playerCount: number;
   maxPlayers: number;
   randomizingOrder?: boolean;
+  resettingGame?: boolean;
   endingGame?: boolean;
   dayNightState?: "day" | "night" | null;
   micEnabled: boolean;
   camEnabled: boolean;
   onRandomizePlayerOrder?: () => void;
+  onResetGame?: () => void;
   onEndGame?: () => void;
   onToggleDayNight?: () => void;
   onToggleSelfMic?: () => void;
@@ -36,11 +39,13 @@ export default function LeftSidePanel({
   playerCount,
   maxPlayers,
   randomizingOrder = false,
+  resettingGame = false,
   endingGame = false,
   dayNightState = null,
   micEnabled,
   camEnabled,
   onRandomizePlayerOrder,
+  onResetGame,
   onEndGame,
   onToggleDayNight,
   onToggleSelfMic,
@@ -95,9 +100,19 @@ export default function LeftSidePanel({
             <ControlCard
               title=""
               description=""
+              icon={<RotateCcw className="h-4 w-4" />}
+              buttonLabel={resettingGame ? "Resetting..." : "Reset Game"}
+              disabled={!isHost || !onResetGame || resettingGame || endingGame}
+              onClick={onResetGame}
+              tone="teal"
+            />
+
+            <ControlCard
+              title=""
+              description=""
               icon={<Flag className="h-4 w-4" />}
               buttonLabel={endingGame ? "Ending..." : "End Game"}
-              disabled={!isHost || !onEndGame || endingGame}
+              disabled={!isHost || !onEndGame || endingGame || resettingGame}
               onClick={onEndGame}
               tone="neutral"
             />
@@ -113,7 +128,12 @@ export default function LeftSidePanel({
             <div className="rounded-2xl border border-white/10 bg-slate-950/55 p-3">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  Enable Day/Night
+                  <div className="text-sm font-medium text-slate-100">
+                    Shared Markers
+                  </div>
+                  <div className="mt-1 text-xs leading-5 text-slate-400">
+                    Any seated player can update the current day or night state.
+                  </div>
                 </div>
               </div>
 
