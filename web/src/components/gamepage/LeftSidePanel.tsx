@@ -4,6 +4,7 @@ import {
   Mic,
   MicOff,
   Shuffle,
+  SunMoon,
   Video,
   VideoOff,
 } from "lucide-react";
@@ -18,10 +19,12 @@ type LeftSidePanelProps =
   maxPlayers: number;
   randomizingOrder?: boolean;
   endingGame?: boolean;
+  dayNightEnabled?: boolean;
   micEnabled: boolean;
   camEnabled: boolean;
   onRandomizePlayerOrder?: () => void;
   onEndGame?: () => void;
+  onToggleDayNightEnabled?: () => void;
   onToggleSelfMic?: () => void;
   onToggleSelfCam?: () => void;
 };
@@ -34,10 +37,12 @@ export default function LeftSidePanel({
   maxPlayers,
   randomizingOrder = false,
   endingGame = false,
+  dayNightEnabled = false,
   micEnabled,
   camEnabled,
   onRandomizePlayerOrder,
   onEndGame,
+  onToggleDayNightEnabled,
   onToggleSelfMic,
   onToggleSelfCam,
 }: LeftSidePanelProps)
@@ -62,13 +67,13 @@ export default function LeftSidePanel({
           className={`rounded-3xl border p-4 transition ${
             isHost
               ? "border-white/10 bg-black/20"
-              : "border-white/10 bg-black/10 opacity-80"
+              : "border-white/10 bg-black/10"
           }`}
         >
           <div className="mb-3 flex items-center justify-between gap-3">
             <div>
               <div className="text-sm font-semibold text-slate-100">
-                Host Controls
+                Game Controls
               </div>
               <div className="mt-1 text-xs text-slate-400">
                 {playerCount}/{maxPlayers} players seated
@@ -78,7 +83,17 @@ export default function LeftSidePanel({
 
           <div className="space-y-3">
             <ControlCard
-              title="Randomize Player Order"
+              title=""
+              description=""
+              icon={<SunMoon className="h-4 w-4" />}
+              buttonLabel={dayNightEnabled ? "Disable Day / Night" : "Enable Day / Night"}
+              disabled={!onToggleDayNightEnabled}
+              onClick={onToggleDayNightEnabled}
+              tone="teal"
+            />
+
+            <ControlCard
+              title=""
               description=""
               icon={<Shuffle className="h-4 w-4" />}
               buttonLabel={randomizingOrder ? "Rolling..." : "Shuffle Order"}
@@ -88,7 +103,7 @@ export default function LeftSidePanel({
             />
 
             <ControlCard
-              title="End Game"
+              title=""
               description=""
               icon={<Flag className="h-4 w-4" />}
               buttonLabel={endingGame ? "Ending..." : "End Game"}

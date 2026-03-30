@@ -116,7 +116,7 @@ export default function CommanderPanel(
     async function loadCurrentCards()
     {
       const entries = await Promise.all(
-        namesToLoad.map(async (name) => [name, await fetchNamedCard(name)])
+        namesToLoad.map(async (name): Promise<[string, ScryfallCard | null]> => [name, await fetchNamedCard(name)])
       );
 
       if (cancelled) return;

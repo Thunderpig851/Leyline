@@ -13,6 +13,19 @@ function getStartingLife(format)
   return format === "commander" ? 40 : 20;
 }
 
+function getHostUserIdForGame(game, room)
+{
+  if (room?.hostID)
+  {
+    return room.hostID.toString();
+  }
+
+  const firstSeat = [...(game.seats || [])]
+    .sort((a, b) => a.seatNumber - b.seatNumber)[0];
+
+  return firstSeat?.userId?.toString() || null;
+}
+
 function emitGameUpdated(io, game)
 {
   io.to(`live-game:${game._id}`).emit("game:updated", { game });
@@ -248,6 +261,33 @@ function isValidOccupiedSeat(game, seatNumber)
   );
 }
 
+function sanitizeDayNightState(value)
+{
+  if (value === undefined)
+  {
+    return { provided: false, value: undefined };
+  }
+
+  if (value === null || value === "")
+  {
+    return { provided: true, value: null };
+  }
+
+  if (typeof value !== "string")
+  {
+    return { provided: true, valid: false };
+  }
+
+  const normalized = value.trim().toLowerCase();
+
+  if (normalized === "day" || normalized === "night")
+  {
+    return { provided: true, valid: true, value: normalized };
+  }
+
+  return { provided: true, valid: false };
+}
+
 router.get("/room/:roomId", requireAuth, async (req, res) =>
 {
   try
@@ -322,6 +362,7 @@ router.post("/start", requireAuth, async (req, res) =>
         trackMonarch: true,
         trackInitiative: true,
         trackExperience: false,
+        enableDayNight: false,
       },
 
       boardOrder: [1, 2, 3, 4],
@@ -694,12 +735,14 @@ router.post("/:gameId/randomize-player-order", requireAuth, async (req, res) =>
     }
 
     const room = await RoomModel.findById(game.roomId).exec();
-    if (!room)
+    const hostUserId = getHostUserIdForGame(game, room);
+
+    if (!hostUserId)
     {
-      return res.status(404).json({ ok: false, error: "Room not found for game." });
+      return res.status(403).json({ ok: false, error: "Unable to determine game host." });
     }
 
-    if (room.hostID.toString() !== req.user._id.toString())
+    if (hostUserId !== req.user._id.toString())
     {
       return res.status(403).json({ ok: false, error: "Only the room host can randomize player order." });
     }
@@ -756,7 +799,8 @@ router.post("/:gameId/markers", requireAuth, async (req, res) =>
       return res.status(403).json({ ok: false, error: "You must be seated in the game to update shared markers." });
     }
 
-    const { monarchSeatNumber, initiativeSeatNumber } = req.body || {};
+    const { monarchSeatNumber, initiativeSeatNumber, dayNightState } = req.body || {};
+    const parsedDayNightState = sanitizeDayNightState(dayNightState);
 
     if (monarchSeatNumber !== undefined && !isValidOccupiedSeat(game, monarchSeatNumber))
     {
@@ -766,6 +810,11 @@ router.post("/:gameId/markers", requireAuth, async (req, res) =>
     if (initiativeSeatNumber !== undefined && !isValidOccupiedSeat(game, initiativeSeatNumber))
     {
       return res.status(400).json({ ok: false, error: "Invalid initiative seat." });
+    }
+
+    if (parsedDayNightState.provided && parsedDayNightState.valid === false)
+    {
+      return res.status(400).json({ ok: false, error: "Invalid day/night state." });
     }
 
     if (monarchSeatNumber !== undefined)
@@ -780,6 +829,11 @@ router.post("/:gameId/markers", requireAuth, async (req, res) =>
       game.initiativeSeatNumber = initiativeSeatNumber === null
         ? null
         : Number(initiativeSeatNumber);
+    }
+
+    if (parsedDayNightState.provided)
+    {
+      game.dayNightState = parsedDayNightState.value;
     }
 
     await game.save();
@@ -806,32 +860,73 @@ router.post("/:gameId/settings", requireAuth, async (req, res) =>
       return res.status(404).json({ ok: false, error: "Game not found." });
     }
 
-    const room = await RoomModel.findById(game.roomId).exec();
-    if (!room)
+    const requesterUserId = req.user._id.toString();
+    const requesterSeat = game.seats.find(
+      (seat) => seat.userId?.toString() === requesterUserId
+    );
+
+    if (!requesterSeat)
     {
-      return res.status(404).json({ ok: false, error: "Room not found for game." });
+      return res.status(403).json({ ok: false, error: "You must be seated in the game to update settings." });
     }
 
-    if (room.hostID.toString() !== req.user._id.toString())
-    {
-      return res.status(403).json({ ok: false, error: "Only the room host can update game settings." });
-    }
+    const room = await RoomModel.findById(game.roomId).exec();
+    const hostUserId = getHostUserIdForGame(game, room);
 
     if (!game.settings)
     {
       game.settings = {};
     }
 
-    const { trackEnergy, trackExperience } = req.body || {};
-
-    game.settings.trackEnergy = sanitizeTrackedCounterFlag(
+    const {
       trackEnergy,
-      game.settings.trackEnergy
-    );
-    game.settings.trackExperience = sanitizeTrackedCounterFlag(
       trackExperience,
-      game.settings.trackExperience
-    );
+      enableDayNight,
+    } = req.body || {};
+
+    const wantsProtectedSettings =
+      trackEnergy !== undefined ||
+      trackExperience !== undefined;
+
+    if (wantsProtectedSettings)
+    {
+      if (!hostUserId)
+      {
+        return res.status(403).json({ ok: false, error: "Unable to determine game host." });
+      }
+
+      if (hostUserId !== requesterUserId)
+      {
+        return res.status(403).json({ ok: false, error: "Only the room host can update those game settings." });
+      }
+
+      game.settings.trackEnergy = sanitizeTrackedCounterFlag(
+        trackEnergy,
+        game.settings.trackEnergy
+      );
+
+      game.settings.trackExperience = sanitizeTrackedCounterFlag(
+        trackExperience,
+        game.settings.trackExperience
+      );
+    }
+
+    if (enableDayNight !== undefined)
+    {
+      game.settings.enableDayNight = Boolean(enableDayNight);
+
+      if (game.settings.enableDayNight)
+      {
+        if (!game.dayNightState)
+        {
+          game.dayNightState = "day";
+        }
+      }
+      else
+      {
+        game.dayNightState = null;
+      }
+    }
 
     await game.save();
 
@@ -858,12 +953,14 @@ router.post("/:gameId/end", requireAuth, async (req, res) =>
     }
 
     const room = await RoomModel.findById(game.roomId).exec();
-    if (!room)
+    const hostUserId = getHostUserIdForGame(game, room);
+
+    if (!hostUserId)
     {
-      return res.status(404).json({ ok: false, error: "Room not found for game." });
+      return res.status(403).json({ ok: false, error: "Unable to determine game host." });
     }
 
-    if (room.hostID.toString() !== req.user._id.toString())
+    if (hostUserId !== req.user._id.toString())
     {
       return res.status(403).json({ ok: false, error: "Only the room host can end the game." });
     }
@@ -881,7 +978,7 @@ router.post("/:gameId/end", requireAuth, async (req, res) =>
     await Promise.all([
       RoomChatMessageModel.deleteMany({ roomId: game.roomId }).exec(),
       LiveGameModel.deleteOne({ _id: game._id }).exec(),
-      RoomModel.deleteOne({ _id: game.roomId }).exec(),
+      room ? RoomModel.deleteOne({ _id: game.roomId }).exec() : Promise.resolve(),
     ]);
 
     io.emit("rooms:changed");

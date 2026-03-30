@@ -8,7 +8,7 @@ import React,
   useEffect,
 } from "react";
 
-import { gameDataDB } from "../lib/indexDb";
+import { gameDataDB } from "../lib/indexDB";
 
 export type GameSessionState =
 {
@@ -103,7 +103,7 @@ export function GameSessionProvider({ children }: { children: React.ReactNode })
   {
     setSession(initialSession);
 
-    void gameDataDB.gameData.delete("current").catch((error) =>
+    void gameDataDB.gameData.delete("current").catch((error: unknown) =>
     {
       console.error("Failed to clear persisted game session:", error);
     });

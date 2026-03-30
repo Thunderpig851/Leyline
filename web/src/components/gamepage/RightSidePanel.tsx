@@ -32,15 +32,15 @@ export default function RightSidePanel({
       side="right"
       open={open}
       width={width}
-      title="Game Tools"
-      description="Card log, chat, and search."
+      title=""
+      description=""
       onToggle={onToggle}
     >
       <div className="mt-4 flex min-h-0 flex-col gap-4">
         <div className="grid grid-cols-3 gap-3">
           <WidgetTile
             active={activeTab === "card-log"}
-            label="Card Log"
+            label="Cards"
             icon={<BookOpen size={30} />}
             onClick={() => setActiveTab("card-log")}
           />
@@ -112,7 +112,7 @@ function CardLogPlaceholder()
       <div className="rounded-3xl border border-dashed border-white/10 bg-black/20 p-6">
         <div className="text-sm font-semibold text-slate-100">Card Log</div>
         <div className="mt-2 text-sm leading-6 text-slate-400">
-          This widget is reserved for the future card interaction log.
+          Coming soon . . .
         </div>
       </div>
     </div>

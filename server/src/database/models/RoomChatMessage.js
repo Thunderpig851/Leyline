@@ -1,5 +1,37 @@
 const mongoose = require("mongoose");
 
+const RoomChatActionSchema = new mongoose.Schema(
+{
+  type:
+  {
+    type: String,
+    enum: ["dice-roll", "coin-flip"],
+    required: true,
+  },
+
+  diceSides:
+  {
+    type: Number,
+    default: null,
+  },
+
+  resultNumber:
+  {
+    type: Number,
+    default: null,
+  },
+
+  resultLabel:
+  {
+    type: String,
+    trim: true,
+    maxlength: 50,
+    default: null,
+  },
+},
+{ _id: false }
+);
+
 const RoomChatMessageSchema = new mongoose.Schema(
 {
   roomId:
@@ -26,12 +58,26 @@ const RoomChatMessageSchema = new mongoose.Schema(
     maxlength: 50,
   },
 
+  kind:
+  {
+    type: String,
+    enum: ["message", "game-action"],
+    default: "message",
+    required: true,
+  },
+
   body:
   {
     type: String,
     required: true,
     trim: true,
     maxlength: 1500,
+  },
+
+  action:
+  {
+    type: RoomChatActionSchema,
+    default: null,
   },
 },
 {

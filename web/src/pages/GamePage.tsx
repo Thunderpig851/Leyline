@@ -9,6 +9,7 @@ import RightSidePanel from "../components/gamepage/RightSidePanel";
 import PlayerTile from "../components/gamepage/PlayerTile";
 import CommanderPanel from "../components/gamepage/CommanderPanel";
 import PlayerOrderShuffleOverlay from "../components/gamepage/PlayerOrderShuffleOverlay";
+import DayNightToggle from "../components/gamepage/DayNightToggle";
 
 type CommanderCard =
 {
@@ -47,42 +48,18 @@ type ActiveGame =
     trackMonarch?: boolean;
     trackInitiative?: boolean;
     trackExperience?: boolean;
+    enableDayNight?: boolean;
   };
   monarchSeatNumber?: number | null;
   initiativeSeatNumber?: number | null;
+  dayNightState?: "day" | "night" | null;
   seats: GameSeat[];
-};
-
-type RoomMember =
-{
-  userID: string;
-  role?: string;
-};
-
-type RoomData =
-{
-  _id: string;
-  title: string;
-  hostID: string;
-  hostName: string;
-  settings?: {
-    maxPlayers?: number;
-    format?: string;
-  };
-  members?: RoomMember[];
 };
 
 type ActiveGameResponse =
 {
   ok: boolean;
   game?: ActiveGame;
-  error?: string;
-};
-
-type RoomResponse =
-{
-  ok: boolean;
-  room?: RoomData;
   error?: string;
 };
 
@@ -183,7 +160,6 @@ export default function GamePage()
   const [leftOpen, setLeftOpen] = useState(false);
   const [rightOpen, setRightOpen] = useState(false);
   const [game, setGame] = useState<ActiveGame | null>(null);
-  const [room, setRoom] = useState<RoomData | null>(null);
   const [gameId, setGameId] = useState("");
   const [leaving, setLeaving] = useState(false);
   const [endingGame, setEndingGame] = useState(false);
@@ -246,37 +222,6 @@ export default function GamePage()
       });
     }
   }, [roomId, mediaSession.status, navigate]);
-
-  useEffect(() =>
-  {
-    if (!roomId) return;
-
-    let cancelled = false;
-
-    async function loadRoom()
-    {
-      try
-      {
-        const res = await apiGet<RoomResponse>(`/api/rooms/${roomId}`);
-
-        if (!res.ok || !res.data?.ok || !res.data.room) return;
-        if (cancelled) return;
-
-        setRoom(res.data.room);
-      }
-      catch (err)
-      {
-        console.error("Failed to load room:", err);
-      }
-    }
-
-    void loadRoom();
-
-    return () =>
-    {
-      cancelled = true;
-    };
-  }, [roomId]);
 
   useEffect(() =>
   {
@@ -680,6 +625,12 @@ export default function GamePage()
     });
   }
 
+  const isSeatedPlayer = useMemo(() =>
+  {
+    const userId = getStoredUserId();
+    return Boolean(game?.seats?.some((seat) => seat.userId === userId));
+  }, [game]);
+
   async function handleRandomizePlayerOrder()
   {
     if (!gameId || !isHost || randomizingOrder) return;
@@ -695,6 +646,38 @@ export default function GamePage()
     if (res.data?.ok && res.data.game)
     {
       setGame(res.data.game);
+    }
+  }
+
+  async function handleToggleDayNightEnabled()
+  {
+    if (!gameId || !isSeatedPlayer) return;
+
+    try
+    {
+      const nextEnabled = !game?.settings?.enableDayNight;
+
+      const res = await apiPost<ActiveGameResponse>(
+        `/api/live-games/${gameId}/settings`,
+        {
+          enableDayNight: nextEnabled,
+        }
+      );
+
+      if (!res.ok)
+      {
+        console.error("Failed to update day/night setting:", res.error);
+        return;
+      }
+
+      if (res.data?.ok && res.data.game)
+      {
+        setGame(res.data.game);
+      }
+    }
+    catch (err)
+    {
+      console.error("Failed to update day/night setting:", err);
     }
   }
 
@@ -872,6 +855,38 @@ export default function GamePage()
     }
   }
 
+  async function handleToggleDayNight()
+  {
+    if (!gameId || !isSeatedPlayer || !game?.settings?.enableDayNight) return;
+
+    const nextState = game?.dayNightState === "night"
+      ? "day"
+      : "night";
+
+    try
+    {
+      const res = await apiPost<ActiveGameResponse>(
+        `/api/live-games/${gameId}/markers`,
+        { dayNightState: nextState }
+      );
+
+      if (!res.ok)
+      {
+        console.error("Failed to update day/night state:", res.error);
+        return;
+      }
+
+      if (res.data?.ok && res.data.game)
+      {
+        setGame(res.data.game);
+      }
+    }
+    catch (err)
+    {
+      console.error("Failed to update day/night state:", err);
+    }
+  }
+
   const seatSlots = useMemo(() =>
   {
     const selfUserId = getStoredUserId();
@@ -896,7 +911,7 @@ export default function GamePage()
       {
         return {
           seatNumber,
-          title: `Seat ${seatNumber} · Open`,
+          title: `Seat ${seatNumber}`,
           stream: null,
           isSelf: false,
           status: "empty" as const,
@@ -981,13 +996,14 @@ export default function GamePage()
     );
   }
 
-  const roomTitle = room?.title || session.roomTitle || "Placeholder Room";
-  const isHost = room?.hostID === getStoredUserId();
-  const maxPlayers = Number(room?.settings?.maxPlayers ?? 4);
-  const playerCount =
-    game?.seats?.filter((seat) => Boolean(seat.userId)).length ??
-    room?.members?.length ??
-    0;
+  const fallbackHostUserId =
+    [...(game?.seats ?? [])]
+      .sort((a, b) => a.seatNumber - b.seatNumber)[0]?.userId ?? "";
+
+  const roomTitle = session.roomTitle || "Placeholder Room";
+  const isHost = fallbackHostUserId === getStoredUserId();
+  const maxPlayers = 4;
+  const playerCount = game?.seats?.filter((seat) => Boolean(seat.userId)).length ?? 0;
 
   return (
     <div className="h-[100dvh] w-screen overflow-hidden bg-slate-950 text-slate-100">
@@ -1001,14 +1017,24 @@ export default function GamePage()
             </h1>
           </div>
 
-          <button
-            type="button"
-            onClick={() => { void handleLeaveGame(); }}
-            disabled={leaving}
-            className="inline-flex shrink-0 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:border-red-400/40 hover:bg-red-500/12 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {leaving ? "Leaving..." : "Leave"}
-          </button>
+          <div className="flex items-center gap-2">
+            {game?.settings?.enableDayNight ? (
+              <DayNightToggle
+                value={game?.dayNightState ?? "day"}
+                disabled={!isSeatedPlayer}
+                onToggle={() => { void handleToggleDayNight(); }}
+              />
+            ) : null}
+
+            <button
+              type="button"
+              onClick={() => { void handleLeaveGame(); }}
+              disabled={leaving}
+              className="inline-flex shrink-0 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:border-red-400/40 hover:bg-red-500/12 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {leaving ? "Leaving..." : "Leave"}
+            </button>
+          </div>
         </div>
       </header>
 
@@ -1120,10 +1146,16 @@ export default function GamePage()
           maxPlayers={maxPlayers}
           randomizingOrder={randomizingOrder}
           endingGame={endingGame}
+          dayNightEnabled={Boolean(game?.settings?.enableDayNight)}
           micEnabled={mediaSession.micEnabled}
           camEnabled={mediaSession.camEnabled}
           onRandomizePlayerOrder={() => { void handleRandomizePlayerOrder(); }}
           onEndGame={() => { void handleEndGame(); }}
+          onToggleDayNightEnabled={
+            isSeatedPlayer
+              ? () => { void handleToggleDayNightEnabled(); }
+              : undefined
+          }
           onToggleSelfMic={handleToggleSelfMic}
           onToggleSelfCam={handleToggleSelfCam}
         />

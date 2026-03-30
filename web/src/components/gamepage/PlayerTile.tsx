@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
-import { Crown, Pencil, Swords, X } from "lucide-react";
+import { Crown, Pencil, Swords, } from "lucide-react";
 
 type CommanderCard =
 {
@@ -639,8 +639,8 @@ export default function PlayerTile({
 
                       {hoveredCommanderName === commander.name && commanderVisualMap[commander.name]?.imageUrl ? (
                         <HoverPreview
-                          href={commanderVisualMap[commander.name]?.scryfallUri || commanderVisualMap[commander.name]?.imageUrl}
-                          src={commanderVisualMap[commander.name]?.imageUrl || ""}
+                          href={commanderVisualMap[commander.name]?.scryfallUri ?? commanderVisualMap[commander.name]?.imageUrl ?? ""}
+                          src={commanderVisualMap[commander.name]?.imageUrl ?? ""}
                           alt={commander.name}
                         />
                       ) : null}
@@ -684,8 +684,8 @@ export default function PlayerTile({
 
                         {hoveredCommanderName === commander.name && commanderVisualMap[commander.name]?.imageUrl ? (
                           <HoverPreview
-                            href={commanderVisualMap[commander.name]?.scryfallUri || commanderVisualMap[commander.name]?.imageUrl}
-                            src={commanderVisualMap[commander.name]?.imageUrl || ""}
+                            href={commanderVisualMap[commander.name]?.scryfallUri ?? commanderVisualMap[commander.name]?.imageUrl ?? ""}
+                            src={commanderVisualMap[commander.name]?.imageUrl ?? ""}
                             alt={commander.name}
                           />
                         ) : null}

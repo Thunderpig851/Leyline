@@ -21,6 +21,7 @@ const GameSettingsSchema = new mongoose.Schema(
   trackMonarch: { type: Boolean, default: true },
   trackInitiative: { type: Boolean, default: true },
   trackExperience: { type: Boolean, default: false },
+  enableDayNight: { type: Boolean, default: false },
 },
 { _id: false }
 );
@@ -210,7 +211,7 @@ const LiveGameSchema = new mongoose.Schema(
         if (seats.length > 4) return false;
 
         const seatNumbers = seats.map((seat) => seat.seatNumber);
-        return new Set(seatNumbers).size === seatNumbers.length;
+        return new Set(seatNumbers).size === seats.length;
       },
       message: "Seats must be unique and cannot exceed 4 players.",
     },
@@ -229,6 +230,13 @@ const LiveGameSchema = new mongoose.Schema(
     type: Number,
     min: 1,
     max: 4,
+    default: null,
+  },
+
+  dayNightState:
+  {
+    type: String,
+    enum: ["day", "night"],
     default: null,
   },
 },
