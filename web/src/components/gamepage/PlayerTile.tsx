@@ -31,6 +31,7 @@ type PlayerTileProps =
   commanderDamageOptions?: CommanderDamageOption[];
   hasMonarch?: boolean;
   hasInitiative?: boolean;
+  isActiveTurn?: boolean;
   isSaving?: boolean;
   canPromoteToHost?: boolean;
   promotingToHost?: boolean;
@@ -236,6 +237,7 @@ export default function PlayerTile({
   commanderDamageOptions = [],
   hasMonarch = false,
   hasInitiative = false,
+  isActiveTurn = false,
   isSaving = false,
   canPromoteToHost = false,
   promotingToHost = false,
@@ -533,11 +535,15 @@ export default function PlayerTile({
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/25 to-transparent" />
       </div>
 
+      {isActiveTurn ? (
+        <div className="pointer-events-none absolute inset-[4px] z-[1] rounded-[1.4rem] ring-2 ring-emerald-400 shadow-[0_0_0_1px_rgba(16,185,129,0.35),0_0_28px_rgba(16,185,129,0.35)]" />
+      ) : null}
+
       <div className="absolute left-3 right-3 top-3 z-10 flex items-start justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-1.5">
           <div className="rounded-xl border border-white/10 bg-slate-950/75 px-3 py-2 text-xs text-slate-100 shadow-lg backdrop-blur">
-            <div className="flex items-center gap-2">
-              <div className="group/title flex min-w-0 items-center gap-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
                 <div className="flex min-w-0 items-center gap-1.5">
                   <div className="truncate font-semibold tracking-tight">{title}</div>
 
@@ -561,49 +567,53 @@ export default function PlayerTile({
                     </span>
                   ) : null}
                 </div>
-
-                {canPromoteToHost ? (
-                  <button
-                    type="button"
-                    onClick={onPromoteToHost}
-                    disabled={!onPromoteToHost || promotingToHost}
-                    className="pointer-events-auto inline-flex shrink-0 rounded-full border border-teal-300/30 bg-teal-400/12 px-2 py-0.5 text-[10px] font-semibold text-teal-100 opacity-0 transition hover:border-teal-200/50 hover:bg-teal-400/18 group-hover/title:opacity-100 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {promotingToHost ? "Promoting..." : "Promote"}
-                  </button>
-                ) : null}
               </div>
 
-              <span className={`h-2 w-2 rounded-full ${statusMeta.dot}`} />
-              <span className={`text-[11px] ${statusMeta.text}`}>
-                {statusMeta.label}
-              </span>
+              <div className="flex shrink-0 items-center gap-2">
+                <span className={`h-2 w-2 rounded-full ${statusMeta.dot}`} />
+                <span className={`text-[11px] ${statusMeta.text}`}>
+                  {statusMeta.label}
+                </span>
 
-              {isSaving ? (
-                <svg
-                  className="h-3.5 w-3.5 animate-spin text-emerald-400"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  aria-hidden="true"
-                >
-                  <path
-                    d="M21 12a9 9 0 1 1-2.64-6.36"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                  <path
-                    d="M21 3v6h-6"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              ) : null}
+                {isSaving ? (
+                  <svg
+                    className="h-3.5 w-3.5 animate-spin text-emerald-400"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="M21 12a9 9 0 1 1-2.64-6.36"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                    <path
+                      d="M21 3v6h-6"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                ) : null}
+              </div>
             </div>
           </div>
+
+          {canPromoteToHost ? (
+            <div className="flex justify-start">
+              <button
+                type="button"
+                onClick={onPromoteToHost}
+                disabled={!onPromoteToHost || promotingToHost}
+                className="pointer-events-auto inline-flex rounded-full border border-teal-300/30 bg-slate-950/78 px-2.5 py-1 text-[10px] font-semibold text-teal-100 shadow-lg backdrop-blur transition hover:border-teal-200/50 hover:bg-teal-400/16 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {promotingToHost ? "Promoting..." : "Promote to host"}
+              </button>
+            </div>
+          ) : null}
 
           {visibleTopCounters.length > 0 ? (
             <div className="flex flex-wrap gap-1.5">

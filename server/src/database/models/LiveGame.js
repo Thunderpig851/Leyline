@@ -239,6 +239,20 @@ const LiveGameSchema = new mongoose.Schema(
     enum: ["day", "night"],
     default: null,
   },
+
+  activeTurnSeatNumber:
+  {
+    type: Number,
+    min: 1,
+    max: 4,
+    default: null,
+  },
+
+  turnStartedAt:
+  {
+    type: Date,
+    default: null,
+  },
 },
 { timestamps: true }
 );

@@ -53,6 +53,8 @@ type ActiveGame =
   monarchSeatNumber?: number | null;
   initiativeSeatNumber?: number | null;
   dayNightState?: "day" | "night" | null;
+  activeTurnSeatNumber?: number | null;
+  turnStartedAt?: string | null;
   seats: GameSeat[];
 };
 
@@ -185,6 +187,21 @@ function getNormalizedBoardOrder(boardOrder?: number[])
   return normalized;
 }
 
+function formatTurnDuration(totalSeconds: number)
+{
+  const safeSeconds = Math.max(0, Math.floor(totalSeconds));
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  const seconds = safeSeconds % 60;
+
+  if (hours > 0)
+  {
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
+
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
 export default function GamePage()
 {
   const [leftOpen, setLeftOpen] = useState(false);
@@ -207,10 +224,12 @@ export default function GamePage()
   });
   const [commanderPanelOpen, setCommanderPanelOpen] = useState(false);
   const [commanderPanelSeatNumber, setCommanderPanelSeatNumber] = useState<number | null>(null);
+  const [turnClockNow, setTurnClockNow] = useState(() => Date.now());
 
   const shuffleIntervalRef = useRef<number | null>(null);
   const shuffleTimeoutRef = useRef<number | null>(null);
   const shuffleCloseTimeoutRef = useRef<number | null>(null);
+  const advancingTurnRef = useRef(false);
 
   const { session, reset } = useGameSession();
   const mediaSession = useMediaSession();
@@ -563,6 +582,26 @@ export default function GamePage()
       window.clearInterval(intervalId);
     };
   }, [gameId, roomId]);
+
+  useEffect(() =>
+  {
+    if (!game?.turnStartedAt || !game?.activeTurnSeatNumber)
+    {
+      return;
+    }
+
+    setTurnClockNow(Date.now());
+
+    const intervalId = window.setInterval(() =>
+    {
+      setTurnClockNow(Date.now());
+    }, 1000);
+
+    return () =>
+    {
+      window.clearInterval(intervalId);
+    };
+  }, [game?.turnStartedAt, game?.activeTurnSeatNumber]);
 
   function setSeatSaving(seatNumber: number, isSaving: boolean)
   {
@@ -980,6 +1019,37 @@ export default function GamePage()
     }
   }
 
+  async function handleAdvanceTurn()
+  {
+    if (!gameId || !isSeatedPlayer || advancingTurnRef.current) return;
+
+    advancingTurnRef.current = true;
+
+    try
+    {
+      const res = await apiPost<ActiveGameResponse>(`/api/live-games/${gameId}/turn/advance`, {});
+
+      if (!res.ok)
+      {
+        console.error("Failed to advance turn:", res.error);
+        return;
+      }
+
+      if (res.data?.ok && res.data.game)
+      {
+        setGame(res.data.game);
+      }
+    }
+    catch (err)
+    {
+      console.error("Failed to advance turn:", err);
+    }
+    finally
+    {
+      advancingTurnRef.current = false;
+    }
+  }
+
   const seatSlots = useMemo(() =>
   {
     const selfUserId = getStoredUserId();
@@ -1075,6 +1145,79 @@ export default function GamePage()
     return seatSlots.find((slot) => slot.seatNumber === commanderPanelSeatNumber) || null;
   }, [seatSlots, commanderPanelSeatNumber]);
 
+  const activeTurnSeat = useMemo(() =>
+  {
+    if (!game?.activeTurnSeatNumber) return null;
+    return seatSlots.find((slot) => slot.seatNumber === game.activeTurnSeatNumber) || null;
+  }, [game?.activeTurnSeatNumber, seatSlots]);
+
+  const turnElapsedSeconds = useMemo(() =>
+  {
+    if (!game?.turnStartedAt || !game?.activeTurnSeatNumber)
+    {
+      return 0;
+    }
+
+    const startedAt = new Date(game.turnStartedAt).getTime();
+
+    if (!Number.isFinite(startedAt))
+    {
+      return 0;
+    }
+
+    return Math.max(0, Math.floor((turnClockNow - startedAt) / 1000));
+  }, [game?.turnStartedAt, game?.activeTurnSeatNumber, turnClockNow]);
+
+  useEffect(() =>
+  {
+    if (!gameId || !isSeatedPlayer) return;
+
+    function isEditableTarget(target: EventTarget | null)
+    {
+      if (!(target instanceof HTMLElement))
+      {
+        return false;
+      }
+
+      if (target.isContentEditable)
+      {
+        return true;
+      }
+
+      const tagName = target.tagName.toLowerCase();
+
+      if (["input", "textarea", "select", "button"].includes(tagName))
+      {
+        return true;
+      }
+
+      return Boolean(target.closest("input, textarea, select, button, [contenteditable='true']"));
+    }
+
+    function handleKeyDown(event: KeyboardEvent)
+    {
+      if (event.code !== "Space" && event.key !== " ")
+      {
+        return;
+      }
+
+      if (event.repeat || isEditableTarget(event.target))
+      {
+        return;
+      }
+
+      event.preventDefault();
+      void handleAdvanceTurn();
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () =>
+    {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [gameId, isSeatedPlayer]);
+
   if (mediaSession.status !== "connected")
   {
     return (
@@ -1110,33 +1253,47 @@ export default function GamePage()
             </h1>
           </div>
 
-          {game?.dayNightState ? (
-            <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-              <div
-                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold shadow-lg ${
-                  game.dayNightState === "day"
-                    ? "border-amber-300/35 bg-amber-400/12 text-amber-100"
-                    : "border-indigo-300/35 bg-indigo-400/12 text-indigo-100"
-                }`}
-              >
-                <span
-                  className={`inline-flex h-7 w-7 items-center justify-center rounded-full border ${
+          {game?.dayNightState || activeTurnSeat ? (
+            <div className="pointer-events-none absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1.5">
+              {activeTurnSeat ? (
+                <div className="inline-flex items-center gap-2 rounded-full border border-emerald-300/35 bg-emerald-400/12 px-3 py-1.5 text-xs font-semibold text-emerald-100 shadow-lg">
+                  <span className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-300 shadow-[0_0_18px_rgba(52,211,153,0.75)]" />
+                  <span className="max-w-[11rem] truncate sm:max-w-[14rem]">
+                    {activeTurnSeat.title}
+                  </span>
+                  <span className="rounded-full border border-emerald-200/20 bg-slate-950/45 px-2 py-0.5 font-mono text-[11px] tracking-wide text-emerald-50">
+                    {formatTurnDuration(turnElapsedSeconds)}
+                  </span>
+                </div>
+              ) : null}
+
+              {game?.dayNightState ? (
+                <div
+                  className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold shadow-lg ${
                     game.dayNightState === "day"
-                      ? "border-amber-200/30 bg-amber-300/12"
-                      : "border-indigo-200/30 bg-indigo-300/12"
+                      ? "border-amber-300/35 bg-amber-400/12 text-amber-100"
+                      : "border-indigo-300/35 bg-indigo-400/12 text-indigo-100"
                   }`}
                 >
-                  {game.dayNightState === "day" ? (
-                    <Sun className="h-4 w-4" />
-                  ) : (
-                    <Moon className="h-4 w-4" />
-                  )}
-                </span>
+                  <span
+                    className={`inline-flex h-7 w-7 items-center justify-center rounded-full border ${
+                      game.dayNightState === "day"
+                        ? "border-amber-200/30 bg-amber-300/12"
+                        : "border-indigo-200/30 bg-indigo-300/12"
+                    }`}
+                  >
+                    {game.dayNightState === "day" ? (
+                      <Sun className="h-4 w-4" />
+                    ) : (
+                      <Moon className="h-4 w-4" />
+                    )}
+                  </span>
 
-                <span className="hidden sm:inline">
-                  {game.dayNightState === "day" ? "Day" : "Night"}
-                </span>
-              </div>
+                  <span className="hidden sm:inline">
+                    {game.dayNightState === "day" ? "Day" : "Night"}
+                  </span>
+                </div>
+              ) : null}
             </div>
           ) : null}
 
@@ -1174,6 +1331,7 @@ export default function GamePage()
                 commanderDamageOptions={slot.commanderDamageOptions}
                 hasMonarch={slot.hasMonarch}
                 hasInitiative={slot.hasInitiative}
+                isActiveTurn={game?.activeTurnSeatNumber === slot.seatNumber}
                 isSaving={slot.isSaving}
                 canPromoteToHost={
                   Boolean(

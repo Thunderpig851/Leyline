@@ -94,6 +94,12 @@ async function removePlayerFromGameAndRoom(gameId, roomId, userId)
       {
         game.initiativeSeatNumber = null;
       }
+
+      if (Number(game.activeTurnSeatNumber) === Number(removedSeat.seatNumber))
+      {
+        game.activeTurnSeatNumber = null;
+        game.turnStartedAt = null;
+      }
     }
 
     if (game.seats.length !== before)
