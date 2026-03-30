@@ -878,6 +878,120 @@ router.post("/:gameId/settings", requireAuth, async (req, res) =>
   }
 });
 
+router.post("/:gameId/reset", requireAuth, async (req, res) =>
+{
+  try
+  {
+    const game = await LiveGameModel.findById(req.params.gameId).exec();
+    if (!game)
+    {
+      return res.status(404).json({ ok: false, error: "Game not found." });
+    }
+
+    const room = await RoomModel.findById(game.roomId).exec();
+    const hostUserId = getHostUserIdForGame(game, room);
+
+    if (hostUserId !== req.user._id.toString())
+    {
+      return res.status(403).json({ ok: false, error: "Only the host can reset the game." });
+    }
+
+    game.seats.forEach((seat) =>
+    {
+      seat.joinedAt = new Date();
+      seat.lastSeenAt = new Date();
+      seat.connectionStatus = "connected";
+      seat.isReady = false;
+      seat.deck = null;
+      seat.commanders = [];
+      seat.stats = {
+        commanderDamage: {},
+        commanderCastCount: 0,
+        life: getStartingLife(game.settings?.format),
+        poison: 0,
+        energy: 0,
+        experience: 0,
+      };
+    });
+
+    game.boardOrder = normalizeBoardOrder(game);
+    game.monarchSeatNumber = null;
+    game.initiativeSeatNumber = null;
+    game.dayNightState = null;
+
+    await game.save();
+
+    const io = req.app.get("io");
+    emitGameUpdated(io, game);
+
+    return res.status(200).json({ ok: true, game });
+  }
+  catch (err)
+  {
+    console.error("Error resetting game:", err);
+    return res.status(500).json({ ok: false, error: err.message || "Failed to reset game." });
+  }
+});
+
+router.post("/:gameId/kick-player", requireAuth, async (req, res) => 
+{
+  try
+  {
+    const game = await LiveGameModel.findById(req.params.gameId).exec();
+    if (!game)
+    {
+      return res.status(404).json({ ok: false, error: "Game not found." });
+    }
+
+    const room = await RoomModel.findById(game.roomId).exec();
+    if (!room)
+    {
+      return res.status(404).json({ ok: false, error: "Room not found." });
+    }
+
+    const hostUserId = getHostUserIdForGame(game, room);
+    if (hostUserId !== req.user._id.toString())
+    {
+      return res.status(403).json({ ok: false, error: "Only the host can kick players." });
+    }
+
+    const targetUserId = typeof req.body?.targetUserId === "string"
+      ? req.body.targetUserId.trim()
+      : "";
+
+    if (!targetUserId)
+    {
+      return res.status(400).json({ ok: false, error: "targetUserId is required." });
+    }
+
+    const targetSeatIndex = game.seats.findIndex(
+      (seat) => seat.userId?.toString() === targetUserId
+    );
+
+    if (targetSeatIndex === -1)
+    {
+      return res.status(404).json({ ok: false, error: "Target player must be seated in the live game." });
+    }
+
+    const [removedSeat] = game.seats.splice(targetSeatIndex, 1);
+
+    clearSeatMarkersIfNeeded(game, removedSeat.seatNumber);
+    syncBoardOrder(game);
+
+    await game.save();
+
+    const io = req.app.get("io");
+    emitGameUpdated(io, game);
+
+    return res.status(200).json({ ok: true, game });
+  }
+  catch (err)
+  {
+    console.error("Error kicking player:", err);
+    return res.status(500).json({ ok: false, error: err.message || "Failed to kick player." });
+  }
+});
+
 router.post("/:gameId/transfer-host", requireAuth, async (req, res) =>
 {
   try

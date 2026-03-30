@@ -234,7 +234,7 @@ export default function RoomChatWidget({ roomId }: RoomChatWidgetProps)
   const renderedMessages = useMemo(() => messages, [messages]);
 
   return (
-    <div className="flex h-[min(62vh,700px)] flex-col">
+    <div className="flex h-[min(70vh,700px)] flex-col">
       <div className="border-b border-white/10 px-4 py-3">
         <div className="text-sm font-medium text-slate-100">Game Chat</div>
 
