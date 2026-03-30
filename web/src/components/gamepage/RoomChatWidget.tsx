@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Coins, Dices, Send } from "lucide-react";
+import { ChevronDown, Coins, Dices, Send } from "lucide-react";
 import { apiGet, apiPost, getStoredUserId } from "../../lib/api";
 import { socket } from "../../lib/socket";
 
@@ -40,23 +40,24 @@ type ChatSendResponse =
 
 type RoomChatWidgetProps =
 {
-  chatTargetId: string;
+  roomId: string;
 };
 
 const DIE_OPTIONS = [4, 6, 8, 12, 20] as const;
 
-export default function RoomChatWidget({ chatTargetId }: RoomChatWidgetProps)
+export default function RoomChatWidget({ roomId }: RoomChatWidgetProps)
 {
   const [messages, setMessages] = useState<RoomChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [selectedDieSides, setSelectedDieSides] = useState<number>(20);
+  const [dieMenuOpen, setDieMenuOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [runningAction, setRunningAction] = useState<"dice" | "coin" | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [resolvedRoomId, setResolvedRoomId] = useState("");
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const dieMenuRef = useRef<HTMLDivElement | null>(null);
   const currentUserId = getStoredUserId() || "";
 
   function appendMessage(message: RoomChatMessage)
@@ -66,11 +67,6 @@ export default function RoomChatWidget({ chatTargetId }: RoomChatWidgetProps)
       if (prev.some((item) => item._id === message._id)) return prev;
       return [...prev, message];
     });
-
-    if (message.roomId)
-    {
-      setResolvedRoomId(message.roomId);
-    }
   }
 
   useEffect(() =>
@@ -79,18 +75,10 @@ export default function RoomChatWidget({ chatTargetId }: RoomChatWidgetProps)
 
     async function loadMessages()
     {
-      if (!chatTargetId)
-      {
-        setMessages([]);
-        setResolvedRoomId("");
-        setLoading(false);
-        return;
-      }
-
       setLoading(true);
       setError(null);
 
-      const res = await apiGet<ChatHistoryResponse>(`/api/chat/targets/${chatTargetId}/messages?limit=50`);
+      const res = await apiGet<ChatHistoryResponse>(`/api/chat/rooms/${roomId}/messages?limit=50`);
 
       if (cancelled) return;
 
@@ -98,14 +86,11 @@ export default function RoomChatWidget({ chatTargetId }: RoomChatWidgetProps)
       {
         setError(res.ok ? res.data?.error || "Failed to load messages." : res.error);
         setMessages([]);
-        setResolvedRoomId("");
         setLoading(false);
         return;
       }
 
-      const nextMessages = Array.isArray(res.data.messages) ? res.data.messages : [];
-      setMessages(nextMessages);
-      setResolvedRoomId(nextMessages[0]?.roomId || "");
+      setMessages(Array.isArray(res.data.messages) ? res.data.messages : []);
       setLoading(false);
     }
 
@@ -115,22 +100,14 @@ export default function RoomChatWidget({ chatTargetId }: RoomChatWidgetProps)
     {
       cancelled = true;
     };
-  }, [chatTargetId]);
+  }, [roomId]);
 
   useEffect(() =>
   {
     function handleNewMessage(payload: { message?: RoomChatMessage })
     {
       if (!payload?.message) return;
-
-      const incomingRoomId = payload.message.roomId;
-      const matchesTarget = incomingRoomId === chatTargetId;
-      const matchesResolvedRoom = resolvedRoomId ? incomingRoomId === resolvedRoomId : false;
-
-      if (!matchesTarget && !matchesResolvedRoom)
-      {
-        return;
-      }
+      if (payload.message.roomId !== roomId) return;
 
       appendMessage(payload.message);
     }
@@ -141,7 +118,27 @@ export default function RoomChatWidget({ chatTargetId }: RoomChatWidgetProps)
     {
       socket.off("room-chat:new-message", handleNewMessage);
     };
-  }, [chatTargetId, resolvedRoomId]);
+  }, [roomId]);
+
+  useEffect(() =>
+  {
+    function handlePointerDown(event: MouseEvent)
+    {
+      if (!dieMenuRef.current) return;
+      if (dieMenuRef.current.contains(event.target as Node)) return;
+      setDieMenuOpen(false);
+    }
+
+    if (dieMenuOpen)
+    {
+      document.addEventListener("mousedown", handlePointerDown);
+    }
+
+    return () =>
+    {
+      document.removeEventListener("mousedown", handlePointerDown);
+    };
+  }, [dieMenuOpen]);
 
   useEffect(() =>
   {
@@ -159,7 +156,7 @@ export default function RoomChatWidget({ chatTargetId }: RoomChatWidgetProps)
     setSending(true);
     setError(null);
 
-    const res = await apiPost<ChatSendResponse>(`/api/chat/targets/${chatTargetId}/messages`, { body });
+    const res = await apiPost<ChatSendResponse>(`/api/chat/rooms/${roomId}/messages`, { body });
 
     if (!res.ok || !res.data?.ok)
     {
@@ -179,12 +176,13 @@ export default function RoomChatWidget({ chatTargetId }: RoomChatWidgetProps)
 
   async function handleRollDie()
   {
-    if (runningAction || !chatTargetId) return;
+    if (runningAction) return;
 
     setRunningAction("dice");
     setError(null);
+    setDieMenuOpen(false);
 
-    const res = await apiPost<ChatSendResponse>(`/api/chat/targets/${chatTargetId}/actions`,
+    const res = await apiPost<ChatSendResponse>(`/api/chat/rooms/${roomId}/actions`,
     {
       actionType: "dice-roll",
       diceSides: selectedDieSides,
@@ -207,12 +205,13 @@ export default function RoomChatWidget({ chatTargetId }: RoomChatWidgetProps)
 
   async function handleFlipCoin()
   {
-    if (runningAction || !chatTargetId) return;
+    if (runningAction) return;
 
     setRunningAction("coin");
     setError(null);
+    setDieMenuOpen(false);
 
-    const res = await apiPost<ChatSendResponse>(`/api/chat/targets/${chatTargetId}/actions`,
+    const res = await apiPost<ChatSendResponse>(`/api/chat/rooms/${roomId}/actions`,
     {
       actionType: "coin-flip",
     });
@@ -240,21 +239,52 @@ export default function RoomChatWidget({ chatTargetId }: RoomChatWidgetProps)
         <div className="text-sm font-medium text-slate-100">Game Chat</div>
 
         <div className="mt-3 grid grid-cols-[minmax(0,1fr)_auto_auto] gap-2">
-          <label className="flex min-w-0 items-center gap-2 rounded-2xl border border-white/10 bg-slate-900/80 px-3 py-2 text-xs text-slate-300">
-            <Dices className="h-4 w-4 shrink-0 text-teal-200" />
-            <span className="shrink-0 font-medium text-slate-200">Die</span>
-            <select
-              value={selectedDieSides}
-              onChange={(e) => setSelectedDieSides(Number(e.target.value))}
-              className="min-w-0 flex-1 bg-transparent text-sm text-slate-100 outline-none"
+          <div ref={dieMenuRef} className="relative min-w-0">
+            <button
+              type="button"
+              onClick={() => setDieMenuOpen((value) => !value)}
+              className="flex w-full min-w-0 items-center gap-2 rounded-2xl border border-white/10 bg-slate-900/80 px-3 py-2 text-left text-xs text-slate-300 transition hover:border-white/20 hover:bg-slate-900"
             >
-              {DIE_OPTIONS.map((sides) => (
-                <option key={sides} value={sides} className="bg-slate-950 text-slate-100">
-                  d{sides}
-                </option>
-              ))}
-            </select>
-          </label>
+              <Dices className="h-4 w-4 shrink-0 text-teal-200" />
+              <span className="shrink-0 font-medium text-slate-200">Die</span>
+              <span className="ml-auto text-sm font-semibold text-slate-100">
+                d{selectedDieSides}
+              </span>
+              <ChevronDown
+                className={`h-4 w-4 shrink-0 text-slate-400 transition ${dieMenuOpen ? "rotate-180" : ""}`}
+              />
+            </button>
+
+            {dieMenuOpen ? (
+              <div className="absolute left-0 top-[calc(100%+8px)] z-30 w-full rounded-2xl border border-white/10 bg-slate-950/95 p-2 shadow-2xl backdrop-blur">
+                <div className="grid grid-cols-3 gap-2">
+                  {DIE_OPTIONS.map((sides) =>
+                  {
+                    const selected = selectedDieSides === sides;
+
+                    return (
+                      <button
+                        key={sides}
+                        type="button"
+                        onClick={() =>
+                        {
+                          setSelectedDieSides(sides);
+                          setDieMenuOpen(false);
+                        }}
+                        className={`rounded-xl border px-3 py-2 text-xs font-semibold transition ${
+                          selected
+                            ? "border-teal-300/40 bg-teal-400/15 text-teal-100"
+                            : "border-white/10 bg-white/[0.04] text-slate-200 hover:border-white/20 hover:bg-white/[0.07]"
+                        }`}
+                      >
+                        d{sides}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+          </div>
 
           <button
             type="button"
@@ -317,9 +347,13 @@ export default function RoomChatWidget({ chatTargetId }: RoomChatWidgetProps)
                     </div>
                   </div>
 
-                  <div className="mt-2 text-sm leading-6 text-slate-100">
-                    {renderActionBody(message.action, message.body) || message.body}
-                  </div>
+                  {isGameAction ? (
+                    <GameActionBubble action={message.action} fallbackBody={message.body} />
+                  ) : (
+                    <div className="mt-2 whitespace-pre-wrap text-sm text-slate-200">
+                      {message.body}
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -327,29 +361,28 @@ export default function RoomChatWidget({ chatTargetId }: RoomChatWidgetProps)
         )}
       </div>
 
-      <form onSubmit={handleSend} className="border-t border-white/10 px-4 py-3">
-        {error ? (
-          <div className="mb-3 rounded-xl border border-rose-300/20 bg-rose-400/10 px-3 py-2 text-xs text-rose-200">
+      <form onSubmit={handleSend} className="border-t border-white/10 p-4">
+        {error && (
+          <div className="mb-3 rounded-xl border border-red-400/20 bg-red-500/10 px-3 py-2 text-xs text-red-200">
             {error}
           </div>
-        ) : null}
+        )}
 
         <div className="flex items-end gap-2">
-          <label className="sr-only" htmlFor="room-chat-input">Message</label>
           <textarea
-            id="room-chat-input"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             rows={2}
             placeholder="Type a message..."
-            className="min-h-[52px] flex-1 resize-none rounded-2xl border border-white/10 bg-slate-950/80 px-4 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-teal-300/40"
+            className="min-h-[52px] flex-1 resize-none rounded-2xl border border-white/10 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-teal-300/40"
           />
           <button
             type="submit"
-            disabled={sending || !input.trim()}
-            className="inline-flex h-[52px] w-[52px] items-center justify-center rounded-2xl border border-teal-300/30 bg-teal-400/15 text-teal-100 transition hover:border-teal-200 hover:bg-teal-300 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={sending}
+            className="inline-flex h-[52px] items-center gap-2 rounded-2xl border border-teal-300/30 bg-teal-400/15 px-4 text-sm font-medium text-teal-100 transition hover:border-teal-200 hover:bg-teal-300 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            <Send className="h-4 w-4" />
+            <Send size={14} />
+            {sending ? "Sending..." : "Send"}
           </button>
         </div>
       </form>
@@ -357,34 +390,52 @@ export default function RoomChatWidget({ chatTargetId }: RoomChatWidgetProps)
   );
 }
 
-function renderActionBody(action: RoomChatAction | null | undefined, fallback: string)
+function GameActionBubble({
+  action,
+  fallbackBody,
+}: {
+  action?: RoomChatAction | null;
+  fallbackBody: string;
+})
 {
   if (action?.type === "dice-roll")
   {
     return (
-      <span className="inline-flex flex-wrap items-center gap-2">
-        <span>{fallback.split(":")[0]}:</span>
-        <span className="inline-flex items-center rounded-full border border-teal-300/30 bg-teal-400/10 px-2 py-0.5 text-xs font-semibold text-teal-100">
-          {action.resultLabel || `d${action.diceSides || "?"}`}
-        </span>
-        <span className="inline-flex items-center rounded-full border border-white/10 bg-black/20 px-2 py-0.5 text-xs font-semibold text-slate-100">
-          {action.resultNumber ?? "?"}
-        </span>
-      </span>
+      <div className="mt-2 rounded-2xl border border-amber-300/20 bg-slate-950/55 px-3 py-2.5">
+        <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-200/85">
+          <Dices className="h-3.5 w-3.5" />
+          Dice Roll
+        </div>
+        <div className="mt-2 flex items-end justify-between gap-3">
+          <div className="text-sm text-slate-300">
+            {action.resultLabel || `d${action.diceSides || "?"}`}
+          </div>
+          <div className="text-2xl font-black tracking-tight text-amber-100">
+            {action.resultNumber ?? "?"}
+          </div>
+        </div>
+      </div>
     );
   }
 
   if (action?.type === "coin-flip")
   {
     return (
-      <span className="inline-flex flex-wrap items-center gap-2">
-        <span>{fallback.split(":")[0]}:</span>
-        <span className="inline-flex items-center rounded-full border border-amber-300/30 bg-amber-400/10 px-2 py-0.5 text-xs font-semibold text-amber-100">
-          {action.resultLabel || "Result"}
-        </span>
-      </span>
+      <div className="mt-2 rounded-2xl border border-amber-300/20 bg-slate-950/55 px-3 py-2.5">
+        <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-200/85">
+          <Coins className="h-3.5 w-3.5" />
+          Coin Flip
+        </div>
+        <div className="mt-2 text-xl font-black tracking-tight text-amber-100">
+          {action.resultLabel || "?"}
+        </div>
+      </div>
     );
   }
 
-  return fallback;
+  return (
+    <div className="mt-2 whitespace-pre-wrap text-sm text-slate-200">
+      {fallbackBody}
+    </div>
+  );
 }

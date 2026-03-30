@@ -113,12 +113,7 @@ export default function LeftSidePanel({
             <div className="rounded-2xl border border-white/10 bg-slate-950/55 p-3">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="text-sm font-medium text-slate-100">
-                    Shared Markers
-                  </div>
-                  <div className="mt-1 text-xs leading-5 text-slate-400">
-                    Any seated player can update the current day or night state.
-                  </div>
+                  Enable Day/Night
                 </div>
               </div>
 

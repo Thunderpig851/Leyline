@@ -10,6 +10,8 @@ import PlayerTile from "../components/gamepage/PlayerTile";
 import CommanderPanel from "../components/gamepage/CommanderPanel";
 import PlayerOrderShuffleOverlay from "../components/gamepage/PlayerOrderShuffleOverlay";
 
+import { Moon, Sun } from "lucide-react";
+
 type CommanderCard =
 {
   name: string;
@@ -974,7 +976,7 @@ export default function GamePage()
 
   return (
     <div className="h-[100dvh] w-screen overflow-hidden bg-slate-950 text-slate-100">
-      <header className="sticky top-0 z-40 border-b border-white/10 bg-slate-950/78 backdrop-blur-xl">
+           <header className="sticky top-0 z-40 border-b border-white/10 bg-slate-950/78 backdrop-blur-xl">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(45,212,191,0.10),transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0))]" />
 
         <div className="relative flex w-full items-center justify-between gap-4 px-5 py-2.5">
@@ -983,6 +985,36 @@ export default function GamePage()
               {roomTitle}
             </h1>
           </div>
+
+          {game?.dayNightState ? (
+            <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+              <div
+                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold shadow-lg ${
+                  game.dayNightState === "day"
+                    ? "border-amber-300/35 bg-amber-400/12 text-amber-100"
+                    : "border-indigo-300/35 bg-indigo-400/12 text-indigo-100"
+                }`}
+              >
+                <span
+                  className={`inline-flex h-7 w-7 items-center justify-center rounded-full border ${
+                    game.dayNightState === "day"
+                      ? "border-amber-200/30 bg-amber-300/12"
+                      : "border-indigo-200/30 bg-indigo-300/12"
+                  }`}
+                >
+                  {game.dayNightState === "day" ? (
+                    <Sun className="h-4 w-4" />
+                  ) : (
+                    <Moon className="h-4 w-4" />
+                  )}
+                </span>
+
+                <span className="hidden sm:inline">
+                  {game.dayNightState === "day" ? "Day" : "Night"}
+                </span>
+              </div>
+            </div>
+          ) : null}
 
           <div className="flex items-center gap-2">
             <button
