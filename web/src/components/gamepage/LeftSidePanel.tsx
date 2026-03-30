@@ -4,11 +4,11 @@ import {
   Mic,
   MicOff,
   Shuffle,
-  SunMoon,
   Video,
   VideoOff,
 } from "lucide-react";
 import SidePanel from "./SidePanel";
+import DayNightToggle from "./DayNightToggle";
 
 type LeftSidePanelProps =
 {
@@ -19,12 +19,12 @@ type LeftSidePanelProps =
   maxPlayers: number;
   randomizingOrder?: boolean;
   endingGame?: boolean;
-  dayNightEnabled?: boolean;
+  dayNightState?: "day" | "night" | null;
   micEnabled: boolean;
   camEnabled: boolean;
   onRandomizePlayerOrder?: () => void;
   onEndGame?: () => void;
-  onToggleDayNightEnabled?: () => void;
+  onToggleDayNight?: () => void;
   onToggleSelfMic?: () => void;
   onToggleSelfCam?: () => void;
 };
@@ -37,12 +37,12 @@ export default function LeftSidePanel({
   maxPlayers,
   randomizingOrder = false,
   endingGame = false,
-  dayNightEnabled = false,
+  dayNightState = null,
   micEnabled,
   camEnabled,
   onRandomizePlayerOrder,
   onEndGame,
-  onToggleDayNightEnabled,
+  onToggleDayNight,
   onToggleSelfMic,
   onToggleSelfCam,
 }: LeftSidePanelProps)
@@ -85,16 +85,6 @@ export default function LeftSidePanel({
             <ControlCard
               title=""
               description=""
-              icon={<SunMoon className="h-4 w-4" />}
-              buttonLabel={dayNightEnabled ? "Disable Day / Night" : "Enable Day / Night"}
-              disabled={!onToggleDayNightEnabled}
-              onClick={onToggleDayNightEnabled}
-              tone="teal"
-            />
-
-            <ControlCard
-              title=""
-              description=""
               icon={<Shuffle className="h-4 w-4" />}
               buttonLabel={randomizingOrder ? "Rolling..." : "Shuffle Order"}
               disabled={!isHost || !onRandomizePlayerOrder || randomizingOrder}
@@ -119,35 +109,58 @@ export default function LeftSidePanel({
             Player Options
           </div>
 
-          <div className="rounded-2xl border border-white/10 bg-slate-950/55 p-3">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="text-sm font-medium text-slate-100">
-                  Media
+          <div className="space-y-3">
+            <div className="rounded-2xl border border-white/10 bg-slate-950/55 p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-sm font-medium text-slate-100">
+                    Shared Markers
+                  </div>
+                  <div className="mt-1 text-xs leading-5 text-slate-400">
+                    Any seated player can update the current day or night state.
+                  </div>
                 </div>
+              </div>
+
+              <div className="mt-3">
+                <DayNightToggle
+                  value={dayNightState}
+                  disabled={!onToggleDayNight}
+                  onToggle={onToggleDayNight}
+                />
               </div>
             </div>
 
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={onToggleSelfMic}
-                disabled={!onToggleSelfMic}
-                className={`inline-flex items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold transition ${micButtonClass} disabled:cursor-not-allowed disabled:opacity-50`}
-              >
-                {micEnabled ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
-                {micEnabled ? "Mic On" : "Mic Off"}
-              </button>
+            <div className="rounded-2xl border border-white/10 bg-slate-950/55 p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-sm font-medium text-slate-100">
+                    Media
+                  </div>
+                </div>
+              </div>
 
-              <button
-                type="button"
-                onClick={onToggleSelfCam}
-                disabled={!onToggleSelfCam}
-                className={`inline-flex items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold transition ${camButtonClass} disabled:cursor-not-allowed disabled:opacity-50`}
-              >
-                {camEnabled ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}
-                {camEnabled ? "Screen On" : "Screen Off"}
-              </button>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={onToggleSelfMic}
+                  disabled={!onToggleSelfMic}
+                  className={`inline-flex items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold transition ${micButtonClass} disabled:cursor-not-allowed disabled:opacity-50`}
+                >
+                  {micEnabled ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
+                  {micEnabled ? "Mic On" : "Mic Off"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={onToggleSelfCam}
+                  disabled={!onToggleSelfCam}
+                  className={`inline-flex items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold transition ${camButtonClass} disabled:cursor-not-allowed disabled:opacity-50`}
+                >
+                  {camEnabled ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}
+                  {camEnabled ? "Screen On" : "Screen Off"}
+                </button>
+              </div>
             </div>
           </div>
         </section>

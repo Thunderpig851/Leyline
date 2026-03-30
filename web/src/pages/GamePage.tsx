@@ -9,7 +9,6 @@ import RightSidePanel from "../components/gamepage/RightSidePanel";
 import PlayerTile from "../components/gamepage/PlayerTile";
 import CommanderPanel from "../components/gamepage/CommanderPanel";
 import PlayerOrderShuffleOverlay from "../components/gamepage/PlayerOrderShuffleOverlay";
-import DayNightToggle from "../components/gamepage/DayNightToggle";
 
 type CommanderCard =
 {
@@ -649,38 +648,6 @@ export default function GamePage()
     }
   }
 
-  async function handleToggleDayNightEnabled()
-  {
-    if (!gameId || !isSeatedPlayer) return;
-
-    try
-    {
-      const nextEnabled = !game?.settings?.enableDayNight;
-
-      const res = await apiPost<ActiveGameResponse>(
-        `/api/live-games/${gameId}/settings`,
-        {
-          enableDayNight: nextEnabled,
-        }
-      );
-
-      if (!res.ok)
-      {
-        console.error("Failed to update day/night setting:", res.error);
-        return;
-      }
-
-      if (res.data?.ok && res.data.game)
-      {
-        setGame(res.data.game);
-      }
-    }
-    catch (err)
-    {
-      console.error("Failed to update day/night setting:", err);
-    }
-  }
-
   async function handleEndGame()
   {
     if (!gameId || !roomId || endingGame) return;
@@ -857,11 +824,11 @@ export default function GamePage()
 
   async function handleToggleDayNight()
   {
-    if (!gameId || !isSeatedPlayer || !game?.settings?.enableDayNight) return;
+    if (!gameId || !isSeatedPlayer) return;
 
-    const nextState = game?.dayNightState === "night"
-      ? "day"
-      : "night";
+    const nextState = game?.dayNightState === "day"
+      ? "night"
+      : "day";
 
     try
     {
@@ -1018,14 +985,6 @@ export default function GamePage()
           </div>
 
           <div className="flex items-center gap-2">
-            {game?.settings?.enableDayNight ? (
-              <DayNightToggle
-                value={game?.dayNightState ?? "day"}
-                disabled={!isSeatedPlayer}
-                onToggle={() => { void handleToggleDayNight(); }}
-              />
-            ) : null}
-
             <button
               type="button"
               onClick={() => { void handleLeaveGame(); }}
@@ -1146,14 +1105,14 @@ export default function GamePage()
           maxPlayers={maxPlayers}
           randomizingOrder={randomizingOrder}
           endingGame={endingGame}
-          dayNightEnabled={Boolean(game?.settings?.enableDayNight)}
+          dayNightState={game?.dayNightState ?? null}
           micEnabled={mediaSession.micEnabled}
           camEnabled={mediaSession.camEnabled}
           onRandomizePlayerOrder={() => { void handleRandomizePlayerOrder(); }}
           onEndGame={() => { void handleEndGame(); }}
-          onToggleDayNightEnabled={
+          onToggleDayNight={
             isSeatedPlayer
-              ? () => { void handleToggleDayNightEnabled(); }
+              ? () => { void handleToggleDayNight(); }
               : undefined
           }
           onToggleSelfMic={handleToggleSelfMic}
@@ -1163,7 +1122,7 @@ export default function GamePage()
         <RightSidePanel
           open={rightOpen}
           onToggle={() => setRightOpen((value) => !value)}
-          roomId={roomId}
+          chatTargetId={gameId || roomId}
         />
       </div>
     </div>

@@ -1,4 +1,5 @@
 const router = require("express").Router();
+const mongoose = require("mongoose");
 const { randomInt } = require("node:crypto");
 const requireAuth = require("../../middleware/requireAuth");
 
@@ -8,46 +9,80 @@ const RoomChatMessageModel = require("../../database/models/RoomChatMessage");
 
 const VALID_DICE_SIDES = new Set([4, 6, 8, 12, 20]);
 
+function isValidObjectId(value)
+{
+  return mongoose.Types.ObjectId.isValid(value);
+}
+
 function isRoomMember(room, userId)
 {
-  return room.members?.some((member) => member.userID?.toString() === userId);
+  return room?.members?.some((member) => member.userID?.toString() === userId);
 }
 
 function isGameSeatMember(game, userId)
 {
-  return game.seats?.some((seat) => seat.userId?.toString() === userId);
+  return game?.seats?.some((seat) => seat.userId?.toString() === userId);
 }
 
-async function getAuthorizedRoom(roomId, userId)
+async function getAuthorizedRoom(rawRoomId, userId)
 {
-  const room = await RoomModel.findById(roomId).exec();
+  const normalizedId = typeof rawRoomId === "string" ? rawRoomId.trim() : "";
+
+  if (!normalizedId)
+  {
+    return { ok: false, status: 400, error: "Room id is required." };
+  }
+
+  let room = null;
+
+  if (isValidObjectId(normalizedId))
+  {
+    room = await RoomModel.findById(normalizedId).exec();
+  }
 
   if (room)
   {
-    if (!isRoomMember(room, userId))
+    const liveGame = await LiveGameModel.findOne({
+      roomId: room._id,
+      status: "active",
+    }).exec();
+
+    if (isRoomMember(room, userId) || isGameSeatMember(liveGame, userId))
     {
-      return { ok: false, status: 403, error: "You must be in the room to use chat." };
+      return { ok: true, roomId: String(room._id), room, liveGame };
     }
 
-    return { ok: true, roomId: String(room._id), room, liveGame: null };
+    return { ok: false, status: 403, error: "You must be in the room to use chat." };
   }
 
-  const liveGame = await LiveGameModel.findOne({
-    roomId,
-    status: "active",
-  }).exec();
+  let liveGame = null;
 
-  if (!liveGame)
+  if (isValidObjectId(normalizedId))
+  {
+    liveGame = await LiveGameModel.findById(normalizedId).exec();
+  }
+
+  if (!liveGame && isValidObjectId(normalizedId))
+  {
+    liveGame = await LiveGameModel.findOne({
+      roomId: normalizedId,
+      status: "active",
+    }).exec();
+  }
+
+  if (!liveGame || liveGame.status !== "active")
   {
     return { ok: false, status: 404, error: "Room not found." };
   }
 
-  if (!isGameSeatMember(liveGame, userId))
+  room = await RoomModel.findById(liveGame.roomId).exec();
+
+  if (!isGameSeatMember(liveGame, userId) && !isRoomMember(room, userId))
   {
     return { ok: false, status: 403, error: "You must be seated in the active game to use chat." };
   }
 
-  return { ok: true, roomId: String(liveGame.roomId), room: null, liveGame };
+  return { ok: true, roomId: String(liveGame.roomId), room, liveGame };
 }
 
 async function createAndBroadcastMessage(req, res, roomId, messageData, status = 201)
@@ -62,14 +97,14 @@ async function createAndBroadcastMessage(req, res, roomId, messageData, status =
   return res.status(status).json({ ok: true, message });
 }
 
-router.get("/rooms/:roomId/messages", requireAuth, async (req, res) =>
+async function handleMessagesGet(req, res)
 {
   try
   {
-    const { roomId } = req.params;
+    const { targetId } = req.params;
     const userId = req.user._id.toString();
 
-    const access = await getAuthorizedRoom(roomId, userId);
+    const access = await getAuthorizedRoom(targetId, userId);
     if (!access.ok)
     {
       return res.status(access.status).json({ ok: false, error: access.error });
@@ -108,13 +143,13 @@ router.get("/rooms/:roomId/messages", requireAuth, async (req, res) =>
       error: err.message || "Failed to fetch room chat.",
     });
   }
-});
+}
 
-router.post("/rooms/:roomId/messages", requireAuth, async (req, res) =>
+async function handleMessageCreate(req, res)
 {
   try
   {
-    const { roomId } = req.params;
+    const { targetId } = req.params;
     const userId = req.user._id.toString();
     const body = typeof req.body?.body === "string" ? req.body.body.trim() : "";
 
@@ -123,7 +158,7 @@ router.post("/rooms/:roomId/messages", requireAuth, async (req, res) =>
       return res.status(400).json({ ok: false, error: "Message body is required." });
     }
 
-    const access = await getAuthorizedRoom(roomId, userId);
+    const access = await getAuthorizedRoom(targetId, userId);
     if (!access.ok)
     {
       return res.status(access.status).json({ ok: false, error: access.error });
@@ -147,19 +182,19 @@ router.post("/rooms/:roomId/messages", requireAuth, async (req, res) =>
       error: err.message || "Failed to send room chat.",
     });
   }
-});
+}
 
-router.post("/rooms/:roomId/actions", requireAuth, async (req, res) =>
+async function handleActionCreate(req, res)
 {
   try
   {
-    const { roomId } = req.params;
+    const { targetId } = req.params;
     const userId = req.user._id.toString();
     const actionType = typeof req.body?.actionType === "string"
       ? req.body.actionType.trim()
       : "";
 
-    const access = await getAuthorizedRoom(roomId, userId);
+    const access = await getAuthorizedRoom(targetId, userId);
     if (!access.ok)
     {
       return res.status(access.status).json({ ok: false, error: access.error });
@@ -222,7 +257,31 @@ router.post("/rooms/:roomId/actions", requireAuth, async (req, res) =>
       error: err.message || "Failed to create chat action.",
     });
   }
+}
+
+router.get("/rooms/:roomId/messages", requireAuth, async (req, res) =>
+{
+  req.params.targetId = req.params.roomId;
+  return handleMessagesGet(req, res);
 });
+
+router.get("/targets/:targetId/messages", requireAuth, handleMessagesGet);
+
+router.post("/rooms/:roomId/messages", requireAuth, async (req, res) =>
+{
+  req.params.targetId = req.params.roomId;
+  return handleMessageCreate(req, res);
+});
+
+router.post("/targets/:targetId/messages", requireAuth, handleMessageCreate);
+
+router.post("/rooms/:roomId/actions", requireAuth, async (req, res) =>
+{
+  req.params.targetId = req.params.roomId;
+  return handleActionCreate(req, res);
+});
+
+router.post("/targets/:targetId/actions", requireAuth, handleActionCreate);
 
 router.delete("/rooms/:roomId/messages", requireAuth, async (req, res) =>
 {

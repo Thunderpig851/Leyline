@@ -40,12 +40,12 @@ type ChatSendResponse =
 
 type RoomChatWidgetProps =
 {
-  roomId: string;
+  chatTargetId: string;
 };
 
 const DIE_OPTIONS = [4, 6, 8, 12, 20] as const;
 
-export default function RoomChatWidget({ roomId }: RoomChatWidgetProps)
+export default function RoomChatWidget({ chatTargetId }: RoomChatWidgetProps)
 {
   const [messages, setMessages] = useState<RoomChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -54,6 +54,7 @@ export default function RoomChatWidget({ roomId }: RoomChatWidgetProps)
   const [sending, setSending] = useState(false);
   const [runningAction, setRunningAction] = useState<"dice" | "coin" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [resolvedRoomId, setResolvedRoomId] = useState("");
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const currentUserId = getStoredUserId() || "";
@@ -65,6 +66,11 @@ export default function RoomChatWidget({ roomId }: RoomChatWidgetProps)
       if (prev.some((item) => item._id === message._id)) return prev;
       return [...prev, message];
     });
+
+    if (message.roomId)
+    {
+      setResolvedRoomId(message.roomId);
+    }
   }
 
   useEffect(() =>
@@ -73,10 +79,18 @@ export default function RoomChatWidget({ roomId }: RoomChatWidgetProps)
 
     async function loadMessages()
     {
+      if (!chatTargetId)
+      {
+        setMessages([]);
+        setResolvedRoomId("");
+        setLoading(false);
+        return;
+      }
+
       setLoading(true);
       setError(null);
 
-      const res = await apiGet<ChatHistoryResponse>(`/api/chat/rooms/${roomId}/messages?limit=50`);
+      const res = await apiGet<ChatHistoryResponse>(`/api/chat/targets/${chatTargetId}/messages?limit=50`);
 
       if (cancelled) return;
 
@@ -84,11 +98,14 @@ export default function RoomChatWidget({ roomId }: RoomChatWidgetProps)
       {
         setError(res.ok ? res.data?.error || "Failed to load messages." : res.error);
         setMessages([]);
+        setResolvedRoomId("");
         setLoading(false);
         return;
       }
 
-      setMessages(Array.isArray(res.data.messages) ? res.data.messages : []);
+      const nextMessages = Array.isArray(res.data.messages) ? res.data.messages : [];
+      setMessages(nextMessages);
+      setResolvedRoomId(nextMessages[0]?.roomId || "");
       setLoading(false);
     }
 
@@ -98,14 +115,22 @@ export default function RoomChatWidget({ roomId }: RoomChatWidgetProps)
     {
       cancelled = true;
     };
-  }, [roomId]);
+  }, [chatTargetId]);
 
   useEffect(() =>
   {
     function handleNewMessage(payload: { message?: RoomChatMessage })
     {
       if (!payload?.message) return;
-      if (payload.message.roomId !== roomId) return;
+
+      const incomingRoomId = payload.message.roomId;
+      const matchesTarget = incomingRoomId === chatTargetId;
+      const matchesResolvedRoom = resolvedRoomId ? incomingRoomId === resolvedRoomId : false;
+
+      if (!matchesTarget && !matchesResolvedRoom)
+      {
+        return;
+      }
 
       appendMessage(payload.message);
     }
@@ -116,7 +141,7 @@ export default function RoomChatWidget({ roomId }: RoomChatWidgetProps)
     {
       socket.off("room-chat:new-message", handleNewMessage);
     };
-  }, [roomId]);
+  }, [chatTargetId, resolvedRoomId]);
 
   useEffect(() =>
   {
@@ -134,7 +159,7 @@ export default function RoomChatWidget({ roomId }: RoomChatWidgetProps)
     setSending(true);
     setError(null);
 
-    const res = await apiPost<ChatSendResponse>(`/api/chat/rooms/${roomId}/messages`, { body });
+    const res = await apiPost<ChatSendResponse>(`/api/chat/targets/${chatTargetId}/messages`, { body });
 
     if (!res.ok || !res.data?.ok)
     {
@@ -154,12 +179,12 @@ export default function RoomChatWidget({ roomId }: RoomChatWidgetProps)
 
   async function handleRollDie()
   {
-    if (runningAction) return;
+    if (runningAction || !chatTargetId) return;
 
     setRunningAction("dice");
     setError(null);
 
-    const res = await apiPost<ChatSendResponse>(`/api/chat/rooms/${roomId}/actions`,
+    const res = await apiPost<ChatSendResponse>(`/api/chat/targets/${chatTargetId}/actions`,
     {
       actionType: "dice-roll",
       diceSides: selectedDieSides,
@@ -182,12 +207,12 @@ export default function RoomChatWidget({ roomId }: RoomChatWidgetProps)
 
   async function handleFlipCoin()
   {
-    if (runningAction) return;
+    if (runningAction || !chatTargetId) return;
 
     setRunningAction("coin");
     setError(null);
 
-    const res = await apiPost<ChatSendResponse>(`/api/chat/rooms/${roomId}/actions`,
+    const res = await apiPost<ChatSendResponse>(`/api/chat/targets/${chatTargetId}/actions`,
     {
       actionType: "coin-flip",
     });
@@ -292,13 +317,9 @@ export default function RoomChatWidget({ roomId }: RoomChatWidgetProps)
                     </div>
                   </div>
 
-                  {isGameAction ? (
-                    <GameActionBubble action={message.action} fallbackBody={message.body} />
-                  ) : (
-                    <div className="mt-2 whitespace-pre-wrap text-sm text-slate-200">
-                      {message.body}
-                    </div>
-                  )}
+                  <div className="mt-2 text-sm leading-6 text-slate-100">
+                    {renderActionBody(message.action, message.body) || message.body}
+                  </div>
                 </div>
               );
             })}
@@ -306,28 +327,29 @@ export default function RoomChatWidget({ roomId }: RoomChatWidgetProps)
         )}
       </div>
 
-      <form onSubmit={handleSend} className="border-t border-white/10 p-4">
-        {error && (
-          <div className="mb-3 rounded-xl border border-red-400/20 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+      <form onSubmit={handleSend} className="border-t border-white/10 px-4 py-3">
+        {error ? (
+          <div className="mb-3 rounded-xl border border-rose-300/20 bg-rose-400/10 px-3 py-2 text-xs text-rose-200">
             {error}
           </div>
-        )}
+        ) : null}
 
         <div className="flex items-end gap-2">
+          <label className="sr-only" htmlFor="room-chat-input">Message</label>
           <textarea
+            id="room-chat-input"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             rows={2}
             placeholder="Type a message..."
-            className="min-h-[52px] flex-1 resize-none rounded-2xl border border-white/10 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-teal-300/40"
+            className="min-h-[52px] flex-1 resize-none rounded-2xl border border-white/10 bg-slate-950/80 px-4 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-teal-300/40"
           />
           <button
             type="submit"
-            disabled={sending}
-            className="inline-flex h-[52px] items-center gap-2 rounded-2xl border border-teal-300/30 bg-teal-400/15 px-4 text-sm font-medium text-teal-100 transition hover:border-teal-200 hover:bg-teal-300 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={sending || !input.trim()}
+            className="inline-flex h-[52px] w-[52px] items-center justify-center rounded-2xl border border-teal-300/30 bg-teal-400/15 text-teal-100 transition hover:border-teal-200 hover:bg-teal-300 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            <Send size={14} />
-            {sending ? "Sending..." : "Send"}
+            <Send className="h-4 w-4" />
           </button>
         </div>
       </form>
@@ -335,52 +357,34 @@ export default function RoomChatWidget({ roomId }: RoomChatWidgetProps)
   );
 }
 
-function GameActionBubble({
-  action,
-  fallbackBody,
-}: {
-  action?: RoomChatAction | null;
-  fallbackBody: string;
-})
+function renderActionBody(action: RoomChatAction | null | undefined, fallback: string)
 {
   if (action?.type === "dice-roll")
   {
     return (
-      <div className="mt-2 rounded-2xl border border-amber-300/20 bg-slate-950/55 px-3 py-2.5">
-        <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-200/85">
-          <Dices className="h-3.5 w-3.5" />
-          Dice Roll
-        </div>
-        <div className="mt-2 flex items-end justify-between gap-3">
-          <div className="text-sm text-slate-300">
-            {action.resultLabel || `d${action.diceSides || "?"}`}
-          </div>
-          <div className="text-2xl font-black tracking-tight text-amber-100">
-            {action.resultNumber ?? "?"}
-          </div>
-        </div>
-      </div>
+      <span className="inline-flex flex-wrap items-center gap-2">
+        <span>{fallback.split(":")[0]}:</span>
+        <span className="inline-flex items-center rounded-full border border-teal-300/30 bg-teal-400/10 px-2 py-0.5 text-xs font-semibold text-teal-100">
+          {action.resultLabel || `d${action.diceSides || "?"}`}
+        </span>
+        <span className="inline-flex items-center rounded-full border border-white/10 bg-black/20 px-2 py-0.5 text-xs font-semibold text-slate-100">
+          {action.resultNumber ?? "?"}
+        </span>
+      </span>
     );
   }
 
   if (action?.type === "coin-flip")
   {
     return (
-      <div className="mt-2 rounded-2xl border border-amber-300/20 bg-slate-950/55 px-3 py-2.5">
-        <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-200/85">
-          <Coins className="h-3.5 w-3.5" />
-          Coin Flip
-        </div>
-        <div className="mt-2 text-xl font-black tracking-tight text-amber-100">
-          {action.resultLabel || "?"}
-        </div>
-      </div>
+      <span className="inline-flex flex-wrap items-center gap-2">
+        <span>{fallback.split(":")[0]}:</span>
+        <span className="inline-flex items-center rounded-full border border-amber-300/30 bg-amber-400/10 px-2 py-0.5 text-xs font-semibold text-amber-100">
+          {action.resultLabel || "Result"}
+        </span>
+      </span>
     );
   }
 
-  return (
-    <div className="mt-2 whitespace-pre-wrap text-sm text-slate-200">
-      {fallbackBody}
-    </div>
-  );
+  return fallback;
 }

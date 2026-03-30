@@ -100,7 +100,7 @@ export default function ScryfallSearchPanel()
             type="text"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            placeholder='Try "sol ring", "t:dragon mv<=4", or "o:draw c:u"'
+            placeholder='Search...'
             className="h-12 min-w-0 w-full flex-1 rounded-2xl border border-white/10 bg-slate-900/80 px-4 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-teal-300/40 focus:bg-slate-900"
           />
           <button
