@@ -1,133 +1,62 @@
 const router = require("express").Router();
-const mongoose = require("mongoose");
-const { randomInt } = require("node:crypto");
-const requireAuth = require("../../middleware/requireAuth");
 
-const RoomModel = require("../../database/models/Room");
 const LiveGameModel = require("../../database/models/LiveGame");
+const RoomModel = require("../../database/models/Room");
 const RoomChatMessageModel = require("../../database/models/RoomChatMessage");
 
 const VALID_DICE_SIDES = new Set([4, 6, 8, 12, 20]);
 
-function isValidObjectId(value)
+async function loadAuthorizedRoom(roomId, userId)
 {
-  return mongoose.Types.ObjectId.isValid(value);
+  const room = await RoomModel.findById(roomId).exec();
+
+  if (!room)
+  {
+    return { error: { status: 404, message: "Room not found." } };
+  }
+
+  const requesterId = userId.toString();
+  const isMember = Array.isArray(room.members)
+    && room.members.some((member) => member.userID?.toString() === requesterId);
+
+  if (!isMember)
+  {
+    return { error: { status: 403, message: "You must be in the room to use chat." } };
+  }
+
+  return { room };
 }
 
-function isRoomMember(room, userId)
+function emitNewMessage(io, roomId, message)
 {
-  return room?.members?.some((member) => member.userID?.toString() === userId);
+  io.to(`room:${roomId}`).emit("room-chat:new-message", { message });
 }
 
-function isGameSeatMember(game, userId)
+router.get("/", (req, res) =>
 {
-  return game?.seats?.some((seat) => seat.userId?.toString() === userId);
-}
+  return res.status(200).json({ ok: true, route: "chat" });
+});
 
-async function getAuthorizedRoom(rawRoomId, userId)
-{
-  const normalizedId = typeof rawRoomId === "string" ? rawRoomId.trim() : "";
-
-  if (!normalizedId)
-  {
-    return { ok: false, status: 400, error: "Room id is required." };
-  }
-
-  let room = null;
-
-  if (isValidObjectId(normalizedId))
-  {
-    room = await RoomModel.findById(normalizedId).exec();
-  }
-
-  if (room)
-  {
-    const liveGame = await LiveGameModel.findOne({
-      roomId: room._id,
-      status: "active",
-    }).exec();
-
-    if (isRoomMember(room, userId) || isGameSeatMember(liveGame, userId))
-    {
-      return { ok: true, roomId: String(room._id), room, liveGame };
-    }
-
-    return { ok: false, status: 403, error: "You must be in the room to use chat." };
-  }
-
-  let liveGame = null;
-
-  if (isValidObjectId(normalizedId))
-  {
-    liveGame = await LiveGameModel.findById(normalizedId).exec();
-  }
-
-  if (!liveGame && isValidObjectId(normalizedId))
-  {
-    liveGame = await LiveGameModel.findOne({
-      roomId: normalizedId,
-      status: "active",
-    }).exec();
-  }
-
-  if (!liveGame || liveGame.status !== "active")
-  {
-    return { ok: false, status: 404, error: "Room not found." };
-  }
-
-  room = await RoomModel.findById(liveGame.roomId).exec();
-
-  if (!isGameSeatMember(liveGame, userId) && !isRoomMember(room, userId))
-  {
-    return { ok: false, status: 403, error: "You must be seated in the active game to use chat." };
-  }
-
-  return { ok: true, roomId: String(liveGame.roomId), room, liveGame };
-}
-
-async function createAndBroadcastMessage(req, res, roomId, messageData, status = 201)
-{
-  const message = await RoomChatMessageModel.create(messageData);
-
-  const io = req.app.get("io");
-  io.to(`room:${roomId}`).emit("room-chat:new-message", {
-    message,
-  });
-
-  return res.status(status).json({ ok: true, message });
-}
-
-async function handleMessagesGet(req, res)
+router.get("/rooms/:roomId/messages", async (req, res) =>
 {
   try
   {
-    const { targetId } = req.params;
-    const userId = req.user._id.toString();
+    const { roomId } = req.params;
+    const { error } = await loadAuthorizedRoom(roomId, req.user._id);
 
-    const access = await getAuthorizedRoom(targetId, userId);
-    if (!access.ok)
+    if (error)
     {
-      return res.status(access.status).json({ ok: false, error: access.error });
+      return res.status(error.status).json({ ok: false, error: error.message });
     }
 
-    const rawLimit = Number(req.query.limit ?? 50);
-    const limit = Number.isFinite(rawLimit)
-      ? Math.max(1, Math.min(rawLimit, 100))
+    const requestedLimit = Number(req.query.limit);
+    const limit = Number.isFinite(requestedLimit)
+      ? Math.max(1, Math.min(100, Math.floor(requestedLimit)))
       : 50;
 
-    const before = req.query.before ? new Date(String(req.query.before)) : null;
-
-    const query = { roomId: access.roomId };
-
-    if (before && !Number.isNaN(before.getTime()))
-    {
-      query.createdAt = { $lt: before };
-    }
-
-    const messages = await RoomChatMessageModel.find(query)
+    const messages = await RoomChatMessageModel.find({ roomId })
       .sort({ createdAt: -1 })
       .limit(limit)
-      .lean()
       .exec();
 
     return res.status(200).json({
@@ -137,68 +66,87 @@ async function handleMessagesGet(req, res)
   }
   catch (err)
   {
-    console.error("Error fetching room chat:", err);
+    console.error("Error fetching room chat messages:", err);
     return res.status(500).json({
       ok: false,
-      error: err.message || "Failed to fetch room chat.",
+      error: err.message || "Failed to fetch room chat messages.",
     });
   }
-}
+});
 
-async function handleMessageCreate(req, res)
+router.post("/rooms/:roomId/messages", async (req, res) =>
 {
   try
   {
-    const { targetId } = req.params;
-    const userId = req.user._id.toString();
-    const body = typeof req.body?.body === "string" ? req.body.body.trim() : "";
+    const { roomId } = req.params;
+    const { error } = await loadAuthorizedRoom(roomId, req.user._id);
+
+    if (error)
+    {
+      return res.status(error.status).json({ ok: false, error: error.message });
+    }
+
+    const body = typeof req.body?.body === "string"
+      ? req.body.body.trim()
+      : "";
 
     if (!body)
     {
       return res.status(400).json({ ok: false, error: "Message body is required." });
     }
 
-    const access = await getAuthorizedRoom(targetId, userId);
-    if (!access.ok)
-    {
-      return res.status(access.status).json({ ok: false, error: access.error });
-    }
-
-    return await createAndBroadcastMessage(req, res, access.roomId,
-    {
-      roomId: access.roomId,
+    const message = await RoomChatMessageModel.create({
+      roomId,
       authorUserId: req.user._id,
       authorUsername: req.user.username,
       kind: "message",
       body,
       action: null,
     });
+
+    const io = req.app.get("io");
+    emitNewMessage(io, roomId, message);
+
+    return res.status(201).json({ ok: true, message });
   }
   catch (err)
   {
-    console.error("Error sending room chat:", err);
+    console.error("Error sending room chat message:", err);
     return res.status(500).json({
       ok: false,
-      error: err.message || "Failed to send room chat.",
+      error: err.message || "Failed to send room chat message.",
     });
   }
-}
+});
 
-async function handleActionCreate(req, res)
+router.post("/rooms/:roomId/actions", async (req, res) =>
 {
   try
   {
-    const { targetId } = req.params;
-    const userId = req.user._id.toString();
+    const { roomId } = req.params;
+    const { error } = await loadAuthorizedRoom(roomId, req.user._id);
+
+    if (error)
+    {
+      return res.status(error.status).json({ ok: false, error: error.message });
+    }
+
+    const liveGame = await LiveGameModel.findOne({ roomId, status: "active" })
+      .select("_id")
+      .lean()
+      .exec();
+
+    if (!liveGame)
+    {
+      return res.status(400).json({ ok: false, error: "No active game found for this room." });
+    }
+
     const actionType = typeof req.body?.actionType === "string"
       ? req.body.actionType.trim()
       : "";
 
-    const access = await getAuthorizedRoom(targetId, userId);
-    if (!access.ok)
-    {
-      return res.status(access.status).json({ ok: false, error: access.error });
-    }
+    let body = "";
+    let action = null;
 
     if (actionType === "dice-roll")
     {
@@ -206,106 +154,54 @@ async function handleActionCreate(req, res)
 
       if (!VALID_DICE_SIDES.has(diceSides))
       {
-        return res.status(400).json({ ok: false, error: "Invalid die size." });
+        return res.status(400).json({ ok: false, error: "Invalid die selected." });
       }
 
-      const resultNumber = randomInt(1, diceSides + 1);
-
-      return await createAndBroadcastMessage(req, res, access.roomId,
-      {
-        roomId: access.roomId,
-        authorUserId: req.user._id,
-        authorUsername: req.user.username,
-        kind: "game-action",
-        body: `${req.user.username} rolled a d${diceSides}: ${resultNumber}`,
-        action:
-        {
-          type: "dice-roll",
-          diceSides,
-          resultNumber,
-          resultLabel: `d${diceSides}`,
-        },
-      });
+      const resultNumber = Math.floor(Math.random() * diceSides) + 1;
+      body = `rolled a d${diceSides} and got ${resultNumber}`;
+      action = {
+        type: "dice-roll",
+        diceSides,
+        resultNumber,
+        resultLabel: `d${diceSides}`,
+      };
     }
-
-    if (actionType === "coin-flip")
+    else if (actionType === "coin-flip")
     {
-      const resultLabel = randomInt(0, 2) === 0 ? "Heads" : "Tails";
-
-      return await createAndBroadcastMessage(req, res, access.roomId,
-      {
-        roomId: access.roomId,
-        authorUserId: req.user._id,
-        authorUsername: req.user.username,
-        kind: "game-action",
-        body: `${req.user.username} flipped a coin: ${resultLabel}`,
-        action:
-        {
-          type: "coin-flip",
-          resultLabel,
-        },
-      });
+      const resultLabel = Math.random() < 0.5 ? "Heads" : "Tails";
+      body = `flipped a coin and got ${resultLabel}`;
+      action = {
+        type: "coin-flip",
+        diceSides: null,
+        resultNumber: null,
+        resultLabel,
+      };
+    }
+    else
+    {
+      return res.status(400).json({ ok: false, error: "Invalid action type." });
     }
 
-    return res.status(400).json({ ok: false, error: "Unsupported chat action." });
-  }
-  catch (err)
-  {
-    console.error("Error creating chat action:", err);
-    return res.status(500).json({
-      ok: false,
-      error: err.message || "Failed to create chat action.",
+    const message = await RoomChatMessageModel.create({
+      roomId,
+      authorUserId: req.user._id,
+      authorUsername: req.user.username,
+      kind: "game-action",
+      body,
+      action,
     });
-  }
-}
 
-router.get("/rooms/:roomId/messages", requireAuth, async (req, res) =>
-{
-  req.params.targetId = req.params.roomId;
-  return handleMessagesGet(req, res);
-});
+    const io = req.app.get("io");
+    emitNewMessage(io, roomId, message);
 
-router.get("/targets/:targetId/messages", requireAuth, handleMessagesGet);
-
-router.post("/rooms/:roomId/messages", requireAuth, async (req, res) =>
-{
-  req.params.targetId = req.params.roomId;
-  return handleMessageCreate(req, res);
-});
-
-router.post("/targets/:targetId/messages", requireAuth, handleMessageCreate);
-
-router.post("/rooms/:roomId/actions", requireAuth, async (req, res) =>
-{
-  req.params.targetId = req.params.roomId;
-  return handleActionCreate(req, res);
-});
-
-router.post("/targets/:targetId/actions", requireAuth, handleActionCreate);
-
-router.delete("/rooms/:roomId/messages", requireAuth, async (req, res) =>
-{
-  try
-  {
-    const { roomId } = req.params;
-    const userId = req.user._id.toString();
-
-    const access = await getAuthorizedRoom(roomId, userId);
-    if (!access.ok)
-    {
-      return res.status(access.status).json({ ok: false, error: access.error });
-    }
-
-    await RoomChatMessageModel.deleteMany({ roomId: access.roomId }).exec();
-
-    return res.status(200).json({ ok: true });
+    return res.status(201).json({ ok: true, message });
   }
   catch (err)
   {
-    console.error("Error deleting room chat:", err);
+    console.error("Error sending room chat action:", err);
     return res.status(500).json({
       ok: false,
-      error: err.message || "Failed to delete room chat.",
+      error: err.message || "Failed to send room chat action.",
     });
   }
 });

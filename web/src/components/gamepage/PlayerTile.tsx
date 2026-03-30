@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
-import { Crown, Pencil, Swords, } from "lucide-react";
+import { Crown, Pencil, Swords } from "lucide-react";
 
 type CommanderCard =
 {
@@ -32,6 +32,8 @@ type PlayerTileProps =
   hasMonarch?: boolean;
   hasInitiative?: boolean;
   isSaving?: boolean;
+  canPromoteToHost?: boolean;
+  promotingToHost?: boolean;
   onLifeChange?: (nextLife: number) => void;
   onPoisonChange?: (nextPoison: number) => void;
   onEnergyChange?: (nextEnergy: number) => void;
@@ -40,6 +42,7 @@ type PlayerTileProps =
   onSetMonarch?: (seatNumber: number | null) => void;
   onSetInitiative?: (seatNumber: number | null) => void;
   onOpenCommanderPanel?: () => void;
+  onPromoteToHost?: () => void;
 };
 
 type CommanderVisual =
@@ -234,6 +237,8 @@ export default function PlayerTile({
   hasMonarch = false,
   hasInitiative = false,
   isSaving = false,
+  canPromoteToHost = false,
+  promotingToHost = false,
   onLifeChange,
   onPoisonChange,
   onEnergyChange,
@@ -242,6 +247,7 @@ export default function PlayerTile({
   onSetMonarch,
   onSetInitiative,
   onOpenCommanderPanel,
+  onPromoteToHost,
 }: PlayerTileProps)
 {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -320,7 +326,11 @@ export default function PlayerTile({
   useEffect(() =>
   {
     const video = videoRef.current;
-    if (!video) return;
+
+    if (!video)
+    {
+      return;
+    }
 
     if (!stream)
     {
@@ -474,18 +484,14 @@ export default function PlayerTile({
       return;
     }
 
-    const nextLife = clampCounter(parsed, 0, 999);
-    setLifeInput(String(nextLife));
-    onLifeChange?.(nextLife);
+    onLifeChange?.(clampCounter(parsed, 0, 999));
   }
 
   async function handleCommanderHoverStart(name: string)
   {
-    if (!name) return;
-
     setHoveredCommanderName(name);
 
-    if (name in commanderVisualMap)
+    if (commanderVisualMap[name] !== undefined)
     {
       return;
     }
@@ -500,21 +506,21 @@ export default function PlayerTile({
 
   function handleCommanderHoverEnd(name: string)
   {
-    setHoveredCommanderName((current) => (current === name ? null : current));
+    setHoveredCommanderName((current) => current === name ? null : current);
   }
 
   return (
-    <div className="relative h-full min-h-0 overflow-hidden rounded-2xl border border-white/10 bg-slate-900/40 ring-1 ring-white/5">
-      <div className="absolute inset-0 overflow-hidden rounded-2xl">
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/5 via-transparent to-transparent" />
+    <section className="relative h-full min-h-0 overflow-hidden rounded-[1.65rem] border border-white/10 bg-slate-900 shadow-[0_18px_60px_rgba(0,0,0,0.45)]">
+      <div className="absolute inset-0 bg-gradient-to-br from-white/[0.06] via-white/[0.025] to-transparent" />
 
+      <div className="relative h-full">
         {stream ? (
           <video
             ref={videoRef}
+            className="h-full w-full object-cover"
             autoPlay
             playsInline
             muted={isSelf}
-            className="h-full w-full bg-black/40 object-cover"
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center bg-black/20">
@@ -531,27 +537,40 @@ export default function PlayerTile({
         <div className="flex min-w-0 flex-col gap-1.5">
           <div className="rounded-xl border border-white/10 bg-slate-950/75 px-3 py-2 text-xs text-slate-100 shadow-lg backdrop-blur">
             <div className="flex items-center gap-2">
-              <div className="flex min-w-0 items-center gap-1.5">
-                <div className="truncate font-semibold tracking-tight">{title}</div>
+              <div className="group/title flex min-w-0 items-center gap-2">
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <div className="truncate font-semibold tracking-tight">{title}</div>
 
-                {hasMonarch ? (
-                  <span
-                    className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-amber-400/20 bg-amber-400/10 text-amber-200"
-                    title="Monarch"
-                    aria-label="Monarch"
-                  >
-                    <Crown className="h-3 w-3" />
-                  </span>
-                ) : null}
+                  {hasMonarch ? (
+                    <span
+                      className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-amber-400/20 bg-amber-400/10 text-amber-200"
+                      title="Monarch"
+                      aria-label="Monarch"
+                    >
+                      <Crown className="h-3 w-3" />
+                    </span>
+                  ) : null}
 
-                {hasInitiative ? (
-                  <span
-                    className="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full border border-sky-400/20 bg-sky-400/10 px-1 text-[10px] font-black leading-none text-sky-100"
-                    title="Initiative"
-                    aria-label="Initiative"
+                  {hasInitiative ? (
+                    <span
+                      className="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full border border-sky-400/20 bg-sky-400/10 px-1 text-[10px] font-black leading-none text-sky-100"
+                      title="Initiative"
+                      aria-label="Initiative"
+                    >
+                      !
+                    </span>
+                  ) : null}
+                </div>
+
+                {canPromoteToHost ? (
+                  <button
+                    type="button"
+                    onClick={onPromoteToHost}
+                    disabled={!onPromoteToHost || promotingToHost}
+                    className="pointer-events-auto inline-flex shrink-0 rounded-full border border-teal-300/30 bg-teal-400/12 px-2 py-0.5 text-[10px] font-semibold text-teal-100 opacity-0 transition hover:border-teal-200/50 hover:bg-teal-400/18 group-hover/title:opacity-100 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    !
-                  </span>
+                    {promotingToHost ? "Promoting..." : "Promote"}
+                  </button>
                 ) : null}
               </div>
 
@@ -767,8 +786,8 @@ export default function PlayerTile({
                   commitLifeInput();
                 }
               }}
-              disabled={!canEditLife}
-              className="w-12 bg-transparent px-1 text-center text-base font-semibold text-slate-50 outline-none disabled:text-slate-300"
+              disabled={!canEditLife || isSaving}
+              className="h-9 w-[4.35rem] bg-slate-950/95 text-center text-base font-semibold tracking-tight text-emerald-100 outline-none disabled:cursor-not-allowed disabled:opacity-80"
             />
 
             <button
@@ -790,7 +809,14 @@ export default function PlayerTile({
         >
           <div className="grid gap-1.5">
             {compactCounters.length > 0 ? (
-              <div className={`grid gap-1.5 ${compactCounters.length >= 3 ? "grid-cols-3" : compactCounters.length === 2 ? "grid-cols-2" : "grid-cols-1"}`}>
+              <div className={`grid gap-1.5 ${
+                compactCounters.length >= 3
+                  ? "grid-cols-3"
+                  : compactCounters.length === 2
+                    ? "grid-cols-2"
+                    : "grid-cols-1"
+              }`}
+              >
                 {compactCounters.map((counter) => (
                   <MiniCounterCard
                     key={counter.key}
@@ -850,7 +876,7 @@ export default function PlayerTile({
           </div>
         </div>
       ) : null}
-    </div>
+    </section>
   );
 }
 
@@ -865,20 +891,18 @@ function HoverPreview({
 })
 {
   return (
-    <div className="absolute right-0 top-full z-30 mt-2 w-48 overflow-hidden rounded-xl border border-white/10 bg-slate-950/95 shadow-2xl">
-      <a
-        href={href}
-        target="_blank"
-        rel="noreferrer"
-        className="block"
-      >
-        <img
-          src={src}
-          alt={alt}
-          className="w-full object-cover"
-        />
-      </a>
-    </div>
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="absolute right-0 top-[calc(100%+0.6rem)] z-40 overflow-hidden rounded-xl border border-white/10 bg-slate-950 shadow-2xl"
+    >
+      <img
+        src={src}
+        alt={alt}
+        className="block w-56 max-w-none object-cover"
+      />
+    </a>
   );
 }
 
@@ -1039,7 +1063,7 @@ function DamageRow({
           </button>
         </div>
       ) : (
-        <div className="rounded-md border border-white/10 bg-slate-900 px-1.5 py-0.5 text-[10px] font-semibold text-slate-100">
+        <div className="text-[10px] font-semibold text-slate-100">
           {value}
         </div>
       )}

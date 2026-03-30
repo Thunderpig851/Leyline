@@ -238,17 +238,16 @@ export default function RoomChatWidget({ roomId }: RoomChatWidgetProps)
       <div className="border-b border-white/10 px-4 py-3">
         <div className="text-sm font-medium text-slate-100">Game Chat</div>
 
-        <div className="mt-3 grid grid-cols-[minmax(0,1fr)_auto_auto] gap-2">
-          <div ref={dieMenuRef} className="relative min-w-0">
+        <div className="mt-3 grid grid-cols-[88px_minmax(0,1fr)_minmax(0,1fr)] gap-2">
+          <div ref={dieMenuRef} className="relative">
             <button
               type="button"
               onClick={() => setDieMenuOpen((value) => !value)}
-              className="flex w-full min-w-0 items-center gap-2 rounded-2xl border border-white/10 bg-slate-900/80 px-3 py-2 text-left text-xs text-slate-300 transition hover:border-white/20 hover:bg-slate-900"
+              className="flex h-full w-[88px] items-center justify-between rounded-2xl border border-white/10 bg-slate-900/80 px-3 py-2 text-left text-sm font-semibold text-slate-100 transition hover:border-white/20 hover:bg-slate-900"
             >
-              <Dices className="h-4 w-4 shrink-0 text-teal-200" />
-              <span className="shrink-0 font-medium text-slate-200">Die</span>
-              <span className="ml-auto text-sm font-semibold text-slate-100">
-                d{selectedDieSides}
+              <span className="flex min-w-0 items-center gap-2">
+                <Dices className="h-4 w-4 shrink-0 text-teal-200" />
+                <span>d{selectedDieSides}</span>
               </span>
               <ChevronDown
                 className={`h-4 w-4 shrink-0 text-slate-400 transition ${dieMenuOpen ? "rotate-180" : ""}`}
@@ -256,8 +255,8 @@ export default function RoomChatWidget({ roomId }: RoomChatWidgetProps)
             </button>
 
             {dieMenuOpen ? (
-              <div className="absolute left-0 top-[calc(100%+8px)] z-30 w-full rounded-2xl border border-white/10 bg-slate-950/95 p-2 shadow-2xl backdrop-blur">
-                <div className="grid grid-cols-3 gap-2">
+              <div className="absolute left-0 top-[calc(100%+8px)] z-30 w-[88px] rounded-2xl border border-white/10 bg-slate-950/95 p-2 shadow-2xl backdrop-blur">
+                <div className="flex flex-col gap-2">
                   {DIE_OPTIONS.map((sides) =>
                   {
                     const selected = selectedDieSides === sides;
@@ -271,10 +270,10 @@ export default function RoomChatWidget({ roomId }: RoomChatWidgetProps)
                           setSelectedDieSides(sides);
                           setDieMenuOpen(false);
                         }}
-                        className={`rounded-xl border px-3 py-2 text-xs font-semibold transition ${
+                        className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${
                           selected
-                            ? "border-teal-300/40 bg-teal-400/15 text-teal-100"
-                            : "border-white/10 bg-white/[0.04] text-slate-200 hover:border-white/20 hover:bg-white/[0.07]"
+                            ? "border border-teal-300/40 bg-teal-400/15 text-teal-100"
+                            : "border border-white/10 bg-white/[0.04] text-slate-200 hover:border-white/20 hover:bg-white/[0.07]"
                         }`}
                       >
                         d{sides}

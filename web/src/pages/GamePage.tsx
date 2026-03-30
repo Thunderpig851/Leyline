@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Moon, Sun } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useMediaSession } from "../context/MediaSession";
 import { useGameSession } from "../context/GameSession";
@@ -60,6 +61,36 @@ type ActiveGameResponse =
   ok: boolean;
   game?: ActiveGame;
   error?: string;
+};
+
+type RoomSummary =
+{
+  hostID?: string;
+  hostName?: string;
+};
+
+type RoomResponse =
+{
+  ok: boolean;
+  room?: RoomSummary;
+  error?: string;
+};
+
+type HostTransferResponse =
+{
+  ok: boolean;
+  hostUserId?: string;
+  hostName?: string;
+  unchanged?: boolean;
+  error?: string;
+};
+
+type HostTransferredPayload =
+{
+  gameId?: string;
+  roomId?: string;
+  hostUserId?: string;
+  hostName?: string;
 };
 
 type SeatStateResponse =
@@ -160,6 +191,9 @@ export default function GamePage()
   const [rightOpen, setRightOpen] = useState(false);
   const [game, setGame] = useState<ActiveGame | null>(null);
   const [gameId, setGameId] = useState("");
+  const [currentHostUserId, setCurrentHostUserId] = useState("");
+  const [currentHostName, setCurrentHostName] = useState("");
+  const [transferringHostSeatNumber, setTransferringHostSeatNumber] = useState<number | null>(null);
   const [leaving, setLeaving] = useState(false);
   const [endingGame, setEndingGame] = useState(false);
   const [randomizingOrder, setRandomizingOrder] = useState(false);
@@ -233,12 +267,21 @@ export default function GamePage()
     {
       try
       {
-        const res = await apiGet<ActiveGameResponse>(`/api/live-games/room/${roomId}`);
+        const [gameRes, roomRes] = await Promise.all([
+          apiGet<ActiveGameResponse>(`/api/live-games/room/${roomId}`),
+          apiGet<RoomResponse>(`/api/rooms/${roomId}`),
+        ]);
 
-        if (!res.ok || !res.data?.ok || !res.data?.game?._id) return;
+        if (!gameRes.ok || !gameRes.data?.ok || !gameRes.data?.game?._id) return;
         if (cancelled) return;
 
-        const activeGame = res.data.game;
+        if (roomRes.ok && roomRes.data?.ok && roomRes.data.room)
+        {
+          setCurrentHostUserId(roomRes.data.room.hostID || "");
+          setCurrentHostName(roomRes.data.room.hostName || "");
+        }
+
+        const activeGame = gameRes.data.game;
         const activeGameId = activeGame._id;
 
         setGame(activeGame);
@@ -286,6 +329,16 @@ export default function GamePage()
       if (payload.game._id !== gameId) return;
 
       setGame(payload.game);
+    }
+
+    function handleHostTransferred(payload: HostTransferredPayload)
+    {
+      if (!payload) return;
+      if (payload.roomId !== roomId) return;
+
+      setCurrentHostUserId(payload.hostUserId || "");
+      setCurrentHostName(payload.hostName || "");
+      setTransferringHostSeatNumber(null);
     }
 
     function handlePlayerOrderRandomized(payload: PlayerOrderRandomizedPayload)
@@ -371,13 +424,15 @@ export default function GamePage()
 
     socket.on("game:updated", handleGameUpdated);
     socket.on("game:player-order-randomized", handlePlayerOrderRandomized);
+    socket.on("game:host-transferred", handleHostTransferred);
 
     return () =>
     {
       socket.off("game:updated", handleGameUpdated);
       socket.off("game:player-order-randomized", handlePlayerOrderRandomized);
+      socket.off("game:host-transferred", handleHostTransferred);
     };
-  }, [gameId, game]);
+  }, [gameId, game, roomId]);
 
   useEffect(() =>
   {
@@ -421,30 +476,111 @@ export default function GamePage()
 
   useEffect(() =>
   {
-    if (!gameId || !roomId || !socket.connected) return;
+    if (!gameId || !roomId) return;
 
-    socket.emit("live-game:join",
-    {
-      gameId,
-      roomId,
-      userId: getStoredUserId(),
-      username: getStoredUsername(),
-    });
+    const userId = getStoredUserId();
+    const username = getStoredUsername();
 
-    return () =>
+    function sendHeartbeat(
     {
-      socket.emit("live-game:leave",
+      hidden = document.visibilityState === "hidden",
+      page = hidden ? "hidden" : "game",
+    }: {
+      hidden?: boolean;
+      page?: "game" | "room" | "hidden";
+    } = {})
+    {
+      if (!socket.connected || !userId) return;
+
+      socket.emit("live-game:heartbeat",
       {
         gameId,
         roomId,
-        userId: getStoredUserId(),
+        userId,
+        username,
+        hidden,
+        page,
       });
+    }
+
+    function handleSocketReconnect()
+    {
+      if (!socket.connected || !userId) return;
+
+      socket.emit("live-game:join",
+      {
+        gameId,
+        roomId,
+        userId,
+        username,
+      });
+
+      sendHeartbeat({ hidden: false, page: "game" });
+    }
+
+    sendHeartbeat({ hidden: false, page: "game" });
+
+    const intervalId = window.setInterval(() =>
+    {
+      sendHeartbeat();
+    }, 15000);
+
+    function handleVisibilityChange()
+    {
+      const hidden = document.visibilityState === "hidden";
+
+      sendHeartbeat({
+        hidden,
+        page: hidden ? "hidden" : "game",
+      });
+    }
+
+    function handlePageHide()
+    {
+      sendHeartbeat({
+        hidden: true,
+        page: "hidden",
+      });
+    }
+
+    socket.on("connect", handleSocketReconnect);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("pagehide", handlePageHide);
+
+    return () =>
+    {
+      if (socket.connected && userId)
+      {
+        sendHeartbeat({
+          hidden: false,
+          page: "room",
+        });
+      }
+
+      socket.off("connect", handleSocketReconnect);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("pagehide", handlePageHide);
+      window.clearInterval(intervalId);
     };
   }, [gameId, roomId]);
 
+  function setSeatSaving(seatNumber: number, isSaving: boolean)
+  {
+    setSavingSeatNumbers((current) =>
+    {
+      if (isSaving)
+      {
+        return current.includes(seatNumber) ? current : [...current, seatNumber];
+      }
+
+      return current.filter((value) => value !== seatNumber);
+    });
+  }
+
   async function updateSeatState(
     seatNumber: number,
-    nextState: {
+    payload:
+    {
       life?: number;
       poison?: number;
       energy?: number;
@@ -456,13 +592,13 @@ export default function GamePage()
   {
     if (!gameId) return;
 
-    setSavingSeatNumbers((prev) => [...new Set([...prev, seatNumber])]);
+    setSeatSaving(seatNumber, true);
 
     try
     {
       const res = await apiPost<SeatStateResponse>(
         `/api/live-games/${gameId}/seats/${seatNumber}/state`,
-        nextState
+        payload
       );
 
       if (!res.ok)
@@ -476,13 +612,20 @@ export default function GamePage()
         setGame(res.data.game);
       }
     }
+    catch (err)
+    {
+      console.error("Failed to update seat state:", err);
+    }
     finally
     {
-      setSavingSeatNumbers((prev) => prev.filter((value) => value !== seatNumber));
+      setSeatSaving(seatNumber, false);
     }
   }
 
-  async function handleCommandersChange(seatNumber: number, nextCommanders: CommanderCard[])
+  async function handleCommandersChange(
+    seatNumber: number,
+    nextCommanders: CommanderCard[]
+  )
   {
     await updateSeatState(seatNumber, { commanders: nextCommanders });
   }
@@ -519,14 +662,17 @@ export default function GamePage()
     });
   }
 
-  async function handleCommanderDamageChange(seatNumber: number, nextCommanderDamage: Record<string, number>)
+  async function handleCommanderDamageChange(
+    seatNumber: number,
+    nextCommanderDamage: Record<string, number>
+  )
   {
-    const sanitized = Object.fromEntries(
-      Object.entries(nextCommanderDamage).map(([userId, amount]) => [
-        userId,
-        clampCounter(amount, 0, 99),
-      ])
-    );
+    const sanitized: Record<string, number> = {};
+
+    for (const [userId, value] of Object.entries(nextCommanderDamage))
+    {
+      sanitized[userId] = clampCounter(value, 0, 99);
+    }
 
     await updateSeatState(seatNumber,
     {
@@ -586,6 +732,44 @@ export default function GamePage()
     finally
     {
       setResettingGame(false);
+    }
+  }
+
+  async function handlePromoteToHost(seatNumber: number)
+  {
+    if (!gameId || !isHost) return;
+
+    const targetSeat = game?.seats.find((seat) => seat.seatNumber === seatNumber);
+    if (!targetSeat?.userId) return;
+
+    setTransferringHostSeatNumber(seatNumber);
+
+    try
+    {
+      const res = await apiPost<HostTransferResponse>(
+        `/api/live-games/${gameId}/transfer-host`,
+        { targetUserId: targetSeat.userId }
+      );
+
+      if (!res.ok)
+      {
+        console.error("Failed to transfer host:", res.error);
+        return;
+      }
+
+      if (res.data?.ok)
+      {
+        setCurrentHostUserId(res.data.hostUserId || "");
+        setCurrentHostName(res.data.hostName || "");
+      }
+    }
+    catch (err)
+    {
+      console.error("Failed to transfer host:", err);
+    }
+    finally
+    {
+      setTransferringHostSeatNumber(null);
     }
   }
 
@@ -699,24 +883,12 @@ export default function GamePage()
 
   function handleToggleSelfMic()
   {
-    if (mediaSession.micEnabled)
-    {
-      void mediaSession.disableMic();
-      return;
-    }
-
-    void mediaSession.enableMic();
+    mediaSession.toggleMic();
   }
 
   function handleToggleSelfCam()
   {
-    if (mediaSession.camEnabled)
-    {
-      void mediaSession.disableCam();
-      return;
-    }
-
-    void mediaSession.enableCam();
+    mediaSession.toggleCam();
   }
 
   async function handleSetMonarch(seatNumber: number | null)
@@ -830,6 +1002,7 @@ export default function GamePage()
       {
         return {
           seatNumber,
+          userId: "",
           title: `Seat ${seatNumber}`,
           stream: null,
           isSelf: false,
@@ -838,8 +1011,8 @@ export default function GamePage()
           poison: 0,
           energy: 0,
           experience: 0,
-          trackEnergy: false,
-          trackExperience: false,
+          trackEnergy: Boolean(game?.settings?.trackEnergy),
+          trackExperience: Boolean(game?.settings?.trackExperience),
           commanders: [] as CommanderCard[],
           commanderDamageOptions: [] as CommanderDamageOption[],
           hasMonarch: false,
@@ -849,7 +1022,6 @@ export default function GamePage()
       }
 
       const isSelf = seat.userId === selfUserId;
-
       const remote =
         !isSelf
           ? remoteByUsername.get(seat.username.toLowerCase()) ?? null
@@ -867,6 +1039,7 @@ export default function GamePage()
 
       return {
         seatNumber,
+        userId: seat.userId,
         title: isSelf ? "You" : seat.username,
         stream: isSelf ? mediaSession.localStream : remote?.stream ?? null,
         isSelf,
@@ -920,7 +1093,8 @@ export default function GamePage()
       .sort((a, b) => a.seatNumber - b.seatNumber)[0]?.userId ?? "";
 
   const roomTitle = session.roomTitle || "Placeholder Room";
-  const isHost = fallbackHostUserId === getStoredUserId();
+  const effectiveHostUserId = currentHostUserId || fallbackHostUserId;
+  const isHost = effectiveHostUserId === getStoredUserId();
   const maxPlayers = 4;
   const playerCount = game?.seats?.filter((seat) => Boolean(seat.userId)).length ?? 0;
 
@@ -935,6 +1109,36 @@ export default function GamePage()
               {roomTitle}
             </h1>
           </div>
+
+          {game?.dayNightState ? (
+            <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+              <div
+                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold shadow-lg ${
+                  game.dayNightState === "day"
+                    ? "border-amber-300/35 bg-amber-400/12 text-amber-100"
+                    : "border-indigo-300/35 bg-indigo-400/12 text-indigo-100"
+                }`}
+              >
+                <span
+                  className={`inline-flex h-7 w-7 items-center justify-center rounded-full border ${
+                    game.dayNightState === "day"
+                      ? "border-amber-200/30 bg-amber-300/12"
+                      : "border-indigo-200/30 bg-indigo-300/12"
+                  }`}
+                >
+                  {game.dayNightState === "day" ? (
+                    <Sun className="h-4 w-4" />
+                  ) : (
+                    <Moon className="h-4 w-4" />
+                  )}
+                </span>
+
+                <span className="hidden sm:inline">
+                  {game.dayNightState === "day" ? "Day" : "Night"}
+                </span>
+              </div>
+            </div>
+          ) : null}
 
           <div className="flex items-center gap-2">
             <button
@@ -971,6 +1175,20 @@ export default function GamePage()
                 hasMonarch={slot.hasMonarch}
                 hasInitiative={slot.hasInitiative}
                 isSaving={slot.isSaving}
+                canPromoteToHost={
+                  Boolean(
+                    isHost &&
+                    slot.userId &&
+                    !slot.isSelf &&
+                    slot.userId !== effectiveHostUserId
+                  )
+                }
+                promotingToHost={transferringHostSeatNumber === slot.seatNumber}
+                onPromoteToHost={
+                  isHost && slot.userId && !slot.isSelf
+                    ? () => { void handlePromoteToHost(slot.seatNumber); }
+                    : undefined
+                }
                 onLifeChange={
                   slot.isSelf
                     ? (nextLife) => { void handleLifeChange(slot.seatNumber, nextLife); }
@@ -1053,6 +1271,7 @@ export default function GamePage()
           open={leftOpen}
           onToggle={() => setLeftOpen((value) => !value)}
           isHost={Boolean(isHost)}
+          currentHostName={currentHostName || "Unknown"}
           playerCount={playerCount}
           maxPlayers={maxPlayers}
           randomizingOrder={randomizingOrder}

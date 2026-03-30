@@ -14,14 +14,14 @@ type RightSidePanelProps =
 {
   open: boolean;
   onToggle: () => void;
-  chatTargetId: string;
+  roomId: string;
   width?: string;
 };
 
 export default function RightSidePanel({
   open,
   onToggle,
-  chatTargetId,
+  roomId,
   width = "clamp(280px, 22.7vw, 413px)",
 }: RightSidePanelProps)
 {
@@ -60,7 +60,7 @@ export default function RightSidePanel({
 
         <div className="min-h-0 overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-b from-white/[0.06] to-white/[0.03] shadow-[0_12px_32px_rgba(0,0,0,0.32)]">
           {activeTab === "card-log" && <CardLogPlaceholder />}
-          {activeTab === "chat" && <RoomChatWidget chatTargetId={chatTargetId} />}
+          {activeTab === "chat" && <RoomChatWidget roomId={roomId} />}
           {activeTab === "search" && <ScryfallSearchPanel />}
         </div>
       </div>

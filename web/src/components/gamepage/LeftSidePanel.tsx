@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
 import {
-  Flag,
-  RotateCcw,
+  Skull,
   Mic,
   MicOff,
+  RotateCcw,
   Shuffle,
   Video,
   VideoOff,
@@ -16,6 +16,7 @@ type LeftSidePanelProps =
   open: boolean;
   onToggle: () => void;
   isHost: boolean;
+  currentHostName?: string;
   playerCount: number;
   maxPlayers: number;
   randomizingOrder?: boolean;
@@ -36,6 +37,7 @@ export default function LeftSidePanel({
   open,
   onToggle,
   isHost,
+  currentHostName = "",
   playerCount,
   maxPlayers,
   randomizingOrder = false,
@@ -64,7 +66,7 @@ export default function LeftSidePanel({
     <SidePanel
       side="left"
       open={open}
-      title="Game Settings"
+      title=""
       onToggle={onToggle}
     >
       <div className="mt-4 flex h-[calc(100vh-150px)] min-h-0 flex-col gap-4 overflow-y-auto pr-1">
@@ -77,16 +79,22 @@ export default function LeftSidePanel({
         >
           <div className="mb-3 flex items-center justify-between gap-3">
             <div>
-              <div className="text-sm font-semibold text-slate-100">
-                Game Controls
-              </div>
-              <div className="mt-1 text-xs text-slate-400">
-                {playerCount}/{maxPlayers} players seated
-              </div>
             </div>
           </div>
 
-          <div className="space-y-3">
+          <div className="mb-3 rounded-2xl border border-white/10 bg-slate-950/55 px-3 py-2.5">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+              Current Host:
+            </div>
+            <div className="mt-1 text-sm font-medium text-slate-100">
+              {currentHostName || "Unknown"}
+            </div>
+              <div className="mt-1 text-xs text-slate-400">
+                {playerCount}/{maxPlayers} players seated
+              </div>
+          </div>
+
+          <div className="space-y-.5">
             <ControlCard
               title=""
               description=""
@@ -110,7 +118,7 @@ export default function LeftSidePanel({
             <ControlCard
               title=""
               description=""
-              icon={<Flag className="h-4 w-4" />}
+              icon={<Skull className="h-4 w-4" />}
               buttonLabel={endingGame ? "Ending..." : "End Game"}
               disabled={!isHost || !onEndGame || endingGame || resettingGame}
               onClick={onEndGame}
@@ -130,9 +138,6 @@ export default function LeftSidePanel({
                 <div>
                   <div className="text-sm font-medium text-slate-100">
                     Shared Markers
-                  </div>
-                  <div className="mt-1 text-xs leading-5 text-slate-400">
-                    Any seated player can update the current day or night state.
                   </div>
                 </div>
               </div>

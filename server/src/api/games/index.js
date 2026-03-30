@@ -58,6 +58,20 @@ function emitGameEnded(io, game)
   });
 }
 
+function emitHostTransferred(io, game, room)
+{
+  const payload = {
+    gameId: String(game._id),
+    roomId: String(game.roomId),
+    hostUserId: room.hostID ? room.hostID.toString() : "",
+    hostName: room.hostName || "",
+  };
+
+  io.to(`live-game:${game._id}`).emit("game:host-transferred", payload);
+  io.to(`room:${game.roomId}`).emit("game:host-transferred", payload);
+  io.emit("rooms:changed");
+}
+
 function emitBoardOrderRandomized(io, game)
 {
   io.to(`live-game:${game._id}`).emit("game:player-order-randomized", {
@@ -288,34 +302,6 @@ function sanitizeDayNightState(value)
   return { provided: true, valid: false };
 }
 
-function resetSeatForFormat(seat, format)
-{
-  const startingLife = getStartingLife(format);
-
-  seat.commanders = [];
-  seat.stats = {
-    commanderDamage: {},
-    commanderCastCount: 0,
-    life: startingLife,
-    poison: 0,
-    energy: 0,
-    experience: 0,
-  };
-}
-
-function resetGameState(game)
-{
-  const format = game?.settings?.format;
-
-  for (const seat of game.seats || [])
-  {
-    resetSeatForFormat(seat, format);
-  }
-
-  game.monarchSeatNumber = null;
-  game.initiativeSeatNumber = null;
-}
-
 router.get("/room/:roomId", requireAuth, async (req, res) =>
 {
   try
@@ -471,10 +457,9 @@ router.post("/:gameId/join", requireAuth, async (req, res) =>
     if (existingSeat)
     {
       existingSeat.connectionStatus = "connected";
+      existingSeat.username = req.user.username;
       existingSeat.lastSeenAt = new Date();
-      existingSeat.lastActiveAt = new Date();
-      existingSeat.awaySinceAt = null;
-      existingSeat.disconnectDeadlineAt = null;
+      if (!existingSeat.joinedAt) existingSeat.joinedAt = new Date();
 
       syncBoardOrder(game);
       await game.save();
@@ -482,37 +467,44 @@ router.post("/:gameId/join", requireAuth, async (req, res) =>
       const io = req.app.get("io");
       emitGameUpdated(io, game);
 
-      return res.status(200).json({ ok: true, game, seatNumber: existingSeat.seatNumber, alreadyJoined: true });
+      return res.status(200).json({ ok: true, game, alreadySeated: true });
     }
 
-    let requestedSeatNumber = Number(seatNumber);
+    const maxPlayers = Number(room.settings?.maxPlayers ?? 4);
+    const takenSeatNumbers = new Set(game.seats.map((seat) => seat.seatNumber));
 
-    if (!Number.isInteger(requestedSeatNumber) || requestedSeatNumber < 1 || requestedSeatNumber > 4)
+    let assignedSeatNumber = seatNumber;
+
+    if (!assignedSeatNumber)
     {
-      requestedSeatNumber = null;
+      for (let i = 1; i <= maxPlayers; i += 1)
+      {
+        if (!takenSeatNumbers.has(i))
+        {
+          assignedSeatNumber = i;
+          break;
+        }
+      }
     }
 
-    const occupiedSeatNumbers = new Set(game.seats.map((seat) => seat.seatNumber));
-
-    let targetSeatNumber = requestedSeatNumber;
-
-    if (!targetSeatNumber || occupiedSeatNumbers.has(targetSeatNumber))
+    if (!assignedSeatNumber)
     {
-      targetSeatNumber = [1, 2, 3, 4].find((value) => !occupiedSeatNumbers.has(value)) ?? null;
+      return res.status(400).json({ ok: false, error: "No open seats available." });
     }
 
-    if (!targetSeatNumber)
+    if (takenSeatNumbers.has(assignedSeatNumber))
     {
-      return res.status(400).json({ ok: false, error: "No seats available." });
+      return res.status(400).json({ ok: false, error: "Seat is already taken." });
     }
 
     const startingLife = getStartingLife(game.settings?.format);
 
     game.seats.push({
-      seatNumber: targetSeatNumber,
+      seatNumber: assignedSeatNumber,
       userId: req.user._id,
       username: req.user.username,
       joinedAt: new Date(),
+      lastSeenAt: new Date(),
       connectionStatus: "connected",
       isReady: false,
       deck: null,
@@ -524,11 +516,7 @@ router.post("/:gameId/join", requireAuth, async (req, res) =>
         poison: 0,
         energy: 0,
         experience: 0,
-      },
-      lastSeenAt: new Date(),
-      lastActiveAt: new Date(),
-      awaySinceAt: null,
-      disconnectDeadlineAt: null,
+      }
     });
 
     syncBoardOrder(game);
@@ -537,12 +525,12 @@ router.post("/:gameId/join", requireAuth, async (req, res) =>
     const io = req.app.get("io");
     emitGameUpdated(io, game);
 
-    return res.status(200).json({ ok: true, game, seatNumber: targetSeatNumber });
+    return res.status(200).json({ ok: true, game });
   }
   catch (err)
   {
-    console.error("Error joining live game:", err);
-    return res.status(500).json({ ok: false, error: err.message || "Failed to join live game." });
+    console.error("Error joining game seat:", err);
+    return res.status(500).json({ ok: false, error: err.message || "Failed to join game seat." });
   }
 });
 
@@ -556,11 +544,8 @@ router.post("/:gameId/leave", requireAuth, async (req, res) =>
       return res.status(404).json({ ok: false, error: "Game not found." });
     }
 
-    const leavingUserId = req.user._id.toString();
-
-    const seatIndex = game.seats.findIndex(
-      (seat) => seat.userId?.toString() === leavingUserId
-    );
+    const userId = req.user._id.toString();
+    const seatIndex = game.seats.findIndex((seat) => seat.userId?.toString() === userId);
 
     if (seatIndex === -1)
     {
@@ -581,47 +566,8 @@ router.post("/:gameId/leave", requireAuth, async (req, res) =>
   }
   catch (err)
   {
-    console.error("Error leaving live game:", err);
-    return res.status(500).json({ ok: false, error: err.message || "Failed to leave live game." });
-  }
-});
-
-router.post("/:gameId/reconnect", requireAuth, async (req, res) =>
-{
-  try
-  {
-    const game = await LiveGameModel.findById(req.params.gameId).exec();
-    if (!game)
-    {
-      return res.status(404).json({ ok: false, error: "Game not found." });
-    }
-
-    const seat = game.seats.find(
-      (entry) => entry.userId?.toString() === req.user._id.toString()
-    );
-
-    if (!seat)
-    {
-      return res.status(404).json({ ok: false, error: "No seat found for this player." });
-    }
-
-    seat.connectionStatus = "connected";
-    seat.lastSeenAt = new Date();
-    seat.lastActiveAt = new Date();
-    seat.awaySinceAt = null;
-    seat.disconnectDeadlineAt = null;
-
-    await game.save();
-
-    const io = req.app.get("io");
-    emitGameUpdated(io, game);
-
-    return res.status(200).json({ ok: true, game });
-  }
-  catch (err)
-  {
-    console.error("Error reconnecting player to game:", err);
-    return res.status(500).json({ ok: false, error: err.message || "Failed to mark player connected." });
+    console.error("Error leaving game seat:", err);
+    return res.status(500).json({ ok: false, error: err.message || "Failed to leave game seat." });
   }
 });
 
@@ -629,33 +575,38 @@ router.post("/:gameId/seats/:seatNumber/state", requireAuth, async (req, res) =>
 {
   try
   {
-    const game = await LiveGameModel.findById(req.params.gameId).exec();
+    const { gameId, seatNumber } = req.params;
+    const numericSeatNumber = Number(seatNumber);
+
+    if (!Number.isInteger(numericSeatNumber))
+    {
+      return res.status(400).json({ ok: false, error: "Invalid seat number." });
+    }
+
+    const game = await LiveGameModel.findById(gameId).exec();
     if (!game)
     {
       return res.status(404).json({ ok: false, error: "Game not found." });
     }
 
-    const requesterSeat = game.seats.find(
-      (entry) => entry.userId?.toString() === req.user._id.toString()
+    const actingSeat = game.seats.find(
+      (seat) => seat.userId?.toString() === req.user._id.toString()
     );
 
-    if (!requesterSeat)
+    if (!actingSeat)
     {
-      return res.status(403).json({ ok: false, error: "You must be seated in the game to update player state." });
+      return res.status(403).json({ ok: false, error: "Only seated players can update state." });
     }
 
-    const seatNumber = Number(req.params.seatNumber);
-
-    if (requesterSeat.seatNumber !== seatNumber)
+    if (actingSeat.seatNumber !== numericSeatNumber)
     {
-      return res.status(403).json({ ok: false, error: "You can only update your own seat state." });
+      return res.status(403).json({ ok: false, error: "You can only update your own seat." });
     }
 
-    const seat = game.seats.find((entry) => entry.seatNumber === seatNumber);
-
+    const seat = game.seats.find((entry) => entry.seatNumber === numericSeatNumber);
     if (!seat)
     {
-      return res.status(404).json({ ok: false, error: "Target seat not found." });
+      return res.status(404).json({ ok: false, error: "Seat not found." });
     }
 
     if (!seat.stats)
@@ -708,8 +659,8 @@ router.post("/:gameId/seats/:seatNumber/state", requireAuth, async (req, res) =>
   }
   catch (err)
   {
-    console.error("Error updating player state:", err);
-    return res.status(500).json({ ok: false, error: err.message || "Failed to update player state." });
+    console.error("Error updating seat state:", err);
+    return res.status(500).json({ ok: false, error: err.message || "Failed to update seat state." });
   }
 });
 
@@ -723,42 +674,33 @@ router.post("/:gameId/randomize-player-order", requireAuth, async (req, res) =>
       return res.status(404).json({ ok: false, error: "Game not found." });
     }
 
-    if (game.status !== "active")
-    {
-      return res.status(400).json({ ok: false, error: "Game is not active." });
-    }
-
     const room = await RoomModel.findById(game.roomId).exec();
-    const hostUserId = getHostUserIdForGame(game, room);
-
-    if (!hostUserId)
+    if (!room)
     {
-      return res.status(403).json({ ok: false, error: "Unable to determine game host." });
+      return res.status(404).json({ ok: false, error: "Room not found." });
     }
 
+    const hostUserId = getHostUserIdForGame(game, room);
     if (hostUserId !== req.user._id.toString())
     {
-      return res.status(403).json({ ok: false, error: "Only the room host can randomize player order." });
+      return res.status(403).json({ ok: false, error: "Only the host can randomize player order." });
     }
 
-    const normalizedBoardOrder = normalizeBoardOrder(game);
-    const occupiedSeatNumbers = normalizedBoardOrder.filter((seatNumber) =>
-      game.seats.some((seat) => Number(seat.seatNumber) === Number(seatNumber))
+    const occupiedSeatNumbers = normalizeBoardOrder(game).filter((seatNumber) =>
+      game.seats.some((seat) => seat.seatNumber === seatNumber)
     );
 
-    if (occupiedSeatNumbers.length < 2)
+    if (occupiedSeatNumbers.length <= 1)
     {
-      syncBoardOrder(game);
-      await game.save();
       return res.status(200).json({ ok: true, game, unchanged: true });
     }
 
-    const shuffledOccupied = shuffleSeatNumbers(occupiedSeatNumbers);
-    const emptySeatNumbers = normalizedBoardOrder.filter(
+    const shuffledOccupiedSeatNumbers = shuffleSeatNumbers(occupiedSeatNumbers);
+    const emptySeatNumbers = normalizeBoardOrder(game).filter(
       (seatNumber) => !occupiedSeatNumbers.includes(seatNumber)
     );
 
-    game.boardOrder = [...shuffledOccupied, ...emptySeatNumbers];
+    game.boardOrder = [...shuffledOccupiedSeatNumbers, ...emptySeatNumbers];
     await game.save();
 
     const io = req.app.get("io");
@@ -936,7 +878,7 @@ router.post("/:gameId/settings", requireAuth, async (req, res) =>
   }
 });
 
-router.post("/:gameId/reset", requireAuth, async (req, res) =>
+router.post("/:gameId/transfer-host", requireAuth, async (req, res) =>
 {
   try
   {
@@ -952,31 +894,92 @@ router.post("/:gameId/reset", requireAuth, async (req, res) =>
     }
 
     const room = await RoomModel.findById(game.roomId).exec();
-    const hostUserId = getHostUserIdForGame(game, room);
-
-    if (!hostUserId)
+    if (!room)
     {
-      return res.status(403).json({ ok: false, error: "Unable to determine game host." });
+      return res.status(404).json({ ok: false, error: "Room not found." });
     }
 
-    if (hostUserId !== req.user._id.toString())
+    const requesterUserId = req.user._id.toString();
+    const currentHostUserId = getHostUserIdForGame(game, room);
+
+    if (!currentHostUserId)
     {
-      return res.status(403).json({ ok: false, error: "Only the room host can reset the game." });
+      return res.status(403).json({ ok: false, error: "Unable to determine current host." });
     }
 
-    resetGameState(game);
-    syncBoardOrder(game);
-    await game.save();
+    if (currentHostUserId !== requesterUserId)
+    {
+      return res.status(403).json({ ok: false, error: "Only the current host can promote another player." });
+    }
+
+    const targetUserId = typeof req.body?.targetUserId === "string"
+      ? req.body.targetUserId.trim()
+      : "";
+
+    if (!targetUserId)
+    {
+      return res.status(400).json({ ok: false, error: "targetUserId is required." });
+    }
+
+    if (targetUserId === requesterUserId)
+    {
+      return res.status(200).json({
+        ok: true,
+        unchanged: true,
+        hostUserId: currentHostUserId,
+        hostName: room.hostName || req.user.username,
+      });
+    }
+
+    const targetSeat = game.seats.find(
+      (seat) => seat.userId?.toString() === targetUserId
+    );
+
+    if (!targetSeat)
+    {
+      return res.status(404).json({ ok: false, error: "Target player must be seated in the live game." });
+    }
+
+    const currentHostMember = room.members.find(
+      (member) => member.userID?.toString() === requesterUserId
+    );
+
+    const targetMember = room.members.find(
+      (member) => member.userID?.toString() === targetUserId
+    );
+
+    if (!targetMember)
+    {
+      return res.status(404).json({ ok: false, error: "Target player must still be in the room." });
+    }
+
+    if (currentHostMember)
+    {
+      currentHostMember.role = "player";
+    }
+
+    targetMember.role = "host";
+    room.hostID = targetSeat.userId;
+    room.hostName = targetSeat.username;
+
+    await room.save();
 
     const io = req.app.get("io");
-    emitGameUpdated(io, game);
+    emitHostTransferred(io, game, room);
 
-    return res.status(200).json({ ok: true, game });
+    return res.status(200).json({
+      ok: true,
+      hostUserId: room.hostID.toString(),
+      hostName: room.hostName,
+    });
   }
   catch (err)
   {
-    console.error("Error resetting game:", err);
-    return res.status(500).json({ ok: false, error: err.message || "Failed to reset game." });
+    console.error("Error transferring host:", err);
+    return res.status(500).json({
+      ok: false,
+      error: err.message || "Failed to transfer host.",
+    });
   }
 });
 
@@ -993,40 +996,31 @@ router.post("/:gameId/end", requireAuth, async (req, res) =>
     const room = await RoomModel.findById(game.roomId).exec();
     const hostUserId = getHostUserIdForGame(game, room);
 
-    if (!hostUserId)
-    {
-      return res.status(403).json({ ok: false, error: "Unable to determine game host." });
-    }
-
     if (hostUserId !== req.user._id.toString())
     {
-      return res.status(403).json({ ok: false, error: "Only the room host can end the game." });
+      return res.status(403).json({ ok: false, error: "Only the host can end the game." });
     }
 
-    const io = req.app.get("io");
+    game.status = "ended";
+    await game.save();
 
+    const io = req.app.get("io");
     emitGameEnded(io, game);
-    io.to(`room:${game.roomId}`).emit("room:deleted",
-    {
-      roomId: String(game.roomId),
-    });
 
     clearPresenceForGame(game._id);
 
     await Promise.all([
       RoomChatMessageModel.deleteMany({ roomId: game.roomId }).exec(),
       LiveGameModel.deleteOne({ _id: game._id }).exec(),
-      room ? RoomModel.deleteOne({ _id: game.roomId }).exec() : Promise.resolve(),
+      room
+        ? RoomModel.findByIdAndDelete(room._id).exec()
+        : Promise.resolve(),
     ]);
 
     io.emit("rooms:changed");
+    io.to(`room:${game.roomId}`).emit("room:deleted", { roomId: String(game.roomId) });
 
-    return res.status(200).json({
-      ok: true,
-      gameId: String(game._id),
-      roomId: String(game.roomId),
-      roomDeleted: true,
-    });
+    return res.status(200).json({ ok: true });
   }
   catch (err)
   {
