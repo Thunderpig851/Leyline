@@ -1254,48 +1254,48 @@ export default function GamePage()
           </div>
 
           {game?.dayNightState || activeTurnSeat ? (
-            <div className="pointer-events-none absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1.5">
-              {activeTurnSeat ? (
-                <div className="inline-flex items-center gap-2 rounded-full border border-emerald-300/35 bg-emerald-400/12 px-3 py-1.5 text-xs font-semibold text-emerald-100 shadow-lg">
-                  <span className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-300 shadow-[0_0_18px_rgba(52,211,153,0.75)]" />
-                  <span className="max-w-[11rem] truncate sm:max-w-[14rem]">
-                    {activeTurnSeat.title}
-                  </span>
-                  <span className="rounded-full border border-emerald-200/20 bg-slate-950/45 px-2 py-0.5 font-mono text-[11px] tracking-wide text-emerald-50">
-                    {formatTurnDuration(turnElapsedSeconds)}
-                  </span>
-                </div>
-              ) : null}
+  <div className="pointer-events-none absolute left-1/2 top-1/2 flex max-w-[calc(100vw-14rem)] -translate-x-1/2 -translate-y-1/2 items-center gap-2">
+    {activeTurnSeat ? (
+      <div className="inline-flex min-w-0 items-center gap-2 rounded-full border border-emerald-300/35 bg-emerald-400/12 px-3 py-1.5 text-xs font-semibold text-emerald-100 shadow-lg">
+        <span className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-300 shadow-[0_0_18px_rgba(52,211,153,0.75)]" />
+        <span className="max-w-[8rem] truncate sm:max-w-[12rem]">
+          {activeTurnSeat.title}
+        </span>
+        <span className="rounded-full border border-emerald-200/20 bg-slate-950/45 px-2 py-0.5 font-mono text-[11px] tracking-wide text-emerald-50">
+          {formatTurnDuration(turnElapsedSeconds)}
+        </span>
+      </div>
+    ) : null}
 
-              {game?.dayNightState ? (
-                <div
-                  className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold shadow-lg ${
-                    game.dayNightState === "day"
-                      ? "border-amber-300/35 bg-amber-400/12 text-amber-100"
-                      : "border-indigo-300/35 bg-indigo-400/12 text-indigo-100"
-                  }`}
-                >
-                  <span
-                    className={`inline-flex h-7 w-7 items-center justify-center rounded-full border ${
-                      game.dayNightState === "day"
-                        ? "border-amber-200/30 bg-amber-300/12"
-                        : "border-indigo-200/30 bg-indigo-300/12"
-                    }`}
-                  >
-                    {game.dayNightState === "day" ? (
-                      <Sun className="h-4 w-4" />
-                    ) : (
-                      <Moon className="h-4 w-4" />
-                    )}
-                  </span>
+    {game?.dayNightState ? (
+        <div
+            className={`inline-flex shrink-0 items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold shadow-lg ${
+              game.dayNightState === "day"
+                ? "border-amber-300/35 bg-amber-400/12 text-amber-100"
+                : "border-indigo-300/35 bg-indigo-400/12 text-indigo-100"
+            }`}
+          >
+            <span
+              className={`inline-flex h-7 w-7 items-center justify-center rounded-full border ${
+                game.dayNightState === "day"
+                  ? "border-amber-200/30 bg-amber-300/12"
+                  : "border-indigo-200/30 bg-indigo-300/12"
+              }`}
+            >
+              {game.dayNightState === "day" ? (
+                <Sun className="h-4 w-4" />
+              ) : (
+                <Moon className="h-4 w-4" />
+              )}
+            </span>
 
-                  <span className="hidden sm:inline">
-                    {game.dayNightState === "day" ? "Day" : "Night"}
-                  </span>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
+            <span className="hidden sm:inline">
+              {game.dayNightState === "day" ? "Day" : "Night"}
+            </span>
+          </div>
+        ) : null}
+      </div>
+    ) : null} ``
 
           <div className="flex items-center gap-2">
             <button

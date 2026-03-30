@@ -138,8 +138,8 @@ function getStatusMeta(status: PlayerTileProps["status"])
   if (status === "reconnecting")
   {
     return {
-      dot: "bg-amber-400",
-      text: "text-amber-300",
+      dot: "bg-orange-400",
+      text: "text-orange-300",
       label: "Reconnecting",
     };
   }
@@ -147,8 +147,8 @@ function getStatusMeta(status: PlayerTileProps["status"])
   if (status === "away")
   {
     return {
-      dot: "bg-red-400",
-      text: "text-red-300",
+      dot: "bg-amber-400",
+      text: "text-amber-300",
       label: "Away",
     };
   }
