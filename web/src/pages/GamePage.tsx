@@ -71,12 +71,21 @@ type RoomSummary =
 {
   hostID?: string;
   hostName?: string;
+  visibility?: "public" | "private";
+  isHost?: boolean;
 };
 
 type RoomResponse =
 {
   ok: boolean;
   room?: RoomSummary;
+  error?: string;
+};
+
+type PrivateCodeResponse =
+{
+  ok: boolean;
+  privateCode?: string;
   error?: string;
 };
 
@@ -212,6 +221,9 @@ export default function GamePage()
   const [gameId, setGameId] = useState("");
   const [currentHostUserId, setCurrentHostUserId] = useState("");
   const [currentHostName, setCurrentHostName] = useState("");
+  const [roomVisibility, setRoomVisibility] = useState<"public" | "private">("public");
+  const [hostPrivateCode, setHostPrivateCode] = useState<string | null>(null);
+  const [privateCodeCopiedMessage, setPrivateCodeCopiedMessage] = useState<string | null>(null);
   const [transferringHostSeatNumber, setTransferringHostSeatNumber] = useState<number | null>(null);
   const [leaving, setLeaving] = useState(false);
   const [endingGame, setEndingGame] = useState(false);
@@ -238,6 +250,16 @@ export default function GamePage()
 
   const navigate = useNavigate();
   const { roomId = "" } = useParams();
+
+  const fallbackHostUserId =
+    [...(game?.seats ?? [])]
+      .sort((a, b) => a.seatNumber - b.seatNumber)[0]?.userId ?? "";
+
+  const roomTitle = session.roomTitle || "Placeholder Room";
+  const effectiveHostUserId = currentHostUserId || fallbackHostUserId;
+  const isHost = effectiveHostUserId === getStoredUserId();
+  const maxPlayers = 4;
+  const playerCount = game?.seats?.filter((seat) => Boolean(seat.userId)).length ?? 0;
 
   useEffect(() =>
   {
@@ -300,6 +322,7 @@ export default function GamePage()
         {
           setCurrentHostUserId(roomRes.data.room.hostID || "");
           setCurrentHostName(roomRes.data.room.hostName || "");
+          setRoomVisibility(roomRes.data.room.visibility === "private" ? "private" : "public");
         }
 
         const activeGame = gameRes.data.game;
@@ -339,6 +362,51 @@ export default function GamePage()
       cancelled = true;
     };
   }, [roomId, mediaSession.status]);
+
+  useEffect(() =>
+  {
+    if (roomVisibility !== "private" || !isHost || !roomId)
+    {
+      setHostPrivateCode(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    void (async () =>
+    {
+      const res = await apiGet<PrivateCodeResponse>(`/api/rooms/${roomId}/private-code`);
+
+      if (cancelled)
+      {
+        return;
+      }
+
+      if (!res.ok)
+      {
+        setHostPrivateCode(null);
+        return;
+      }
+
+      setHostPrivateCode(res.data.privateCode || null);
+    })();
+
+    return () =>
+    {
+      cancelled = true;
+    };
+  }, [roomId, roomVisibility, isHost]);
+
+  useEffect(() =>
+  {
+    if (!privateCodeCopiedMessage)
+    {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => setPrivateCodeCopiedMessage(null), 1800);
+    return () => window.clearTimeout(timeout);
+  }, [privateCodeCopiedMessage]);
 
   useEffect(() =>
   {
@@ -933,6 +1001,24 @@ export default function GamePage()
     mediaSession.toggleCam();
   }
 
+  async function handleCopyPrivateCode()
+  {
+    if (!hostPrivateCode)
+    {
+      return;
+    }
+
+    try
+    {
+      await navigator.clipboard.writeText(hostPrivateCode);
+      setPrivateCodeCopiedMessage("Copied");
+    }
+    catch
+    {
+      setPrivateCodeCopiedMessage("Copy failed");
+    }
+  }
+
   async function handleSetMonarch(seatNumber: number | null)
   {
     if (!gameId || !isSeatedPlayer) return;
@@ -1251,16 +1337,6 @@ export default function GamePage()
     );
   }
 
-  const fallbackHostUserId =
-    [...(game?.seats ?? [])]
-      .sort((a, b) => a.seatNumber - b.seatNumber)[0]?.userId ?? "";
-
-  const roomTitle = session.roomTitle || "Placeholder Room";
-  const effectiveHostUserId = currentHostUserId || fallbackHostUserId;
-  const isHost = effectiveHostUserId === getStoredUserId();
-  const maxPlayers = 4;
-  const playerCount = game?.seats?.filter((seat) => Boolean(seat.userId)).length ?? 0;
-
   return (
     <div className="h-[100dvh] w-screen overflow-hidden bg-slate-950 text-slate-100">
       <header className="sticky top-0 z-40 border-b border-white/10 bg-slate-950/78 backdrop-blur-xl">
@@ -1461,6 +1537,9 @@ export default function GamePage()
           onToggle={() => setLeftOpen((value) => !value)}
           isHost={Boolean(isHost)}
           currentHostName={currentHostName || "Unknown"}
+          roomVisibility={roomVisibility}
+          hostPrivateCode={hostPrivateCode}
+          privateCodeCopiedMessage={privateCodeCopiedMessage}
           playerCount={playerCount}
           maxPlayers={maxPlayers}
           randomizingOrder={randomizingOrder}
@@ -1479,6 +1558,7 @@ export default function GamePage()
           }
           onToggleSelfMic={handleToggleSelfMic}
           onToggleSelfCam={handleToggleSelfCam}
+          onCopyPrivateCode={() => { void handleCopyPrivateCode(); }}
         />
 
         <RightSidePanel

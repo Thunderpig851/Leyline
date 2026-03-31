@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { apiPost } from "../lib/api";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Copy, Crown, KeyRound } from "lucide-react";
+import { apiGet, apiPost } from "../lib/api";
 
 import StatusOkIcon from "../components/icons/StatusOkIcon";
 import StatusBadIcon from "../components/icons/StatusBadIcon";
@@ -18,7 +19,29 @@ type Aspect = "16:9" | "4:3" | "1:1";
 type RoomResponse =
 {
   ok: boolean;
-  room?: { _id: string; title: string };
+  room?:
+  {
+    _id: string;
+    title: string;
+    description?: string;
+    visibility?: "public" | "private";
+    hostName?: string;
+    isHost?: boolean;
+    settings?:
+    {
+      format?: string;
+      bracket?: string;
+      maxPlayers?: number;
+      allowSpectators?: boolean;
+    };
+  };
+  error?: string;
+};
+
+type PrivateCodeResponse =
+{
+  ok: boolean;
+  privateCode?: string;
   error?: string;
 };
 
@@ -29,10 +52,16 @@ function deviceLabel(d: MediaDeviceInfo, fallback: string)
   return `${fallback} (${d.deviceId.slice(0, 6)}…)`;
 }
 
+function normalizePrivateCode(value: string)
+{
+  return value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
+}
+
 export default function JoinRoomPage()
 {
   const navigate = useNavigate();
   const { roomId = "" } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const { setRoom, reset } = useGameSession();
 
@@ -54,9 +83,14 @@ export default function JoinRoomPage()
   } = useMediaSession();
 
   const [roomTitle, setRoomTitle] = useState("");
+  const [roomVisibility, setRoomVisibility] = useState<"public" | "private">("public");
+  const [roomFormat, setRoomFormat] = useState("");
+  const [isHost, setIsHost] = useState(false);
+  const [hostPrivateCode, setHostPrivateCode] = useState<string | null>(null);
+  const [copyMessage, setCopyMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [aspect, setAspect] = useState<Aspect>("16:9");
-  const [joinCode, setJoinCode] = useState("");
+  const [joinCode, setJoinCode] = useState(() => normalizePrivateCode(searchParams.get("code") || ""));
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -70,17 +104,27 @@ export default function JoinRoomPage()
 
   useEffect(() =>
   {
-    async function attach()
+    const searchCode = normalizePrivateCode(searchParams.get("code") || "");
+
+    if (searchCode && searchCode !== joinCode)
     {
-      if (!localVideoRef.current) return;
+      setJoinCode(searchCode);
+    }
+  }, [searchParams, joinCode]);
 
-      localVideoRef.current.srcObject = localStream;
+  useEffect(() =>
+  {
+    if (!localVideoRef.current) return;
 
+    localVideoRef.current.srcObject = localStream;
+
+    async function playPreview()
+    {
       try
       {
         if (localStream)
         {
-          await localVideoRef.current.play();
+          await localVideoRef.current?.play();
         }
       }
       catch (err)
@@ -89,7 +133,7 @@ export default function JoinRoomPage()
       }
     }
 
-    void attach();
+    void playPreview();
   }, [localStream]);
 
   useEffect(() =>
@@ -102,24 +146,30 @@ export default function JoinRoomPage()
 
     let cancelled = false;
 
-    (async () =>
+    void (async () =>
     {
       try
       {
         setError(null);
 
-        const res = await fetch(`http://localhost:3001/api/rooms/${roomId}`, { credentials: "include" });
-        const data: RoomResponse = await res.json();
+        const roomResult = await apiGet<RoomResponse>(`/api/rooms/${roomId}`);
 
         if (cancelled) return;
 
-        if (!data.ok || !data.room)
+        if (!roomResult.ok || !roomResult.data.room)
         {
-          setError(data.error || "Room not found.");
+          const roomLoadError = !roomResult.ok ? roomResult.error : undefined;
+          setError(roomResult.ok ? "Room not found." : roomLoadError || "Room not found.");
           return;
         }
 
-        setRoomTitle(data.room.title);
+        const room = roomResult.data.room;
+
+        setRoomTitle(room.title || "");
+        setRoomVisibility(room.visibility === "private" ? "private" : "public");
+        setRoomFormat(room.settings?.format || "");
+        setIsHost(Boolean(room.isHost));
+
         await ensurePermissionAndListDevices();
       }
       catch (e: any)
@@ -129,9 +179,42 @@ export default function JoinRoomPage()
       }
     })();
 
-    return () => { cancelled = true; };
+    return () =>
+    {
+      cancelled = true;
+    };
   }, [roomId, ensurePermissionAndListDevices]);
 
+  useEffect(() =>
+  {
+    if (!roomId || !isHost || roomVisibility !== "private")
+    {
+      setHostPrivateCode(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    void (async () =>
+    {
+      const codeResult = await apiGet<PrivateCodeResponse>(`/api/rooms/${roomId}/private-code`);
+
+      if (cancelled) return;
+
+      if (!codeResult.ok)
+      {
+        setHostPrivateCode(null);
+        return;
+      }
+
+      setHostPrivateCode(codeResult.data.privateCode || null);
+    })();
+
+    return () =>
+    {
+      cancelled = true;
+    };
+  }, [roomId, isHost, roomVisibility]);
 
   useEffect(() =>
   {
@@ -154,6 +237,29 @@ export default function JoinRoomPage()
     };
   }, [roomId, navigate, reset, stopPreview]);
 
+  useEffect(() =>
+  {
+    if (!copyMessage) return;
+
+    const timeout = window.setTimeout(() => setCopyMessage(null), 1800);
+    return () => window.clearTimeout(timeout);
+  }, [copyMessage]);
+
+  async function copyPrivateCode()
+  {
+    if (!hostPrivateCode) return;
+
+    try
+    {
+      await navigator.clipboard.writeText(hostPrivateCode);
+      setCopyMessage("Copied");
+    }
+    catch
+    {
+      setCopyMessage("Copy failed");
+    }
+  }
+
   async function joinGame()
   {
     if (!roomId) return;
@@ -165,12 +271,26 @@ export default function JoinRoomPage()
     {
       setRoom(roomId, roomTitle);
 
-      const res = await apiPost(`/api/rooms/${roomId}/join`, {});
+      const normalizedCode = normalizePrivateCode(joinCode);
+      const res = await apiPost<{ ok: boolean }>(`/api/rooms/${roomId}/join`, {
+        privateCode: normalizedCode || undefined,
+      });
 
       if (!res.ok)
       {
-        setErrorMessage(res.error || "Failed to join room.");
+        const joinError = res.error;
+        setErrorMessage(joinError || "Failed to join room.");
         return;
+      }
+
+      if (normalizedCode)
+      {
+        setSearchParams((current) =>
+        {
+          const next = new URLSearchParams(current);
+          next.set("code", normalizedCode);
+          return next;
+        });
       }
 
       if (socket.connected)
@@ -228,8 +348,19 @@ export default function JoinRoomPage()
           </span>
         </h1>
 
-        <div className="mt-2 text-sm text-slate-300">
-          <span className="text-slate-400">Room:</span> {roomTitle || "…"}{" "}
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-300">
+          <span className="text-slate-400">Room:</span>
+          <span>{roomTitle || "…"}</span>
+
+          <span className="rounded-full border border-white/10 bg-slate-900/70 px-2 py-0.5 text-[11px] uppercase tracking-[0.18em] text-slate-300">
+            {roomVisibility}
+          </span>
+
+          {roomFormat ? (
+            <span className="rounded-full border border-teal-300/20 bg-teal-500/10 px-2 py-0.5 text-[11px] uppercase tracking-[0.18em] text-teal-100">
+              {roomFormat}
+            </span>
+          ) : null}
         </div>
 
         {error && (
@@ -295,17 +426,64 @@ export default function JoinRoomPage()
                 </select>
               </label>
 
-              <label className="block">
-                <span className="text-xs text-slate-300">Join Code</span>
-                <input
-                  type="text"
-                  className="mt-1 w-full rounded-xl border border-white/10 bg-slate-950/50 px-3 py-2 text-sm text-slate-100 outline-none
-                             focus:border-teal-300/80 focus:ring-4 focus:ring-emerald-400/20"
-                  value={joinCode}
-                  onChange={(e) => setJoinCode(e.target.value)}
-                  placeholder="For private rooms"
-                />
-              </label>
+              {roomVisibility === "private" ? (
+                <label className="block">
+                  <span className="text-xs text-slate-300">Private Room Code</span>
+                  <input
+                    type="text"
+                    className="mt-1 w-full rounded-xl border border-white/10 bg-slate-950/50 px-3 py-2 text-sm tracking-[0.28em] text-slate-100 uppercase outline-none
+                               focus:border-teal-300/80 focus:ring-4 focus:ring-emerald-400/20"
+                    value={joinCode}
+                    onChange={(e) =>
+                    {
+                      setJoinCode(normalizePrivateCode(e.target.value));
+                      setErrorMessage(null);
+                    }}
+                    placeholder="ABC123"
+                    maxLength={6}
+                  />
+                  <div className="mt-1 text-xs text-slate-400">
+                    Enter the 6-character code to join this private room.
+                  </div>
+                </label>
+              ) : null}
+
+              {isHost && roomVisibility === "private" && hostPrivateCode ? (
+                <div className="overflow-hidden rounded-2xl border border-teal-300/20 bg-teal-500/10 shadow-[0_18px_50px_-30px_rgba(20,184,166,0.65)]">
+                  <div className="border-b border-white/10 bg-gradient-to-r from-emerald-400/14 via-teal-400/12 to-cyan-300/10 px-4 py-3">
+                    <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.24em] text-teal-100/90">
+                      <Crown className="h-3.5 w-3.5" />
+                      Host Share Code
+                    </div>
+                  </div>
+
+                  <div className="p-4">
+                    <div className="flex items-center gap-2 text-xs text-slate-300">
+                      <KeyRound className="h-3.5 w-3.5 text-teal-200" />
+                      Share this with invited players.
+                    </div>
+
+                    <div className="mt-3 rounded-2xl border border-white/10 bg-slate-950/80 px-4 py-4 text-center text-2xl font-semibold tracking-[0.45em] text-slate-50 sm:text-[28px]">
+                      {hostPrivateCode}
+                    </div>
+
+                    <div className="mt-3 flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => { void copyPrivateCode(); }}
+                        className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-xs font-medium text-slate-200 transition-colors hover:bg-white/5"
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                        Copy Code
+                      </button>
+
+                      {copyMessage ? (
+                        <div className="text-xs text-teal-100">{copyMessage}</div>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
             </div>
           </aside>
 
@@ -330,14 +508,14 @@ export default function JoinRoomPage()
                   </div>
                 </div>
 
-                <div className="flex gap-2">
+                <div className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={toggleCam}
                     className="inline-flex items-center justify-center rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-slate-200
                               hover:bg-white/5 hover:text-slate-100 transition-colors duration-150"
-                    aria-label={camEnabled ? "Turn off camera" : "Turn on camera"}
-                    title={camEnabled ? "Turn off camera" : "Turn on camera"}
+                    aria-label={camEnabled ? "Disable camera" : "Enable camera"}
+                    title={camEnabled ? "Disable camera" : "Enable camera"}
                   >
                     {camEnabled ? <CamOnIcon /> : <CamOffIcon />}
                   </button>

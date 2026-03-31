@@ -1,5 +1,8 @@
 import type { ReactNode } from "react";
 import {
+  Copy,
+  Crown,
+  KeyRound,
   Skull,
   Mic,
   MicOff,
@@ -17,6 +20,9 @@ type LeftSidePanelProps =
   onToggle: () => void;
   isHost: boolean;
   currentHostName?: string;
+  roomVisibility?: "public" | "private";
+  hostPrivateCode?: string | null;
+  privateCodeCopiedMessage?: string | null;
   playerCount: number;
   maxPlayers: number;
   randomizingOrder?: boolean;
@@ -31,6 +37,7 @@ type LeftSidePanelProps =
   onToggleDayNight?: () => void;
   onToggleSelfMic?: () => void;
   onToggleSelfCam?: () => void;
+  onCopyPrivateCode?: () => void;
 };
 
 export default function LeftSidePanel({
@@ -38,6 +45,9 @@ export default function LeftSidePanel({
   onToggle,
   isHost,
   currentHostName = "",
+  roomVisibility = "public",
+  hostPrivateCode = null,
+  privateCodeCopiedMessage = null,
   playerCount,
   maxPlayers,
   randomizingOrder = false,
@@ -52,6 +62,7 @@ export default function LeftSidePanel({
   onToggleDayNight,
   onToggleSelfMic,
   onToggleSelfCam,
+  onCopyPrivateCode,
 }: LeftSidePanelProps)
 {
   const micButtonClass = micEnabled
@@ -77,11 +88,6 @@ export default function LeftSidePanel({
               : "border-white/10 bg-black/10"
           }`}
         >
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <div>
-            </div>
-          </div>
-
           <div className="mb-3 rounded-2xl border border-white/10 bg-slate-950/55 px-3 py-2.5">
             <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
               Current Host:
@@ -89,10 +95,46 @@ export default function LeftSidePanel({
             <div className="mt-1 text-sm font-medium text-slate-100">
               {currentHostName || "Unknown"}
             </div>
-              <div className="mt-1 text-xs text-slate-400">
-                {playerCount}/{maxPlayers} players seated
-              </div>
+            <div className="mt-1 text-xs text-slate-400">
+              {playerCount}/{maxPlayers} players seated
+            </div>
           </div>
+
+          {isHost && roomVisibility === "private" && hostPrivateCode ? (
+            <div className="mb-3 overflow-hidden rounded-2xl border border-teal-300/20 bg-teal-500/10 shadow-[0_18px_50px_-30px_rgba(20,184,166,0.65)]">
+              <div className="border-b border-white/10 bg-gradient-to-r from-emerald-400/14 via-teal-400/12 to-cyan-300/10 px-4 py-3">
+                <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.24em] text-teal-100/90">
+                  <KeyRound className="h-3.5 w-3.5 text-teal-200" />
+                  Host Share Code
+                </div>
+              </div>
+
+              <div className="p-4">
+                <div className="flex items-center gap-2 text-xs text-slate-300">
+                </div>
+
+                <div className="mt-3 rounded-2xl border border-white/10 bg-slate-950/80 px-4 py-4 text-center text-2xl font-semibold tracking-[0.45em] text-slate-50">
+                  {hostPrivateCode}
+                </div>
+
+                <div className="mt-3 flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={onCopyPrivateCode}
+                    disabled={!onCopyPrivateCode}
+                    className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-xs font-medium text-slate-200 transition-colors hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                    Copy Code
+                  </button>
+
+                  {privateCodeCopiedMessage ? (
+                    <div className="text-xs text-teal-100">{privateCodeCopiedMessage}</div>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          ) : null}
 
           <div className="space-y-.5">
             <ControlCard

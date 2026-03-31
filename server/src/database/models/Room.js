@@ -63,6 +63,16 @@ const RoomSchema = new mongoose.Schema(
     index: true
   },
 
+  privateCode:
+  {
+    type: String,
+    uppercase: true,
+    trim: true,
+    minlength: 6,
+    maxlength: 6,
+    sparse: true,
+  },
+
   status:
   {
     type: String,
@@ -84,5 +94,6 @@ const RoomSchema = new mongoose.Schema(
 });
 
 RoomSchema.index({ visibility: 1, status: 1, updatedAt: -1 });
+RoomSchema.index({ privateCode: 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.model("Room", RoomSchema);

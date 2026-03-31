@@ -9,7 +9,9 @@ type CreateGameResponse =
   {
     _id: string;
     title: string;
+    visibility?: "public" | "private";
   };
+  privateCode?: string | null;
   error?: string;
 };
 
@@ -66,13 +68,15 @@ export default function CreateGamePopUp({ onClose }: CreateGamePopUpProps)
 
     if (!roomResult.ok)
     {
-      if (roomResult.error === "Invalid token: jwt expired")
+      const roomError = roomResult.error;
+
+      if (roomError === "Invalid token: jwt expired")
       {
         setLoginPrompt("Your session expired. Want to log in again?");
       }
       else
       {
-        setServerError(roomResult.error || "Failed to create room.");
+        setServerError(roomError || "Failed to create room.");
       }
 
       setLoading(false);
@@ -80,6 +84,7 @@ export default function CreateGamePopUp({ onClose }: CreateGamePopUpProps)
     }
 
     const roomId = roomResult.data?.room?._id;
+    const privateCode = roomResult.data?.privateCode;
 
     if (!roomId)
     {
@@ -95,15 +100,25 @@ export default function CreateGamePopUp({ onClose }: CreateGamePopUpProps)
 
     if (!liveGameResult.ok)
     {
-      setServerError(liveGameResult.error || "Room created, but failed to start live game.");
+      const liveGameError = liveGameResult.error;
+      setServerError(liveGameError || "Room created, but failed to start live game.");
       setLoading(false);
       return;
     }
 
-    setSuccessMsg("Game created successfully!");
+    setSuccessMsg(
+      privateCode
+        ? `Private game created. Code: ${privateCode}`
+        : "Game created successfully!"
+    );
     setLoading(false);
     onClose();
-    navigate(`/rooms/${roomId}`);
+
+    const search = privateCode
+      ? `?code=${encodeURIComponent(privateCode)}`
+      : "";
+
+    navigate(`/rooms/${roomId}${search}`);
   }
 
   return (
@@ -221,6 +236,12 @@ export default function CreateGamePopUp({ onClose }: CreateGamePopUpProps)
                 </select>
               </label>
             </div>
+
+            {visibility === "private" && (
+              <div className="rounded-xl border border-teal-300/20 bg-teal-500/10 px-3 py-2 text-xs text-teal-100">
+                Private rooms get a 6-character share code automatically.
+              </div>
+            )}
 
             <label className="block">
               <span className="text-xs text-slate-300">Description</span>

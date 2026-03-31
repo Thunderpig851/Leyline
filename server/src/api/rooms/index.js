@@ -1,10 +1,13 @@
 require("dotenv").config();
 
+const jwt = require("jsonwebtoken");
 const router = require("express").Router();
 const requireAuth = require("../../middleware/requireAuth");
 
 const RoomModel = require("../../database/models/Room");
 const LiveGameModel = require("../../database/models/LiveGame");
+
+const PRIVATE_CODE_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
 router.get("/", (req, res) => res.json({ ok: true, route: "rooms" }));
 
@@ -20,6 +23,70 @@ function normalizeRoomStatus(room)
   const maxPlayers = Number(room.settings?.maxPlayers ?? 4);
   const memberCount = getPlayerMemberCount(room);
   return memberCount >= maxPlayers ? "full" : "open";
+}
+
+function normalizePrivateCode(value)
+{
+  return String(value || "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .slice(0, 6);
+}
+
+function createPrivateCode()
+{
+  let code = "";
+
+  for (let index = 0; index < 6; index += 1)
+  {
+    const randomIndex = Math.floor(Math.random() * PRIVATE_CODE_ALPHABET.length);
+    code += PRIVATE_CODE_ALPHABET[randomIndex];
+  }
+
+  return code;
+}
+
+async function generateUniquePrivateCode()
+{
+  for (let attempt = 0; attempt < 25; attempt += 1)
+  {
+    const candidate = createPrivateCode();
+    const existingRoom = await RoomModel.exists({ privateCode: candidate });
+
+    if (!existingRoom)
+    {
+      return candidate;
+    }
+  }
+
+  throw new Error("Failed to generate a unique private room code.");
+}
+
+function getRequesterIdFromToken(req)
+{
+  try
+  {
+    const auth = req.headers.authorization;
+    const bearerToken = auth && auth.startsWith("Bearer ")
+      ? auth.slice(7).trim()
+      : null;
+
+    const token = bearerToken || req.cookies?.access_token;
+
+    if (!token)
+    {
+      return null;
+    }
+
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    const requesterId = payload?.sub || payload?.userId;
+
+    return requesterId ? String(requesterId) : null;
+  }
+  catch
+  {
+    return null;
+  }
 }
 
 function getSeatSnapshot(room, liveGame)
@@ -63,6 +130,10 @@ router.post("/create", requireAuth, async (req, res) =>
     const { title, description, visibility, settings } = req.body;
 
     const hostId = req.user._id;
+    const nextVisibility = visibility === "private" ? "private" : "public";
+    const privateCode = nextVisibility === "private"
+      ? await generateUniquePrivateCode()
+      : undefined;
 
     const room = await RoomModel.create({
       title: title.trim(),
@@ -72,7 +143,8 @@ router.post("/create", requireAuth, async (req, res) =>
       hostName: req.user.username,
       createdBy: hostId,
 
-      visibility: visibility,
+      visibility: nextVisibility,
+      privateCode,
       status: "open",
 
       members: [
@@ -89,7 +161,15 @@ router.post("/create", requireAuth, async (req, res) =>
     const io = req.app.get("io");
     io.emit("rooms:changed");
 
-    return res.status(201).json({ ok: true, room });
+    return res.status(201).json({
+      ok: true,
+      room: {
+        _id: room._id,
+        title: room.title,
+        visibility: room.visibility,
+      },
+      privateCode: room.privateCode || null,
+    });
   }
   catch (err)
   {
@@ -98,14 +178,19 @@ router.post("/create", requireAuth, async (req, res) =>
   }
 });
 
+/*
+  IMPORTANT:
+  This route must return BOTH public and private rooms if you want
+  private games visible in the lobby.
+*/
 router.get("/all", async (req, res) =>
 {
   try
   {
-    const rooms = await RoomModel.find()
+    const rooms = await RoomModel.find({})
       .populate("members.userID", "username")
       .sort({ createdAt: -1 })
-      .limit(20)
+      .limit(50)
       .lean()
       .exec();
 
@@ -124,6 +209,7 @@ router.get("/all", async (req, res) =>
     for (const game of activeGames)
     {
       const key = String(game.roomId);
+
       if (!liveGameByRoomId.has(key))
       {
         liveGameByRoomId.set(key, game);
@@ -146,8 +232,76 @@ router.get("/all", async (req, res) =>
   }
   catch (err)
   {
-    console.log("Error fetching rooms");
+    console.error("Error fetching rooms:", err);
     return res.status(500).json({ ok: false, error: err.message || "Failed to fetch rooms." });
+  }
+});
+
+router.post("/private/lookup", requireAuth, async (req, res) =>
+{
+  try
+  {
+    const privateCode = normalizePrivateCode(req.body?.privateCode);
+
+    if (privateCode.length !== 6)
+    {
+      return res.status(400).json({ ok: false, error: "Enter a valid 6-character private code." });
+    }
+
+    const room = await RoomModel.findOne({ privateCode })
+      .select("_id title visibility")
+      .lean()
+      .exec();
+
+    if (!room)
+    {
+      return res.status(404).json({ ok: false, error: "Private room not found for that code." });
+    }
+
+    return res.status(200).json({ ok: true, room });
+  }
+  catch (err)
+  {
+    console.error("Error looking up private room:", err);
+    return res.status(500).json({ ok: false, error: err.message || "Failed to find private room." });
+  }
+});
+
+router.get("/:id/private-code", requireAuth, async (req, res) =>
+{
+  try
+  {
+    const room = await RoomModel.findById(req.params.id)
+      .select("hostID visibility privateCode")
+      .exec();
+
+    if (!room)
+    {
+      return res.status(404).json({ ok: false, error: "Room not found." });
+    }
+
+    if (String(room.hostID) !== String(req.user._id))
+    {
+      return res.status(403).json({ ok: false, error: "Only the host can view the private code." });
+    }
+
+    if (room.visibility !== "private")
+    {
+      return res.status(404).json({ ok: false, error: "This room does not have a private code." });
+    }
+
+    if (!room.privateCode)
+    {
+      room.privateCode = await generateUniquePrivateCode();
+      await room.save();
+    }
+
+    return res.status(200).json({ ok: true, privateCode: room.privateCode });
+  }
+  catch (err)
+  {
+    console.error("Error fetching private room code:", err);
+    return res.status(500).json({ ok: false, error: err.message || "Failed to fetch private room code." });
   }
 });
 
@@ -155,11 +309,34 @@ router.get("/:id", async (req, res) =>
 {
   try
   {
-    const room = await RoomModel.findById(req.params.id).exec();
+    const room = await RoomModel.findById(req.params.id)
+      .select("_id title description visibility hostID hostName settings status createdAt updatedAt")
+      .lean()
+      .exec();
 
-    if (!room) return res.status(404).json({ ok: false, error: "Room not found." });
+    if (!room)
+    {
+      return res.status(404).json({ ok: false, error: "Room not found." });
+    }
 
-    return res.status(200).json({ ok: true, room });
+    const requesterId = getRequesterIdFromToken(req);
+    const isHost = requesterId ? String(room.hostID) === requesterId : false;
+
+    return res.status(200).json({
+      ok: true,
+      room: {
+        _id: room._id,
+        title: room.title,
+        description: room.description,
+        visibility: room.visibility,
+        hostID: String(room.hostID),
+        hostName: room.hostName,
+        status: room.status,
+        createdAt: room.createdAt,
+        settings: room.settings,
+        isHost,
+      },
+    });
   }
   catch (err)
   {
@@ -174,7 +351,10 @@ router.patch("/:id/update", requireAuth, async (req, res) =>
   {
     const room = await RoomModel.findById(req.params.id).exec();
 
-    if (!room) return res.status(404).json({ ok: false, error: "Room not found." });
+    if (!room)
+    {
+      return res.status(404).json({ ok: false, error: "Room not found." });
+    }
 
     if (room.hostID.toString() !== req.user._id.toString())
     {
@@ -185,7 +365,22 @@ router.patch("/:id/update", requireAuth, async (req, res) =>
 
     if (title) room.title = title.trim();
     if (description) room.description = description.trim();
-    if (visibility) room.visibility = visibility;
+
+    if (visibility === "public" || visibility === "private")
+    {
+      room.visibility = visibility;
+
+      if (visibility === "private" && !room.privateCode)
+      {
+        room.privateCode = await generateUniquePrivateCode();
+      }
+
+      if (visibility === "public")
+      {
+        room.privateCode = undefined;
+      }
+    }
+
     if (settings) room.settings = settings;
 
     room.status = normalizeRoomStatus(room);
@@ -209,9 +404,14 @@ router.post("/:id/join", requireAuth, async (req, res) =>
   try
   {
     const userId = req.user._id.toString();
+    const privateCode = normalizePrivateCode(req.body?.privateCode);
 
     const room = await RoomModel.findById(req.params.id).exec();
-    if (!room) return res.status(404).json({ ok: false, error: "Room not found." });
+
+    if (!room)
+    {
+      return res.status(404).json({ ok: false, error: "Room not found." });
+    }
 
     const maxPlayers = Number(room.settings?.maxPlayers ?? 4);
 
@@ -221,8 +421,6 @@ router.post("/:id/join", requireAuth, async (req, res) =>
 
     if (existingMember)
     {
-      existingMember.lastSeenAt = new Date();
-
       room.status = normalizeRoomStatus(room);
       await room.save();
 
@@ -230,6 +428,25 @@ router.post("/:id/join", requireAuth, async (req, res) =>
       io.emit("rooms:changed");
 
       return res.status(200).json({ ok: true, room, alreadyMember: true });
+    }
+
+    if (room.visibility === "private")
+    {
+      if (!room.privateCode)
+      {
+        room.privateCode = await generateUniquePrivateCode();
+        await room.save();
+      }
+
+      if (privateCode.length !== 6)
+      {
+        return res.status(400).json({ ok: false, error: "Private room code is required." });
+      }
+
+      if (privateCode !== room.privateCode)
+      {
+        return res.status(403).json({ ok: false, error: "Private room code is incorrect." });
+      }
     }
 
     if (getPlayerMemberCount(room) >= maxPlayers)
@@ -265,7 +482,11 @@ router.post("/:id/leave", requireAuth, async (req, res) =>
     const userId = req.user._id.toString();
 
     const room = await RoomModel.findById(req.params.id).exec();
-    if (!room) return res.status(404).json({ ok: false, error: "Room not found." });
+
+    if (!room)
+    {
+      return res.status(404).json({ ok: false, error: "Room not found." });
+    }
 
     const memberIndex = room.members.findIndex(
       (m) => m.userID.toString() === userId

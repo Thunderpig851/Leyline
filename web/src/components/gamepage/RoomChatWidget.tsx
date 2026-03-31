@@ -246,7 +246,6 @@ export default function RoomChatWidget({ roomId }: RoomChatWidgetProps)
               className="flex h-full w-[88px] items-center justify-between rounded-2xl border border-white/10 bg-slate-900/80 px-3 py-2 text-left text-sm font-semibold text-slate-100 transition hover:border-white/20 hover:bg-slate-900"
             >
               <span className="flex min-w-0 items-center gap-2">
-                <Dices className="h-4 w-4 shrink-0 text-teal-200" />
                 <span>d{selectedDieSides}</span>
               </span>
               <ChevronDown
