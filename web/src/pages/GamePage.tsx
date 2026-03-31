@@ -876,6 +876,7 @@ export default function GamePage()
         try
         {
           await apiPost(`/api/live-games/${gameId}/leave`, {});
+          navigate('/lobby', { replace: true });
         }
         catch (err)
         {
