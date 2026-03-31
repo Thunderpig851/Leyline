@@ -1,5 +1,7 @@
-import type { ReactNode } from "react";
+import { useEffect, useState } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
+import { Crown } from "lucide-react"
 
 type LFGSeat =
 {
@@ -28,9 +30,160 @@ type LFGGameCardProps =
   };
 };
 
+type CommanderVisual =
+{
+  colors: string[];
+};
+
+const WUBRG_ORDER = ["W", "U", "B", "R", "G"] as const;
+
+const MTG_TEXT_COLORS: Record<string, string> =
+{
+  W: "#f3e7b3",
+  U: "#67b7ff",
+  B: "#b78cff",
+  R: "#ff7b72",
+  G: "#49c47a",
+};
+
+const commanderVisualCache = new Map<string, CommanderVisual | null>();
+const commanderVisualRequests = new Map<string, Promise<CommanderVisual | null>>();
+
+function getCardColors(card: any): string[]
+{
+  const rootColors = Array.isArray(card?.colors) ? card.colors : [];
+
+  if (rootColors.length > 0)
+  {
+    return rootColors;
+  }
+
+  const faceColors = Array.isArray(card?.card_faces)
+    ? card.card_faces.flatMap((face: any) => Array.isArray(face?.colors) ? face.colors : [])
+    : [];
+
+  return Array.from(new Set(faceColors));
+}
+
+async function fetchCommanderVisual(name: string): Promise<CommanderVisual | null>
+{
+  const cached = commanderVisualCache.get(name);
+  if (cached !== undefined)
+  {
+    return cached;
+  }
+
+  const existingRequest = commanderVisualRequests.get(name);
+  if (existingRequest)
+  {
+    return existingRequest;
+  }
+
+  const request = (async () =>
+  {
+    try
+    {
+      const response = await fetch(
+        `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(name)}`
+      );
+
+      if (!response.ok)
+      {
+        commanderVisualCache.set(name, null);
+        return null;
+      }
+
+      const card = await response.json();
+      const visual = {
+        colors: getCardColors(card),
+      };
+
+      commanderVisualCache.set(name, visual);
+      return visual;
+    }
+    catch
+    {
+      commanderVisualCache.set(name, null);
+      return null;
+    }
+    finally
+    {
+      commanderVisualRequests.delete(name);
+    }
+  })();
+
+  commanderVisualRequests.set(name, request);
+  return request;
+}
+
+function sortColorsWubrg(colors: string[])
+{
+  const unique = Array.from(new Set(colors.filter(Boolean)));
+
+  return unique.sort(
+    (a, b) =>
+      WUBRG_ORDER.indexOf(a as (typeof WUBRG_ORDER)[number]) -
+      WUBRG_ORDER.indexOf(b as (typeof WUBRG_ORDER)[number])
+  );
+}
+
+function buildGradient(colors: string[])
+{
+  const ordered = sortColorsWubrg(colors);
+
+  if (ordered.length === 0)
+  {
+    return "";
+  }
+
+  if (ordered.length === 1)
+  {
+    return MTG_TEXT_COLORS[ordered[0]];
+  }
+
+  const stops = ordered.map((color, index) =>
+  {
+    const percent = ordered.length === 1
+      ? 0
+      : Math.round((index / (ordered.length - 1)) * 100);
+
+    return `${MTG_TEXT_COLORS[color]} ${percent}%`;
+  });
+
+  return `linear-gradient(90deg, ${stops.join(", ")})`;
+}
+
+function buildCommanderTextStyle(colors: string[]): CSSProperties
+{
+  const ordered = sortColorsWubrg(colors);
+
+  if (ordered.length === 0)
+  {
+    return {
+      color: "#e2e8f0",
+    };
+  }
+
+  if (ordered.length === 1)
+  {
+    return {
+      color: MTG_TEXT_COLORS[ordered[0]],
+    };
+  }
+
+  return {
+    backgroundImage: buildGradient(ordered),
+    WebkitBackgroundClip: "text",
+    backgroundClip: "text",
+    color: "transparent",
+    WebkitTextFillColor: "transparent",
+  };
+}
+
 export default function LFGGameCard({ room }: LFGGameCardProps)
 {
   const navigate = useNavigate();
+  const [commanderVisualMap, setCommanderVisualMap] = useState<Record<string, CommanderVisual | null>>({});
 
   const seats = Array.isArray(room.seats)
     ? room.seats
@@ -45,6 +198,48 @@ export default function LFGGameCard({ room }: LFGGameCardProps)
   const bracket = room.settings?.bracket;
   const isNearlyFull = openSeats === 1;
   const description = room.description?.trim();
+
+  useEffect(() =>
+  {
+    const commanderNames = seats
+      .flatMap((seat) => seat.commanders ?? [])
+      .filter(Boolean)
+      .filter((name) => !(name in commanderVisualMap));
+
+    if (commanderNames.length === 0)
+    {
+      return;
+    }
+
+    let cancelled = false;
+
+    void Promise.all(
+      commanderNames.map(async (name) => [name, await fetchCommanderVisual(name)] as const)
+    ).then((entries) =>
+    {
+      if (cancelled)
+      {
+        return;
+      }
+
+      setCommanderVisualMap((current) =>
+      {
+        const next = { ...current };
+
+        for (const [name, visual] of entries)
+        {
+          next[name] = visual;
+        }
+
+        return next;
+      });
+    });
+
+    return () =>
+    {
+      cancelled = true;
+    };
+  }, [seats, commanderVisualMap]);
 
   return (
     <article className="relative overflow-hidden rounded-2xl border border-white/10 bg-slate-950/60 p-4 ring-1 ring-white/5">
@@ -68,7 +263,6 @@ export default function LFGGameCard({ room }: LFGGameCardProps)
                 <Chip>Bracket {bracket}</Chip>
               ) : null}
               <Chip>{playersCount}/{maxPlayers}</Chip>
-              <Chip>Host {room.hostName ?? "Unknown"}</Chip>
             </div>
           </div>
 
@@ -104,11 +298,6 @@ export default function LFGGameCard({ room }: LFGGameCardProps)
                   className="rounded-2xl border border-white/10 bg-slate-900/65 px-3 py-2.5"
                 >
                   <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3">
-                    <div className="flex items-center">
-                      <span className="rounded-full border border-white/10 bg-slate-950/80 px-2.5 py-1 text-[11px] font-medium text-slate-300">
-                        P{displaySeatNumber}
-                      </span>
-                    </div>
 
                     <div className="min-w-0 flex flex-wrap items-center gap-x-2 gap-y-1">
                       <span
@@ -122,14 +311,22 @@ export default function LFGGameCard({ room }: LFGGameCardProps)
                       </span>
 
                       {commanderNames.length > 0 ? (
-                        commanderNames.map((name) => (
-                          <span
-                            key={name}
-                            className="rounded-full border border-cyan-300/20 bg-cyan-400/10 px-2.5 py-0.5 text-[11px] text-cyan-100"
-                          >
-                            {name}
-                          </span>
-                        ))
+                        commanderNames.map((name) =>
+                        {
+                          const textStyle = buildCommanderTextStyle(
+                            commanderVisualMap[name]?.colors || []
+                          );
+
+                          return (
+                            <span
+                              key={name}
+                              className="rounded-full border border-white/10 bg-slate-950/90 px-2.5 py-0.5 text-[11px] font-medium shadow-inner"
+                              style={textStyle}
+                            >
+                              {name}
+                            </span>
+                          );
+                        })
                       ) : (
                         <span className="rounded-full border border-dashed border-white/10 bg-slate-950/40 px-2.5 py-0.5 text-[11px] text-slate-400">
                           No commander selected
@@ -140,7 +337,7 @@ export default function LFGGameCard({ room }: LFGGameCardProps)
                     <div className="flex items-center justify-end">
                       {isHostSeat ? (
                         <span className="rounded-full border border-emerald-300/20 bg-emerald-400/10 px-2 py-0.5 text-[11px] uppercase tracking-[0.14em] text-emerald-200">
-                          Host
+                          <Crown className="h-3 w-3" aria-hidden="true" />
                         </span>
                       ) : (
                         <span className="h-5 w-5" aria-hidden="true" />

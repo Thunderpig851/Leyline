@@ -4,14 +4,56 @@ const router = require("express").Router();
 const requireAuth = require("../../middleware/requireAuth");
 
 const RoomModel = require("../../database/models/Room");
+const LiveGameModel = require("../../database/models/LiveGame");
 
 router.get("/", (req, res) => res.json({ ok: true, route: "rooms" }));
+
+function getPlayerMemberCount(room)
+{
+  return Array.isArray(room.members)
+    ? room.members.filter((member) => member.role !== "spectator").length
+    : 0;
+}
 
 function normalizeRoomStatus(room)
 {
   const maxPlayers = Number(room.settings?.maxPlayers ?? 4);
-  const memberCount = Array.isArray(room.members) ? room.members.length : 0;
+  const memberCount = getPlayerMemberCount(room);
   return memberCount >= maxPlayers ? "full" : "open";
+}
+
+function getSeatSnapshot(room, liveGame)
+{
+  if (Array.isArray(liveGame?.seats) && liveGame.seats.length > 0)
+  {
+    return [...liveGame.seats]
+      .sort((a, b) => Number(a.seatNumber ?? 99) - Number(b.seatNumber ?? 99))
+      .map((seat, index) =>
+      ({
+        role: seat.username === room.hostName ? "host" : "player",
+        username: seat.username,
+        seatNumber:
+          typeof seat.seatNumber === "number" && Number.isFinite(seat.seatNumber)
+            ? seat.seatNumber
+            : index + 1,
+        commanders: Array.isArray(seat.commanders)
+          ? seat.commanders.map((entry) => entry?.name).filter(Boolean)
+          : [],
+      }));
+  }
+
+  if (!Array.isArray(room.members))
+  {
+    return [];
+  }
+
+  return room.members.map((member, index) =>
+  ({
+    role: member.role,
+    username: member.userID?.username || (member.role === "host" ? room.hostName : "Unknown"),
+    seatNumber: index + 1,
+    commanders: [],
+  }));
 }
 
 router.post("/create", requireAuth, async (req, res) =>
@@ -37,7 +79,8 @@ router.post("/create", requireAuth, async (req, res) =>
         {
           userID: hostId,
           role: "host",
-          joinedAt: new Date(),        }
+          joinedAt: new Date(),
+        }
       ],
 
       settings: settings,
@@ -59,8 +102,47 @@ router.get("/all", async (req, res) =>
 {
   try
   {
-    const rooms = await RoomModel.find().sort({ createdAt: -1 }).limit(20).exec();
-    return res.status(200).json({ ok: true, rooms });
+    const rooms = await RoomModel.find()
+      .populate("members.userID", "username")
+      .sort({ createdAt: -1 })
+      .limit(20)
+      .lean()
+      .exec();
+
+    const roomIds = rooms.map((room) => room._id);
+
+    const activeGames = await LiveGameModel.find({
+      roomId: { $in: roomIds },
+      status: "active",
+    })
+      .sort({ updatedAt: -1 })
+      .lean()
+      .exec();
+
+    const liveGameByRoomId = new Map();
+
+    for (const game of activeGames)
+    {
+      const key = String(game.roomId);
+      if (!liveGameByRoomId.has(key))
+      {
+        liveGameByRoomId.set(key, game);
+      }
+    }
+
+    const enrichedRooms = rooms.map((room) =>
+    {
+      const liveGame = liveGameByRoomId.get(String(room._id));
+      const seatSnapshot = getSeatSnapshot(room, liveGame);
+
+      return {
+        ...room,
+        status: normalizeRoomStatus(room),
+        seats: seatSnapshot,
+      };
+    });
+
+    return res.status(200).json({ ok: true, rooms: enrichedRooms });
   }
   catch (err)
   {
@@ -150,7 +232,7 @@ router.post("/:id/join", requireAuth, async (req, res) =>
       return res.status(200).json({ ok: true, room, alreadyMember: true });
     }
 
-    if ((room.members?.length ?? 0) >= maxPlayers)
+    if (getPlayerMemberCount(room) >= maxPlayers)
     {
       return res.status(400).json({ ok: false, error: "Room is full." });
     }

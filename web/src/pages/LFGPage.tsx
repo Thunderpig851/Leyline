@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import CreateGamePopUp from "../components/CreateGamePopUp";
 import LFGChatPanel from "../components/lfg/LFGChatPanel";
@@ -170,16 +170,26 @@ export default function LFGPage()
     };
   }, [appendMessage, loadGames]);
 
+  const availableSeats = useMemo(() =>
+  {
+    return games.reduce((total, game) =>
+    {
+      const seatedPlayers = game.seats.filter((seat) => seat.role !== "spectator").length;
+      const maxPlayers = Math.max(1, Number(game.settings?.maxPlayers ?? 4));
+      return total + Math.max(0, maxPlayers - seatedPlayers);
+    }, 0);
+  }, [games]);
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <div className="mx-auto max-w-5xl px-6 py-10">
-        <h1 className="text-2xl font-semibold tracking-tight">
+    <div className="min-h-screen bg-slate-950 text-slate-100 lg:h-screen lg:overflow-hidden">
+      <div className="mx-auto flex min-h-screen max-w-5xl flex-col px-6 py-6 lg:h-screen lg:min-h-0">
+        <h1 className="shrink-0 text-2xl font-semibold tracking-tight">
           <span className="bg-gradient-to-r from-emerald-300 via-teal-300 to-cyan-200 bg-clip-text text-transparent">
             LFG Channel
           </span>
         </h1>
 
-        <div className="relative mt-6 rounded-2xl border border-white/10 bg-slate-200/10 p-3 ring-1 ring-white/5">
+        <div className="relative mt-6 shrink-0 rounded-2xl border border-white/10 bg-slate-200/10 p-3 ring-1 ring-white/5">
           <div className="pointer-events-none absolute inset-0 rounded-2xl bg-gradient-to-r from-emerald-400/10 via-teal-400/10 to-cyan-300/10" />
           <div className="pointer-events-none absolute inset-0 rounded-2xl bg-gradient-to-b from-white/10 via-white/5 to-transparent opacity-80" />
 
@@ -200,13 +210,18 @@ export default function LFGPage()
               Back to Lobby
             </button>
 
-            <div className="ml-auto rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-xs text-slate-300">
-              {games.length} open games
+            <div className="ml-auto rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-right leading-tight">
+              <div className="text-sm font-medium text-slate-100">
+                {availableSeats} available seats
+              </div>
+              <div className="text-[11px] text-slate-400">
+                {games.length} open games
+              </div>
             </div>
           </div>
         </div>
 
-        <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
+        <div className="mt-6 grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
           <LFGGamesPanel
             games={games}
             loading={gamesLoading}

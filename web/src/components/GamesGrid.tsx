@@ -1,14 +1,24 @@
 import { useEffect, useMemo, useState } from "react";
 import RoomCard, { type RoomCardData } from "./RoomCard";
 
+type GridSeat =
+{
+  role: "host" | "player" | "spectator";
+  username: string;
+  seatNumber?: number;
+  commanders?: string[];
+};
+
 type GridRoom =
 {
   _id: string;
   title: string;
+  description?: string;
   hostName?: string;
   visibility?: "public" | "private";
   status?: "open" | "full";
   members?: Array<unknown>;
+  seats?: GridSeat[];
   settings?:
   {
     format?: string;
@@ -33,19 +43,32 @@ export default function GamesGrid({ rooms, onJoinRoom }: GamesGridProps)
 
   const cards: RoomCardData[] = useMemo(() =>
     rooms.map((r) =>
-    ({
-      id: r._id,
-      title: r.title,
-      hostName: r.hostName,
-      visibility: r.visibility ?? "public",
-      bracket: r.settings?.bracket,
-      format: r.settings?.format,
-      status: r.status === "full" ? "full" : (r.status ?? "open"),
-      playersCount: r.members?.length ?? 0,
-      maxPlayers: r.settings?.maxPlayers ?? 4,
-      allowSpectators: r.settings?.allowSpectators ?? false,
-      createdAt: r.createdAt,
-    })),
+    {
+      const seats = Array.isArray(r.seats)
+        ? [...r.seats]
+          .filter((seat) => seat.role !== "spectator")
+          .sort((a, b) => Number(a.seatNumber ?? 99) - Number(b.seatNumber ?? 99))
+        : [];
+
+      const playersCount = seats.length > 0
+        ? seats.length
+        : (r.members?.length ?? 0);
+
+      return {
+        id: r._id,
+        title: r.title,
+        description: r.description,
+        hostName: r.hostName,
+        visibility: r.visibility ?? "public",
+        bracket: r.settings?.bracket,
+        format: r.settings?.format,
+        status: r.status === "full" ? "full" : (r.status ?? "open"),
+        playersCount,
+        maxPlayers: r.settings?.maxPlayers ?? 4,
+        seats,
+        createdAt: r.createdAt,
+      };
+    }),
   [rooms]);
 
   const totalPages = Math.max(1, Math.ceil(cards.length / PAGE_SIZE));
@@ -84,10 +107,9 @@ export default function GamesGrid({ rooms, onJoinRoom }: GamesGridProps)
                 disabled={page <= 1}
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 className="rounded-xl border border-teal-300/30 bg-teal-500/10 px-3 py-2 text-xs text-slate-100
-                           hover:bg-teal-300 hover:border-teal-200 hover:text-slate-900
-                           hover:shadow-lg hover:shadow-teal-400/25
-                           disabled:cursor-not-allowed disabled:opacity-50
-                           transition-colors transition-shadow duration-150"
+                           transition-colors transition-shadow duration-150
+                           hover:border-teal-200 hover:bg-teal-300 hover:text-slate-900 hover:shadow-lg hover:shadow-teal-400/25
+                           disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Prev
               </button>
@@ -102,10 +124,9 @@ export default function GamesGrid({ rooms, onJoinRoom }: GamesGridProps)
                 disabled={page >= totalPages}
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 className="rounded-xl border border-teal-300/30 bg-teal-500/10 px-3 py-2 text-xs text-slate-100
-                           hover:bg-teal-300 hover:border-teal-200 hover:text-slate-900
-                           hover:shadow-lg hover:shadow-teal-400/25
-                           disabled:cursor-not-allowed disabled:opacity-50
-                           transition-colors transition-shadow duration-150"
+                           transition-colors transition-shadow duration-150
+                           hover:border-teal-200 hover:bg-teal-300 hover:text-slate-900 hover:shadow-lg hover:shadow-teal-400/25
+                           disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Next
               </button>

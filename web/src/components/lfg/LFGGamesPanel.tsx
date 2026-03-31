@@ -34,28 +34,28 @@ type LFGGamesPanelProps =
 export default function LFGGamesPanel({ games, loading, error }: LFGGamesPanelProps)
 {
   return (
-    <section className="rounded-2xl border border-white/10 bg-slate-200/10 p-3 ring-1 ring-white/5">
-      <div className="mb-3 text-sm font-semibold text-slate-100">Active Games</div>
-
-      {loading ? (
-        <div className="rounded-2xl border border-white/10 bg-slate-950/45 px-4 py-10 text-sm text-slate-300">
-          Loading...
-        </div>
-      ) : error ? (
-        <div className="rounded-2xl border border-red-300/20 bg-red-500/10 px-4 py-10 text-sm text-red-100">
-          {error}
-        </div>
-      ) : games.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-white/10 bg-slate-950/45 px-4 py-10 text-sm text-slate-400">
-          No open public games.
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {games.map((room) => (
-            <LFGGameCard key={room._id} room={room} />
-          ))}
-        </div>
-      )}
+    <section className="flex min-h-0 flex-col rounded-2xl border border-white/10 bg-slate-200/10 p-3 ring-1 ring-white/5 lg:h-full">
+      <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+        {loading ? (
+          <div className="rounded-2xl border border-white/10 bg-slate-950/45 px-4 py-10 text-sm text-slate-300">
+            Loading...
+          </div>
+        ) : error ? (
+          <div className="rounded-2xl border border-red-300/20 bg-red-500/10 px-4 py-10 text-sm text-red-100">
+            {error}
+          </div>
+        ) : games.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-white/10 bg-slate-950/45 px-4 py-10 text-sm text-slate-400">
+            No open public games.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {games.map((room) => (
+              <LFGGameCard key={room._id} room={room} />
+            ))}
+          </div>
+        )}
+      </div>
     </section>
   );
 }

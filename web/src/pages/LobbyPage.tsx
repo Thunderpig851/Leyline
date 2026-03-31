@@ -4,13 +4,24 @@ import { socket } from "../lib/socket";
 import CreateGamePopUp from "../components/CreateGamePopUp";
 import GamesGrid from "../components/GamesGrid";
 
+type RoomSeat =
+{
+  role: "host" | "player" | "spectator";
+  username: string;
+  seatNumber?: number;
+  commanders?: string[];
+};
+
 type Room =
 {
   _id: string;
   title: string;
+  description?: string;
+  hostName?: string;
   visibility: "public" | "private";
   status: "open" | "full";
   members: string[];
+  seats?: RoomSeat[];
   createdAt: string;
   settings:
   {

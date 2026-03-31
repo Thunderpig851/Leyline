@@ -81,12 +81,10 @@ export default function LFGChatPanel({
   }
 
   return (
-    <section className="flex h-[720px] min-h-[720px] flex-col rounded-2xl border border-white/10 bg-slate-200/10 p-3 ring-1 ring-white/5 lg:sticky lg:top-6">
-      <div className="mb-3 text-sm font-semibold text-slate-100">Chat</div>
-
+    <section className="flex min-h-0 flex-col rounded-2xl border border-white/10 bg-slate-200/10 p-3 ring-1 ring-white/5 lg:h-full">
       <div
         ref={logRef}
-        className="flex-1 overflow-y-auto rounded-2xl border border-white/10 bg-slate-950/45 p-3"
+        className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-white/10 bg-slate-950/45 p-3"
       >
         {loading ? (
           <div className="text-sm text-slate-300">Loading...</div>
@@ -126,7 +124,7 @@ export default function LFGChatPanel({
         )}
       </div>
 
-      <div className="mt-3">
+      <div className="mt-3 shrink-0">
         <textarea
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
