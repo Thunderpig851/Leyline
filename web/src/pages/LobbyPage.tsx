@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { socket } from "../lib/socket";
 import CreateGamePopUp from "../components/CreateGamePopUp";
 import GamesGrid from "../components/GamesGrid";
@@ -29,6 +30,8 @@ type RoomsAllResponse =
 
 export default function LobbyPage()
 {
+  const navigate = useNavigate();
+
   const [openCreate, setOpenCreate] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
 
@@ -169,7 +172,10 @@ export default function LobbyPage()
 
             <button
               type="button"
-              className="shrink-0 rounded-xl border border-teal-300/30 bg-teal-500/10 px-4 py-2 text-sm hover:bg-teal-500/20"
+              onClick={() => navigate("/lfg")}
+              className="shrink-0 rounded-xl border border-teal-300/30 bg-teal-500/10 px-4 py-2 text-sm
+                         transition-colors transition-shadow duration-150
+                         hover:border-teal-200 hover:bg-teal-300 hover:text-slate-900 hover:shadow-lg hover:shadow-teal-400/25"
             >
               LFG Channel
             </button>
@@ -258,12 +264,7 @@ export default function LobbyPage()
                       <span className="text-xs text-slate-300">Format</span>
                       <select
                         value={filterFormat}
-                        onChange={(e) =>
-                        {
-                          const nextFormat = e.target.value as "all" | "commander";
-                          setFilterFormat(nextFormat);
-                          if (nextFormat !== "commander") setFilterBracket("all");
-                        }}
+                        onChange={(e) => setFilterFormat(e.target.value as "all" | "commander")}
                         className="mt-1 w-full rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none
                                    focus:border-teal-300/80 focus:ring-4 focus:ring-emerald-400/20"
                       >
@@ -274,125 +275,72 @@ export default function LobbyPage()
 
                     {filterFormat === "commander" && (
                       <label className="block">
-                        <span className="text-xs text-slate-300">Bracket ceiling</span>
+                        <span className="text-xs text-slate-300">Bracket</span>
                         <select
                           value={filterBracket}
                           onChange={(e) => setFilterBracket(e.target.value as "all" | "1" | "2" | "3" | "4" | "5")}
                           className="mt-1 w-full rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none
                                      focus:border-teal-300/80 focus:ring-4 focus:ring-emerald-400/20"
                         >
-                          <option value="all">All brackets</option>
-                          <option value="1">Up to Bracket 1</option>
-                          <option value="2">Up to Bracket 2</option>
-                          <option value="3">Up to Bracket 3</option>
-                          <option value="4">Up to Bracket 4</option>
-                          <option value="5">Up to Bracket 5</option>
+                          <option value="all">Any bracket</option>
+                          <option value="1">1 or lower</option>
+                          <option value="2">2 or lower</option>
+                          <option value="3">3 or lower</option>
+                          <option value="4">4 or lower</option>
+                          <option value="5">5 or lower</option>
                         </select>
                       </label>
                     )}
+                  </div>
 
-                    <div className="flex items-center justify-between pt-1">
-                      <button
-                        type="button"
-                        onClick={() =>
-                        {
-                          setFilterStatus("all");
-                          setFilterVisibility("all");
-                          setFilterFormat("all");
-                          setFilterBracket("all");
-                        }}
-                        className="text-xs text-slate-300 hover:text-slate-100"
-                      >
-                        Reset filters
-                      </button>
+                  <div className="mt-4 flex items-center justify-between gap-3">
+                    <button
+                      type="button"
+                      onClick={() =>
+                      {
+                        setQuery("");
+                        setFilterStatus("all");
+                        setFilterVisibility("all");
+                        setFilterFormat("all");
+                        setFilterBracket("all");
+                        setSortBy("newest");
+                      }}
+                      disabled={!hasFilters}
+                      className="rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-200
+                                 hover:bg-slate-800/70 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Clear
+                    </button>
 
-                      <button
-                        type="button"
-                        onClick={() => setShowFilters(false)}
-                        className="rounded-lg border border-white/10 bg-slate-900/60 px-3 py-1.5 text-xs text-slate-100 hover:bg-white/5"
-                      >
-                        Done
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowFilters(false)}
+                      className="rounded-xl border border-teal-300/30 bg-teal-500/10 px-3 py-2 text-sm text-slate-100
+                                 hover:border-teal-200 hover:bg-teal-300 hover:text-slate-900"
+                    >
+                      Done
+                    </button>
                   </div>
                 </div>
               )}
             </div>
-
-            {hasFilters && (
-              <button
-                type="button"
-                onClick={() =>
-                {
-                  setQuery("");
-                  setFilterStatus("all");
-                  setFilterVisibility("all");
-                  setFilterFormat("all");
-                  setFilterBracket("all");
-                  setSortBy("newest");
-                }}
-                className="shrink-0 rounded-xl border border-teal-300/30 bg-teal-500/10 px-4 py-2 text-sm
-                           transition-colors transition-shadow duration-150
-                           hover:border-teal-200 hover:bg-teal-300 hover:text-slate-900 hover:shadow-lg hover:shadow-teal-400/25"
-              >
-                Clear
-              </button>
-            )}
           </div>
-
-          {(filterStatus !== "all" ||
-            filterVisibility !== "all" ||
-            filterFormat !== "all" ||
-            filterBracket !== "all") && (
-            <div className="relative mt-3 flex flex-wrap gap-2">
-              {filterStatus !== "all" && (
-                <span className="rounded-full border border-white/10 bg-slate-900/60 px-3 py-1 text-xs text-slate-200">
-                  Status: {filterStatus}
-                </span>
-              )}
-
-              {filterVisibility !== "all" && (
-                <span className="rounded-full border border-white/10 bg-slate-900/60 px-3 py-1 text-xs text-slate-200">
-                  Visibility: {filterVisibility}
-                </span>
-              )}
-
-              {filterFormat !== "all" && (
-                <span className="rounded-full border border-white/10 bg-slate-900/60 px-3 py-1 text-xs text-slate-200">
-                  Format: {filterFormat}
-                </span>
-              )}
-
-              {filterFormat === "commander" && filterBracket !== "all" && (
-                <span className="rounded-full border border-emerald-300/25 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-200">
-                  Up to Bracket {filterBracket}
-                </span>
-              )}
-            </div>
-          )}
         </div>
 
-        {openCreate && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-            <CreateGamePopUp onClose={() => setOpenCreate(false)} />
+        {loading ? (
+          <div className="mt-8 rounded-2xl border border-white/10 bg-slate-950/40 p-6 text-sm text-slate-300 ring-1 ring-white/5">
+            Loading rooms...
           </div>
-        )}
-
-        {error && (
-          <div className="mt-6 rounded-xl border border-red-400/40 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+        ) : error ? (
+          <div className="mt-8 rounded-2xl border border-red-300/20 bg-red-500/10 p-6 text-sm text-red-100 ring-1 ring-red-300/10">
             {error}
           </div>
-        )}
-
-        {loading ? (
-          <div className="mt-8 text-sm text-slate-300">Loading rooms...</div>
         ) : (
-          <GamesGrid
-            rooms={filteredRooms}
-            onJoinRoom={(id) => console.log("join", id)}
-          />
+          <GamesGrid rooms={filteredRooms} />
         )}
       </div>
+
+      {openCreate && <CreateGamePopUp onClose={() => setOpenCreate(false)} />}
     </div>
   );
 }
