@@ -248,6 +248,12 @@ const LiveGameSchema = new mongoose.Schema(
     default: null,
   },
 
+  gameStartedAt:
+  {
+    type: Date,
+    default: null,
+  },
+
   turnStartedAt:
   {
     type: Date,

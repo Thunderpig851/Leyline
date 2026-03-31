@@ -802,8 +802,15 @@ router.post("/:gameId/turn/advance", requireAuth, async (req, res) =>
       ? occupiedTurnOrder[0]
       : occupiedTurnOrder[(currentIndex + 1) % occupiedTurnOrder.length];
 
+    const now = new Date();
+
+    if (!game.gameStartedAt)
+    {
+      game.gameStartedAt = now;
+    }
+
     game.activeTurnSeatNumber = nextSeatNumber;
-    game.turnStartedAt = new Date();
+    game.turnStartedAt = now;
 
     await game.save();
 
@@ -981,6 +988,145 @@ router.post("/:gameId/settings", requireAuth, async (req, res) =>
   }
 });
 
+router.post("/:gameId/kick-player", requireAuth, async (req, res) =>
+{
+  try
+  {
+    const game = await LiveGameModel.findById(req.params.gameId).exec();
+    if (!game)
+    {
+      return res.status(404).json({ ok: false, error: "Game not found." });
+    }
+
+    if (game.status !== "active")
+    {
+      return res.status(400).json({ ok: false, error: "Game is not active." });
+    }
+
+    const room = await RoomModel.findById(game.roomId).exec();
+    if (!room)
+    {
+      return res.status(404).json({ ok: false, error: "Room not found." });
+    }
+
+    const requesterUserId = req.user._id.toString();
+    const currentHostUserId = getHostUserIdForGame(game, room);
+
+    if (!currentHostUserId)
+    {
+      return res.status(403).json({ ok: false, error: "Unable to determine current host." });
+    }
+
+    if (currentHostUserId !== requesterUserId)
+    {
+      return res.status(403).json({ ok: false, error: "Only the current host can kick players." });
+    }
+
+    const targetUserId = typeof req.body?.targetUserId === "string"
+      ? req.body.targetUserId.trim()
+      : "";
+
+    if (!targetUserId)
+    {
+      return res.status(400).json({ ok: false, error: "targetUserId is required." });
+    }
+
+    if (targetUserId === requesterUserId)
+    {
+      return res.status(400).json({ ok: false, error: "You cannot kick yourself. Use the leave game option instead." });
+    }
+
+    const targetSeatIndex = game.seats.findIndex(
+      (seat) => seat.userId?.toString() === targetUserId
+    );
+
+    if (targetSeatIndex === -1)
+    {
+      return res.status(404).json({ ok: false, error: "Target player must be seated in the live game." });
+    }
+
+    const targetMemberIndex = room.members.findIndex(
+      (member) => member.userID?.toString() === targetUserId
+    );
+
+    if (targetMemberIndex === -1)
+    {
+      return res.status(404).json({ ok: false, error: "Target player must still be in the room." });
+    }
+
+    game.seats.splice(targetSeatIndex, 1);
+    clearSeatMarkersIfNeeded(game, game.seats[targetSeatIndex]?.seatNumber);
+    syncBoardOrder(game);
+    clearActiveTurnIfNeeded(game);
+
+    await game.save();
+
+    const io = req.app.get("io");
+    emitGameUpdated(io, game);
+
+    return res.status(200).json({ ok: true, game });
+  }
+  catch (err)
+  {
+    console.error("Error kicking player:", err);
+    return res.status(500).json({ ok: false, error: err.message || "Failed to kick player." });
+  }
+});
+
+router.post("/:gameId/reset", requireAuth, async (req, res) =>
+{
+  try
+  {
+    const game = await LiveGameModel.findById(req.params.gameId).exec() || null;
+    if (!game)
+    {
+      return res.status(404).json({ ok: false, error: "Game not found." });
+    }
+
+    const room = await RoomModel.findById(game.roomId).exec();
+    const hostUserId = getHostUserIdForGame(game, room);
+
+    if (hostUserId !== req.user._id.toString())
+    {
+      return res.status(403).json({ ok: false, error: "Only the host can reset the game." });
+    }
+
+    const startingLife = getStartingLife(game.settings?.format);
+
+    for (const seat of game.seats)
+    {
+      seat.stats = {
+        commanderDamage: {},
+        commanderCastCount: 0,
+        life: startingLife,
+        poison: 0,
+        energy: 0,
+        experience: 0,
+      };
+      seat.commanders = [];
+    }
+
+    game.boardOrder = normalizeBoardOrder(game);
+    game.monarchSeatNumber = null;
+    game.initiativeSeatNumber = null;
+    game.activeTurnSeatNumber = null;
+    game.turnStartedAt = null;
+    game.dayNightState = null;
+
+    await game.save();
+
+    const io = req.app.get("io");
+    emitGameUpdated(io, game);
+
+    return res.status(200).json({ ok: true, game });
+  }
+  catch (err)
+  {
+    console.error("Error resetting game:", err);
+    return res.status(500).json({ ok: false, error: err.message || "Failed to reset game." });
+  }
+}); 
+
 router.post("/:gameId/transfer-host", requireAuth, async (req, res) =>
 {
   try
@@ -1104,7 +1250,7 @@ router.post("/:gameId/end", requireAuth, async (req, res) =>
       return res.status(403).json({ ok: false, error: "Only the host can end the game." });
     }
 
-    game.status = "ended";
+    game.status = "inactive";
     await game.save();
 
     const io = req.app.get("io");

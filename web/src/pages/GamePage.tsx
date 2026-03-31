@@ -41,6 +41,8 @@ type ActiveGame =
 {
   _id: string;
   roomId: string;
+  gameStartedAt: string | null;
+  createdAt: string;
   boardOrder?: number[];
   settings?: {
     format?: string;
@@ -224,7 +226,7 @@ export default function GamePage()
   });
   const [commanderPanelOpen, setCommanderPanelOpen] = useState(false);
   const [commanderPanelSeatNumber, setCommanderPanelSeatNumber] = useState<number | null>(null);
-  const [turnClockNow, setTurnClockNow] = useState(() => Date.now());
+  const [timerNow, setTimerNow] = useState(() => Date.now());
 
   const shuffleIntervalRef = useRef<number | null>(null);
   const shuffleTimeoutRef = useRef<number | null>(null);
@@ -585,23 +587,23 @@ export default function GamePage()
 
   useEffect(() =>
   {
-    if (!game?.turnStartedAt || !game?.activeTurnSeatNumber)
+    if (!game?.gameStartedAt && !game?.turnStartedAt)
     {
       return;
     }
 
-    setTurnClockNow(Date.now());
+    setTimerNow(Date.now());
 
     const intervalId = window.setInterval(() =>
     {
-      setTurnClockNow(Date.now());
+      setTimerNow(Date.now());
     }, 1000);
 
     return () =>
     {
       window.clearInterval(intervalId);
     };
-  }, [game?.turnStartedAt, game?.activeTurnSeatNumber]);
+  }, [game?.gameStartedAt, game?.turnStartedAt]);
 
   function setSeatSaving(seatNumber: number, isSaving: boolean)
   {
@@ -681,7 +683,7 @@ export default function GamePage()
   {
     await updateSeatState(seatNumber,
     {
-      poison: clampCounter(nextPoison, 0, 99),
+      poison: clampCounter(nextPoison, 0, 10),
     });
   }
 
@@ -1165,8 +1167,25 @@ export default function GamePage()
       return 0;
     }
 
-    return Math.max(0, Math.floor((turnClockNow - startedAt) / 1000));
-  }, [game?.turnStartedAt, game?.activeTurnSeatNumber, turnClockNow]);
+    return Math.max(0, Math.floor((timerNow - startedAt) / 1000));
+  }, [game?.turnStartedAt, game?.activeTurnSeatNumber, timerNow]);
+
+  const gameElapsedSeconds = useMemo(() =>
+  {
+    if (!game?.gameStartedAt)
+    {
+      return 0;
+    }
+
+    const startedAt = new Date(game.gameStartedAt).getTime();
+
+    if (!Number.isFinite(startedAt))
+    {
+      return 0;
+    }
+
+    return Math.max(0, Math.floor((timerNow - startedAt) / 1000));
+  }, [game?.gameStartedAt, timerNow]);
 
   useEffect(() =>
   {
@@ -1247,55 +1266,66 @@ export default function GamePage()
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(45,212,191,0.10),transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0))]" />
 
         <div className="relative flex w-full items-center justify-between gap-4 px-5 py-2.5">
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0 flex flex-1 items-center gap-3">
             <h1 className="truncate text-lg font-semibold tracking-tight text-white drop-shadow-[0_1px_10px_rgba(255,255,255,0.08)] sm:text-xl">
               {roomTitle}
             </h1>
+
+            {game?.gameStartedAt ? (
+              <div className="inline-flex shrink-0 items-center gap-2 rounded-full border border-cyan-300/30 bg-cyan-400/10 px-3 py-1 text-xs font-semibold text-cyan-100 shadow-lg">
+                <span className="hidden sm:inline text-cyan-50/90">
+                  Game
+                </span>
+                <span className="font-mono tracking-wide">
+                  {formatTurnDuration(gameElapsedSeconds)}
+                </span>
+              </div>
+            ) : null}
           </div>
 
           {game?.dayNightState || activeTurnSeat ? (
-  <div className="pointer-events-none absolute left-1/2 top-1/2 flex max-w-[calc(100vw-14rem)] -translate-x-1/2 -translate-y-1/2 items-center gap-2">
-    {activeTurnSeat ? (
-      <div className="inline-flex min-w-0 items-center gap-2 rounded-full border border-emerald-300/35 bg-emerald-400/12 px-3 py-1.5 text-xs font-semibold text-emerald-100 shadow-lg">
-        <span className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-300 shadow-[0_0_18px_rgba(52,211,153,0.75)]" />
-        <span className="max-w-[8rem] truncate sm:max-w-[12rem]">
-          {activeTurnSeat.title}
-        </span>
-        <span className="rounded-full border border-emerald-200/20 bg-slate-950/45 px-2 py-0.5 font-mono text-[11px] tracking-wide text-emerald-50">
-          {formatTurnDuration(turnElapsedSeconds)}
-        </span>
-      </div>
-    ) : null}
+            <div className="pointer-events-none absolute left-1/2 top-1/2 flex max-w-[calc(100vw-18rem)] -translate-x-1/2 -translate-y-1/2 items-center gap-2">
+              {activeTurnSeat ? (
+                <div className="inline-flex min-w-0 items-center gap-2 rounded-full border border-emerald-300/35 bg-emerald-400/12 px-3 py-1.5 text-xs font-semibold text-emerald-100 shadow-lg">
+                  <span className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-300 shadow-[0_0_18px_rgba(52,211,153,0.75)]" />
+                  <span className="max-w-[8rem] truncate sm:max-w-[12rem]">
+                    {activeTurnSeat.title}
+                  </span>
+                  <span className="rounded-full border border-emerald-200/20 bg-slate-950/45 px-2 py-0.5 font-mono text-[11px] tracking-wide text-emerald-50">
+                    {formatTurnDuration(turnElapsedSeconds)}
+                  </span>
+                </div>
+              ) : null}
 
-    {game?.dayNightState ? (
-        <div
-            className={`inline-flex shrink-0 items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold shadow-lg ${
-              game.dayNightState === "day"
-                ? "border-amber-300/35 bg-amber-400/12 text-amber-100"
-                : "border-indigo-300/35 bg-indigo-400/12 text-indigo-100"
-            }`}
-          >
-            <span
-              className={`inline-flex h-7 w-7 items-center justify-center rounded-full border ${
-                game.dayNightState === "day"
-                  ? "border-amber-200/30 bg-amber-300/12"
-                  : "border-indigo-200/30 bg-indigo-300/12"
-              }`}
-            >
-              {game.dayNightState === "day" ? (
-                <Sun className="h-4 w-4" />
-              ) : (
-                <Moon className="h-4 w-4" />
-              )}
-            </span>
+              {game?.dayNightState ? (
+                <div
+                  className={`inline-flex shrink-0 items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold shadow-lg ${
+                    game.dayNightState === "day"
+                      ? "border-amber-300/35 bg-amber-400/12 text-amber-100"
+                      : "border-indigo-300/35 bg-indigo-400/12 text-indigo-100"
+                  }`}
+                >
+                  <span
+                    className={`inline-flex h-7 w-7 items-center justify-center rounded-full border ${
+                      game.dayNightState === "day"
+                        ? "border-amber-200/30 bg-amber-300/12"
+                        : "border-indigo-200/30 bg-indigo-300/12"
+                    }`}
+                  >
+                    {game.dayNightState === "day" ? (
+                      <Sun className="h-4 w-4" />
+                    ) : (
+                      <Moon className="h-4 w-4" />
+                    )}
+                  </span>
 
-            <span className="hidden sm:inline">
-              {game.dayNightState === "day" ? "Day" : "Night"}
-            </span>
-          </div>
-        ) : null}
-      </div>
-    ) : null} ``
+                  <span className="hidden sm:inline">
+                    {game.dayNightState === "day" ? "Day" : "Night"}
+                  </span>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
 
           <div className="flex items-center gap-2">
             <button
