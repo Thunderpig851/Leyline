@@ -941,26 +941,27 @@ export default function GamePage()
     {
       if (gameId)
       {
-        try
+        const leaveGameResult = await apiPost(`/api/live-games/${gameId}/leave`, {});
+
+        if (!leaveGameResult.ok)
         {
-          await apiPost(`/api/live-games/${gameId}/leave`, {});
-          navigate('/lobby', { replace: true });
-        }
-        catch (err)
-        {
-          console.error("Failed to leave live game:", err);
+          console.error(
+            "Failed to leave live game:",
+            "error" in leaveGameResult ? leaveGameResult.error : "Request failed."
+          );
         }
       }
 
       if (roomId)
       {
-        try
+        const leaveRoomResult = await apiPost(`/api/rooms/${roomId}/leave`, {});
+
+        if (!leaveRoomResult.ok)
         {
-          await apiPost(`/api/rooms/${roomId}/leave`, {});
-        }
-        catch (err)
-        {
-          console.error("Failed to leave room:", err);
+          console.error(
+            "Failed to leave room:",
+            "error" in leaveRoomResult ? leaveRoomResult.error : "Request failed."
+          );
         }
       }
     }

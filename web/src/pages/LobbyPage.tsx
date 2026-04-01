@@ -263,7 +263,7 @@ export default function LobbyPage()
   const [query, setQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState<"all" | "open" | "full">("all");
   const [filterVisibility, setFilterVisibility] = useState<"all" | "public" | "private">("all");
-  const [filterFormat, setFilterFormat] = useState<"all" | "commander">("all");
+  const [filterFormat, setFilterFormat] = useState<"all" | "commander" | "standard" | "">("all");
   const [filterBracket, setFilterBracket] = useState<"all" | "1" | "2" | "3" | "4" | "5">("all");
   const [sortBy, setSortBy] = useState<"newest" | "title">("newest");
 
@@ -636,11 +636,7 @@ export default function LobbyPage()
                   {filteredRooms.length} visible game{filteredRooms.length === 1 ? "" : "s"}
                 </div>
               </>
-            ) : (
-              <div className="text-xs text-slate-400">
-                Public and private games are both listed here. Use filters to narrow the board.
-              </div>
-            )}
+            ): null}
           </div>
         </div>
 

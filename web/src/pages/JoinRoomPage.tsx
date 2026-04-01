@@ -319,12 +319,16 @@ export default function JoinRoomPage()
     {
       if (roomId)
       {
-        await apiPost(`/api/rooms/${roomId}/leave`, {});
+        const leaveRoomResult = await apiPost(`/api/rooms/${roomId}/leave`, {});
+
+        if (!leaveRoomResult.ok)
+        {
+          console.error(
+            "Failed to leave room on back:",
+            "error" in leaveRoomResult ? leaveRoomResult.error : "Request failed."
+          );
+        }
       }
-    }
-    catch (err)
-    {
-      console.error("Failed to leave room on back:", err);
     }
     finally
     {

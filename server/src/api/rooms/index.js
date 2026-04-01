@@ -6,6 +6,9 @@ const requireAuth = require("../../middleware/requireAuth");
 
 const RoomModel = require("../../database/models/Room");
 const LiveGameModel = require("../../database/models/LiveGame");
+const RoomChatMessageModel = require("../../database/models/RoomChatMessage");
+const { UserModel } = require("../../database/models/User");
+const { clearPresenceForGame } = require("../../middleware/liveGamePresence");
 
 const PRIVATE_CODE_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
@@ -121,6 +124,112 @@ function getSeatSnapshot(room, liveGame)
     seatNumber: index + 1,
     commanders: [],
   }));
+}
+
+
+function getNextHostCandidate(room, liveGame, excludedUserId)
+{
+  const normalizedExcludedUserId = excludedUserId ? String(excludedUserId) : "";
+
+  const seatedCandidates = Array.isArray(liveGame?.seats)
+    ? [...liveGame.seats]
+        .filter((seat) => String(seat.userId || "") !== normalizedExcludedUserId)
+        .sort((a, b) => Number(a.seatNumber ?? 99) - Number(b.seatNumber ?? 99))
+    : [];
+
+  for (const seat of seatedCandidates)
+  {
+    const matchingMember = room.members.find(
+      (member) => String(member.userID || "") === String(seat.userId || "")
+    );
+
+    if (matchingMember)
+    {
+      return {
+        userId: String(seat.userId),
+        username: seat.username || matchingMember.userID?.username || "",
+      };
+    }
+  }
+
+  const roomCandidates = Array.isArray(room.members)
+    ? [...room.members]
+        .filter((member) => String(member.userID || "") !== normalizedExcludedUserId)
+        .sort((a, b) => new Date(a.joinedAt || 0).getTime() - new Date(b.joinedAt || 0).getTime())
+    : [];
+
+  const firstRoomCandidate = roomCandidates[0];
+
+  if (!firstRoomCandidate)
+  {
+    return null;
+  }
+
+  return {
+    userId: String(firstRoomCandidate.userID),
+    username: firstRoomCandidate.userID?.username || "",
+  };
+}
+
+function applyHostToRoomMembers(room, nextHostUserId)
+{
+  for (const member of room.members)
+  {
+    member.role = String(member.userID) === String(nextHostUserId) ? "host" : "player";
+  }
+}
+
+async function resolveUsername(userId, fallback = "")
+{
+  if (!userId)
+  {
+    return fallback;
+  }
+
+  const user = await UserModel.findById(userId).select("username").lean().exec();
+  return user?.username || fallback;
+}
+
+function emitHostTransferred(io, room, liveGame)
+{
+  if (!io || !room)
+  {
+    return;
+  }
+
+  const payload = {
+    roomId: String(room._id),
+    gameId: liveGame?._id ? String(liveGame._id) : undefined,
+    hostUserId: room.hostID ? String(room.hostID) : "",
+    hostName: room.hostName || "",
+  };
+
+  io.to(`room:${room._id}`).emit("game:host-transferred", payload);
+
+  if (liveGame?._id)
+  {
+    io.to(`live-game:${liveGame._id}`).emit("game:host-transferred", payload);
+  }
+
+  io.emit("rooms:changed");
+}
+
+async function deleteRoomArtifacts(roomId)
+{
+  const activeGames = await LiveGameModel.find({ roomId }).select("_id roomId").lean().exec();
+
+  await Promise.all([
+    RoomChatMessageModel.deleteMany({ roomId }).exec(),
+    LiveGameModel.deleteMany({ roomId }).exec(),
+    RoomModel.deleteOne({ _id: roomId }).exec(),
+  ]);
+
+  for (const game of activeGames)
+  {
+    clearPresenceForGame(game._id);
+  }
+
+  return activeGames;
 }
 
 router.post("/create", requireAuth, async (req, res) =>
@@ -498,24 +607,63 @@ router.post("/:id/leave", requireAuth, async (req, res) =>
     }
 
     const leavingMember = room.members[memberIndex];
-
-    if (leavingMember.role === "host")
-    {
-      return res.status(400).json({
-        ok: false,
-        error: "Host leave handling is not implemented yet. Close/archive the room first."
-      });
-    }
+    const io = req.app.get("io");
+    const activeLiveGame = await LiveGameModel.findOne({ roomId: room._id, status: "active" }).exec();
+    const wasHost = String(room.hostID) === userId || leavingMember.role === "host";
 
     room.members.splice(memberIndex, 1);
-    room.status = normalizeRoomStatus(room);
 
+    if (room.members.length === 0)
+    {
+      const deletedGames = await deleteRoomArtifacts(room._id);
+
+      if (io)
+      {
+        io.emit("rooms:changed");
+        io.to(`room:${room._id}`).emit("room:deleted", { roomId: String(room._id) });
+
+        for (const game of deletedGames)
+        {
+          io.to(`live-game:${game._id}`).emit("game:ended", {
+            gameId: String(game._id),
+            roomId: String(room._id),
+          });
+        }
+      }
+
+      return res.status(200).json({ ok: true, deleted: true, roomId: String(room._id) });
+    }
+
+    if (wasHost)
+    {
+      const nextHost = getNextHostCandidate(room, activeLiveGame, userId);
+
+      if (!nextHost)
+      {
+        return res.status(500).json({ ok: false, error: "Failed to assign a new host." });
+      }
+
+      room.hostID = nextHost.userId;
+      room.hostName = await resolveUsername(nextHost.userId, nextHost.username || room.hostName);
+      applyHostToRoomMembers(room, nextHost.userId);
+    }
+
+    room.status = normalizeRoomStatus(room);
     await room.save();
 
-    const io = req.app.get("io");
-    io.emit("rooms:changed");
+    if (io)
+    {
+      if (wasHost)
+      {
+        emitHostTransferred(io, room, activeLiveGame);
+      }
+      else
+      {
+        io.emit("rooms:changed");
+      }
+    }
 
-    return res.status(200).json({ ok: true, room });
+    return res.status(200).json({ ok: true, room, hostTransferred: wasHost });
   }
   catch (err)
   {

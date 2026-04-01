@@ -1,5 +1,7 @@
 const LiveGameModel = require("../database/models/LiveGame");
 const RoomModel = require("../database/models/Room");
+const RoomChatMessageModel = require("../database/models/RoomChatMessage");
+const { UserModel } = require("../database/models/User");
 
 const livePresence = new Map();
 
@@ -18,6 +20,70 @@ function normalizeRoomStatus(room)
   const maxPlayers = Number(room.settings?.maxPlayers ?? 4);
   const memberCount = Array.isArray(room.members) ? room.members.length : 0;
   return memberCount >= maxPlayers ? "full" : "open";
+}
+
+
+function getNextHostCandidate(room, liveGame, excludedUserId)
+{
+  const normalizedExcludedUserId = excludedUserId ? String(excludedUserId) : "";
+
+  const seatedCandidates = Array.isArray(liveGame?.seats)
+    ? [...liveGame.seats]
+        .filter((seat) => String(seat.userId || "") !== normalizedExcludedUserId)
+        .sort((a, b) => Number(a.seatNumber ?? 99) - Number(b.seatNumber ?? 99))
+    : [];
+
+  for (const seat of seatedCandidates)
+  {
+    const matchingMember = room.members.find(
+      (member) => String(member.userID || "") === String(seat.userId || "")
+    );
+
+    if (matchingMember)
+    {
+      return {
+        userId: String(seat.userId),
+        username: seat.username || matchingMember.userID?.username || "",
+      };
+    }
+  }
+
+  const roomCandidates = Array.isArray(room.members)
+    ? [...room.members]
+        .filter((member) => String(member.userID || "") !== normalizedExcludedUserId)
+        .sort((a, b) => new Date(a.joinedAt || 0).getTime() - new Date(b.joinedAt || 0).getTime())
+    : [];
+
+  const firstRoomCandidate = roomCandidates[0];
+
+  if (!firstRoomCandidate)
+  {
+    return null;
+  }
+
+  return {
+    userId: String(firstRoomCandidate.userID),
+    username: firstRoomCandidate.userID?.username || "",
+  };
+}
+
+function applyHostToRoomMembers(room, nextHostUserId)
+{
+  for (const member of room.members)
+  {
+    member.role = String(member.userID) === String(nextHostUserId) ? "host" : "player";
+  }
+}
+
+async function resolveUsername(userId, fallback = "")
+{
+  if (!userId)
+  {
+    return fallback;
+  }
+
+  const user = await UserModel.findById(userId).select("username").lean().exec();
+  return user?.username || fallback;
 }
 
 function getOrCreateEntry({ gameId, roomId, userId, username })
@@ -76,6 +142,8 @@ async function removePlayerFromGameAndRoom(gameId, roomId, userId)
 
   let updatedGame = null;
   let updatedRoom = null;
+  let roomDeleted = false;
+  let hostTransferred = false;
 
   if (game)
   {
@@ -111,18 +179,48 @@ async function removePlayerFromGameAndRoom(gameId, roomId, userId)
 
   if (room)
   {
+    const leavingMember = room.members.find((member) => member.userID?.toString() === userId) || null;
     const before = room.members.length;
     room.members = room.members.filter((member) => member.userID?.toString() !== userId);
-    room.status = normalizeRoomStatus(room);
 
     if (room.members.length !== before)
     {
-      await room.save();
-      updatedRoom = room;
+      if (room.members.length === 0)
+      {
+        await Promise.all([
+          RoomChatMessageModel.deleteMany({ roomId }).exec(),
+          LiveGameModel.deleteMany({ roomId }).exec(),
+          RoomModel.deleteOne({ _id: roomId }).exec(),
+        ]);
+
+        clearPresenceForGame(gameId);
+        roomDeleted = true;
+      }
+      else
+      {
+        const wasHost = String(room.hostID) === String(userId) || leavingMember?.role === "host";
+
+        if (wasHost)
+        {
+          const nextHost = getNextHostCandidate(room, updatedGame || game, userId);
+
+          if (nextHost)
+          {
+            room.hostID = nextHost.userId;
+            room.hostName = await resolveUsername(nextHost.userId, nextHost.username || room.hostName);
+            applyHostToRoomMembers(room, nextHost.userId);
+            hostTransferred = true;
+          }
+        }
+
+        room.status = normalizeRoomStatus(room);
+        await room.save();
+        updatedRoom = room;
+      }
     }
   }
 
-  return { game: updatedGame, room: updatedRoom };
+  return { game: updatedGame, room: updatedRoom, roomDeleted, hostTransferred };
 }
 
 function emitPresenceChanged(io, entry)
@@ -140,6 +238,33 @@ function emitGameUpdated(io, game)
 {
   io.to(`live-game:${game._id}`).emit("game:updated", { game });
   io.to(`room:${game.roomId}`).emit("live-game:updated", { game });
+}
+
+function emitGameEnded(io, gameId, roomId)
+{
+  io.to(`live-game:${gameId}`).emit("game:ended", {
+    gameId: String(gameId),
+    roomId: String(roomId),
+  });
+
+  io.to(`room:${roomId}`).emit("game:ended", {
+    gameId: String(gameId),
+    roomId: String(roomId),
+  });
+}
+
+function emitHostTransferred(io, game, room)
+{
+  const payload = {
+    gameId: String(game._id),
+    roomId: String(game.roomId),
+    hostUserId: room.hostID ? String(room.hostID) : "",
+    hostName: room.hostName || "",
+  };
+
+  io.to(`live-game:${game._id}`).emit("game:host-transferred", payload);
+  io.to(`room:${game.roomId}`).emit("game:host-transferred", payload);
+  io.emit("rooms:changed");
 }
 
 function emitRoomUpdated(io, room)
@@ -268,10 +393,29 @@ async function handleExplicitLeave(io, socket, payload = {})
   socket.leave(`live-game:${gameId}`);
   socket.leave(`room:${roomId}`);
 
-  const { game, room } = await removePlayerFromGameAndRoom(gameId, roomId, userId);
+  const { game, room, roomDeleted, hostTransferred } = await removePlayerFromGameAndRoom(gameId, roomId, userId);
+
+  if (roomDeleted)
+  {
+    emitGameEnded(io, gameId, roomId);
+    io.to(`room:${roomId}`).emit("room:deleted", { roomId: String(roomId) });
+    io.emit("rooms:changed");
+    return;
+  }
 
   if (game) emitGameUpdated(io, game);
-  if (room) emitRoomUpdated(io, room);
+
+  if (room)
+  {
+    if (hostTransferred && (game || room))
+    {
+      emitHostTransferred(io, game || { _id: gameId, roomId }, room);
+    }
+    else
+    {
+      emitRoomUpdated(io, room);
+    }
+  }
 }
 
 async function handleDisconnect(io, socket)
@@ -342,14 +486,33 @@ async function sweep(io)
 
     livePresence.delete(key);
 
-    const { game, room } = await removePlayerFromGameAndRoom(
+    const { game, room, roomDeleted, hostTransferred } = await removePlayerFromGameAndRoom(
       entry.gameId,
       entry.roomId,
       entry.userId
     );
 
+    if (roomDeleted)
+    {
+      emitGameEnded(io, entry.gameId, entry.roomId);
+      io.to(`room:${entry.roomId}`).emit("room:deleted", { roomId: String(entry.roomId) });
+      io.emit("rooms:changed");
+      continue;
+    }
+
     if (game) emitGameUpdated(io, game);
-    if (room) emitRoomUpdated(io, room);
+
+    if (room)
+    {
+      if (hostTransferred && (game || room))
+      {
+        emitHostTransferred(io, game || { _id: entry.gameId, roomId: entry.roomId }, room);
+      }
+      else
+      {
+        emitRoomUpdated(io, room);
+      }
+    }
   }
 }
 
