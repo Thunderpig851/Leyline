@@ -11,6 +11,7 @@ type GameData =
 
   camEnabled: boolean;
   micEnabled: boolean;
+  viewerMode?: "player" | "spectator";
 }
 
 const gameDataDB = new Dexie("GameData") as Dexie & { gameData: EntityTable<GameData, "id"> };

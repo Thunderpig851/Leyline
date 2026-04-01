@@ -37,6 +37,13 @@ type GameSeat =
   stats?: GameStats | null;
 };
 
+type GameSpectator =
+{
+  userId: string;
+  username: string;
+  connectionStatus: "connected" | "reconnecting" | "away";
+};
+
 type ActiveGame =
 {
   _id: string;
@@ -58,6 +65,7 @@ type ActiveGame =
   activeTurnSeatNumber?: number | null;
   turnStartedAt?: string | null;
   seats: GameSeat[];
+  spectators?: GameSpectator[];
 };
 
 type ActiveGameResponse =
@@ -162,24 +170,9 @@ function clampCounter(value: number, min: number, max: number)
   return Math.max(min, Math.min(max, Math.round(value)));
 }
 
-function isCommanderFormat(format?: string)
-{
-  return String(format || "").toLowerCase() === "commander";
-}
-
-function getMaxPlayersForFormat(format?: string)
-{
-  return isCommanderFormat(format) ? 4 : 2;
-}
-
-function getVisibleSeatNumbers(format?: string)
-{
-  return getMaxPlayersForFormat(format) === 4 ? [1, 2, 3, 4] : [1, 2];
-}
-
 function getStartingLife(format?: string)
 {
-  return isCommanderFormat(format) ? 40 : 20;
+  return format === "commander" ? 40 : 20;
 }
 
 function getSeatCommanders(seat?: GameSeat | null)
@@ -290,13 +283,12 @@ export default function GamePage()
       .sort((a, b) => a.seatNumber - b.seatNumber)[0]?.userId ?? "";
 
   const roomTitle = session.roomTitle || "Placeholder Room";
-  const gameFormat = game?.settings?.format;
-  const isCommanderGame = isCommanderFormat(gameFormat);
   const effectiveHostUserId = currentHostUserId || fallbackHostUserId;
   const isHost = effectiveHostUserId === getStoredUserId();
-  const maxPlayers = getMaxPlayersForFormat(gameFormat);
-  const visibleSeatNumbers = getVisibleSeatNumbers(gameFormat);
+  const isCommanderGame = (game?.settings?.format || "commander") === "commander";
+  const maxPlayers = isCommanderGame ? 4 : 2;
   const playerCount = game?.seats?.filter((seat) => Boolean(seat.userId)).length ?? 0;
+  const spectatorCount = game?.spectators?.length ?? 0;
 
   useEffect(() =>
   {
@@ -327,7 +319,12 @@ export default function GamePage()
       return;
     }
 
-    if (mediaSession.status !== "connected")
+    const allowPassiveSpectatorBoot =
+      session.viewerMode === "spectator"
+      && session.roomId === roomId
+      && (mediaSession.status === "idle" || mediaSession.status === "connecting");
+
+    if (mediaSession.status !== "connected" && !allowPassiveSpectatorBoot)
     {
       if (forcedExitRef.current)
       {
@@ -341,7 +338,40 @@ export default function GamePage()
         state: { reason: "refresh-reconnect" },
       });
     }
-}, [roomId, mediaSession.status, navigate]);
+}, [roomId, mediaSession.status, navigate, session.roomId, session.viewerMode]);
+
+  useEffect(() =>
+  {
+    if (!roomId) return;
+    if (session.viewerMode !== "spectator") return;
+    if (session.roomId !== roomId) return;
+    if (mediaSession.status !== "idle") return;
+
+    let cancelled = false;
+
+    void (async () =>
+    {
+      try
+      {
+        await mediaSession.connectToSFU(roomId, { publishLocal: false });
+      }
+      catch (error)
+      {
+        if (cancelled)
+        {
+          return;
+        }
+
+        console.error("Failed to connect spectator session:", error);
+        navigate("/lobby", { replace: true });
+      }
+    })();
+
+    return () =>
+    {
+      cancelled = true;
+    };
+  }, [roomId, mediaSession, mediaSession.status, navigate, session.roomId, session.viewerMode]);
 
   useEffect(() =>
   {
@@ -374,7 +404,9 @@ export default function GamePage()
         setGame(activeGame);
         setGameId(activeGameId);
 
-        const joinGameResult = await apiPost(`/api/live-games/${activeGameId}/join`, {});
+        const joinGameResult = await apiPost(`/api/live-games/${activeGameId}/join`, {
+          role: session.viewerMode === "spectator" ? "spectator" : "player",
+        });
         if (!joinGameResult.ok)
         {
           console.error("Failed to join live game:", joinGameResult.error);
@@ -404,7 +436,7 @@ export default function GamePage()
     {
       cancelled = true;
     };
-  }, [roomId, mediaSession.status]);
+  }, [roomId, mediaSession.status, session.viewerMode]);
 
   useEffect(() =>
   {
@@ -507,11 +539,12 @@ export default function GamePage()
       if (payload.game._id !== gameId) return;
 
       const storedUserId = getStoredUserId();
-      const stillSeated = storedUserId
+      const stillParticipating = storedUserId
         ? payload.game.seats.some((seat) => seat.userId === storedUserId)
+          || (payload.game.spectators ?? []).some((spectator) => spectator.userId === storedUserId)
         : true;
 
-      if (!stillSeated)
+      if (!stillParticipating)
       {
         if (socket.connected && roomId && storedUserId)
         {
@@ -916,6 +949,12 @@ export default function GamePage()
     return Boolean(game?.seats?.some((seat) => seat.userId === userId));
   }, [game]);
 
+  const isSpectator = useMemo(() =>
+  {
+    const userId = getStoredUserId();
+    return Boolean((game?.spectators ?? []).some((spectator) => spectator.userId === userId));
+  }, [game]);
+
   async function handleRandomizePlayerOrder()
   {
     if (!gameId || !isHost || randomizingOrder) return;
@@ -1313,9 +1352,8 @@ export default function GamePage()
     );
 
     const defaultLife = getStartingLife(game?.settings?.format);
-    const showCommanderFeatures = isCommanderFormat(game?.settings?.format);
 
-    return visibleSeatNumbers.map((seatNumber) =>
+    return [1, 2, 3, 4].map((seatNumber) =>
     {
       const seat = orderedSeats.find((entry) => entry.seatNumber === seatNumber);
 
@@ -1350,15 +1388,13 @@ export default function GamePage()
 
       const commanderDamageMap = seat.stats?.commanderDamage ?? {};
 
-      const commanderDamageOptions: CommanderDamageOption[] = showCommanderFeatures
-        ? orderedSeats
-            .filter((entry) => entry.userId !== seat.userId)
-            .map((entry) => ({
-              userId: entry.userId,
-              label: getSeatCommanders(entry).map((card) => card.name).join(" / ") || entry.username,
-              amount: commanderDamageMap[entry.userId] ?? 0,
-            }))
-        : [];
+      const commanderDamageOptions: CommanderDamageOption[] = orderedSeats
+        .filter((entry) => entry.userId !== seat.userId)
+        .map((entry) => ({
+          userId: entry.userId,
+          label: getSeatCommanders(entry).map((card) => card.name).join(" / ") || entry.username,
+          amount: commanderDamageMap[entry.userId] ?? 0,
+        }));
 
       return {
         seatNumber,
@@ -1373,26 +1409,24 @@ export default function GamePage()
         experience: seat.stats?.experience ?? 0,
         trackEnergy: Boolean(game?.settings?.trackEnergy),
         trackExperience: Boolean(game?.settings?.trackExperience),
-        commanders: showCommanderFeatures ? getSeatCommanders(seat) : [],
+        commanders: getSeatCommanders(seat),
         commanderDamageOptions,
-        hasMonarch: showCommanderFeatures && game?.monarchSeatNumber === seatNumber,
-        hasInitiative: showCommanderFeatures && game?.initiativeSeatNumber === seatNumber,
+        hasMonarch: game?.monarchSeatNumber === seatNumber,
+        hasInitiative: game?.initiativeSeatNumber === seatNumber,
         isSaving: savingSeatNumbers.includes(seatNumber),
       };
     });
-  }, [game, mediaSession.localStream, mediaSession.remoteMedia, savingSeatNumbers, visibleSeatNumbers]);
+  }, [game, mediaSession.localStream, mediaSession.remoteMedia, savingSeatNumbers]);
 
   const displaySeatSlots = useMemo(() =>
   {
     const normalizedBoardOrder = getNormalizedBoardOrder(game?.boardOrder);
     const seatSlotMap = new Map(seatSlots.map((slot) => [slot.seatNumber, slot]));
-    const allowedSeatNumbers = new Set(visibleSeatNumbers);
 
     return normalizedBoardOrder
-      .filter((seatNumber) => allowedSeatNumbers.has(seatNumber))
       .map((seatNumber) => seatSlotMap.get(seatNumber))
       .filter((slot): slot is (typeof seatSlots)[number] => Boolean(slot));
-  }, [game?.boardOrder, seatSlots, visibleSeatNumbers]);
+  }, [game?.boardOrder, seatSlots]);
 
   const activeCommanderSeat = useMemo(() =>
   {
@@ -1514,6 +1548,12 @@ export default function GamePage()
               {roomTitle}
             </h1>
 
+            {isSpectator ? (
+              <div className="inline-flex shrink-0 items-center gap-2 rounded-full border border-violet-300/30 bg-violet-400/10 px-3 py-1 text-xs font-semibold text-violet-100 shadow-lg">
+                Spectating
+              </div>
+            ) : null}
+
             {game?.gameStartedAt ? (
               <div className="inline-flex shrink-0 items-center gap-2 rounded-full border border-cyan-300/30 bg-cyan-400/10 px-3 py-1 text-xs font-semibold text-cyan-100 shadow-lg">
                 <span className="hidden sm:inline text-cyan-50/90">
@@ -1584,19 +1624,18 @@ export default function GamePage()
       </header>
 
       <div className="relative h-[calc(100dvh-74px)] w-full overflow-hidden">
-                <main className="h-full w-full px-4 py-3">
-                <div
-                  className={`grid h-full gap-2.5 ${
-                    isCommanderGame
-                      ? "grid-cols-2 grid-rows-2"
-                      : "mx-auto max-w-[1200px] grid-cols-1 grid-rows-2"
-                  }`}
-                >
+        <main className="h-full w-full px-4 py-3">
+          <div
+            className={`grid h-full gap-2.5 ${
+              isCommanderGame
+                ? "grid-cols-2 grid-rows-2"
+                : "mx-auto max-w-[1200px] grid-cols-1 grid-rows-2"
+            }`}
+          >
             {displaySeatSlots.map((slot) => (
               <PlayerTile
                 key={slot.seatNumber}
                 seatNumber={slot.seatNumber}
-                mode={isCommanderGame ? "commander" : "duel"}
                 isSelf={slot.isSelf}
                 title={slot.title}
                 stream={slot.stream}
@@ -1666,7 +1705,7 @@ export default function GamePage()
                     : undefined
                 }
                 onCommanderDamageChange={
-                  isCommanderGame && slot.isSelf
+                  slot.isSelf
                     ? (nextCommanderDamage) =>
                     {
                       void handleCommanderDamageChange(slot.seatNumber, nextCommanderDamage);
@@ -1674,17 +1713,17 @@ export default function GamePage()
                     : undefined
                 }
                 onSetMonarch={
-                  isCommanderGame && slot.isSelf
+                  slot.isSelf
                     ? (nextSeatNumber) => { void handleSetMonarch(nextSeatNumber); }
                     : undefined
                 }
                 onSetInitiative={
-                  isCommanderGame && slot.isSelf
+                  slot.isSelf
                     ? (nextSeatNumber) => { void handleSetInitiative(nextSeatNumber); }
                     : undefined
                 }
                 onOpenCommanderPanel={
-                  isCommanderGame && slot.isSelf
+                  slot.isSelf
                     ? () =>
                     {
                       setCommanderPanelSeatNumber(slot.seatNumber);
@@ -1704,7 +1743,6 @@ export default function GamePage()
           finalOrder={shuffleOverlay.finalOrder}
         />
 
-{isCommanderGame ? (
         <CommanderPanel
           open={commanderPanelOpen}
           seatTitle={activeCommanderSeat?.title || "You"}
@@ -1723,7 +1761,6 @@ export default function GamePage()
             }
           }}
         />
-        ) : null}
 
         <LeftSidePanel
           open={leftOpen}
@@ -1735,6 +1772,9 @@ export default function GamePage()
           privateCodeCopiedMessage={privateCodeCopiedMessage}
           playerCount={playerCount}
           maxPlayers={maxPlayers}
+          spectatorCount={spectatorCount}
+          maxSpectators={4}
+          showLocalMediaControls={!isSpectator}
           randomizingOrder={randomizingOrder}
           resettingGame={resettingGame}
           endingGame={endingGame}
@@ -1749,8 +1789,8 @@ export default function GamePage()
               ? () => { void handleToggleDayNight(); }
               : undefined
           }
-          onToggleSelfMic={handleToggleSelfMic}
-          onToggleSelfCam={handleToggleSelfCam}
+          onToggleSelfMic={isSpectator ? undefined : handleToggleSelfMic}
+          onToggleSelfCam={isSpectator ? undefined : handleToggleSelfCam}
           onCopyPrivateCode={() => { void handleCopyPrivateCode(); }}
         />
 

@@ -156,6 +156,64 @@ const GameSeatSchema = new mongoose.Schema(
 { _id: false }
 );
 
+
+const GameSpectatorSchema = new mongoose.Schema(
+{
+  userId:
+  {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User",
+    required: true,
+  },
+
+  username:
+  {
+    type: String,
+    required: true,
+    trim: true,
+  },
+
+  joinedAt:
+  {
+    type: Date,
+    default: Date.now,
+  },
+
+  connectionStatus:
+  {
+    type: String,
+    enum: ["connected", "reconnecting", "away"],
+    default: "connected",
+    required: true,
+  },
+
+  lastSeenAt:
+  {
+    type: Date,
+    default: Date.now,
+  },
+
+  lastActiveAt:
+  {
+    type: Date,
+    default: Date.now,
+  },
+
+  disconnectDeadlineAt:
+  {
+    type: Date,
+    default: null,
+  },
+
+  awaySinceAt:
+  {
+    type: Date,
+    default: null,
+  },
+},
+{ _id: false }
+);
+
 const LiveGameSchema = new mongoose.Schema(
 {
   roomId:
@@ -214,6 +272,23 @@ const LiveGameSchema = new mongoose.Schema(
         return new Set(seatNumbers).size === seats.length;
       },
       message: "Seats must be unique and cannot exceed 4 players.",
+    },
+  },
+
+  spectators:
+  {
+    type: [GameSpectatorSchema],
+    default: [],
+    validate:
+    {
+      validator: function(spectators)
+      {
+        if (spectators.length > 4) return false;
+
+        const userIds = spectators.map((spectator) => String(spectator.userId || ""));
+        return new Set(userIds.filter(Boolean)).size === spectators.length;
+      },
+      message: "Spectators must be unique and cannot exceed 4 watchers.",
     },
   },
 

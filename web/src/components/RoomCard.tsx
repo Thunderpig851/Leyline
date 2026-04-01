@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
-import { Crown } from "lucide-react";
+import { Crown, Eye } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { apiPost } from "../lib/api";
+import { socket } from "../lib/socket";
+import { useGameSession } from "../context/GameSession";
+import { useMediaSession } from "../context/MediaSession";
 
 type RoomSeat =
 {
@@ -24,6 +28,9 @@ export type RoomCardData =
   bracket?: string;
   format?: string;
   seats?: RoomSeat[];
+  activeGameId?: string | null;
+  spectatorCount?: number;
+  maxSpectators?: number;
   createdAt?: string;
 };
 
@@ -243,7 +250,11 @@ function MetaPill(
 export default function RoomCard({ room, onJoin }: RoomCardProps)
 {
   const navigate = useNavigate();
+  const { setRoom, setViewerMode } = useGameSession();
+  const { stopPreview, disconnectFromSFU } = useMediaSession();
   const [commanderVisualMap, setCommanderVisualMap] = useState<Record<string, CommanderVisual | null>>({});
+  const [watching, setWatching] = useState(false);
+  const [watchError, setWatchError] = useState<string | null>(null);
 
   const {
     id,
@@ -257,6 +268,9 @@ export default function RoomCard({ room, onJoin }: RoomCardProps)
     bracket,
     format,
     seats = [],
+    activeGameId,
+    spectatorCount = 0,
+    maxSpectators = 4,
     createdAt,
   } = room;
 
@@ -269,6 +283,8 @@ export default function RoomCard({ room, onJoin }: RoomCardProps)
   const isFull = status === "full";
   const showBracket = format?.toLowerCase() === "commander" && bracket;
   const trimmedDescription = description?.trim();
+  const canDirectWatch = Boolean(activeGameId) && visibility !== "private";
+  const spectatorsFull = spectatorCount >= maxSpectators;
 
   useEffect(() =>
   {
@@ -323,6 +339,51 @@ export default function RoomCard({ room, onJoin }: RoomCardProps)
     navigate(`/rooms/${id}`);
   }
 
+  async function handleWatch()
+  {
+    if (!canDirectWatch || spectatorsFull || watching)
+    {
+      return;
+    }
+
+    setWatching(true);
+    setWatchError(null);
+
+    try
+    {
+      disconnectFromSFU();
+      stopPreview();
+      setRoom(id, title);
+      setViewerMode("spectator");
+
+      const roomJoinResult = await apiPost<{ ok: boolean }>(`/api/rooms/${id}/join`, {
+        role: "spectator",
+      });
+
+      if (!roomJoinResult.ok)
+      {
+        setWatchError(roomJoinResult.error || "Failed to join as spectator.");
+        return;
+      }
+
+      if (socket.connected)
+      {
+        socket.emit("room:join", { roomId: id });
+      }
+
+      navigate(`/rooms/${id}/game`);
+    }
+    catch (error)
+    {
+      console.error("Failed to watch room:", error);
+      setWatchError("Failed to join as spectator.");
+    }
+    finally
+    {
+      setWatching(false);
+    }
+  }
+
   return (
     <article className="relative overflow-hidden rounded-2xl border border-white/10 bg-slate-950/60 p-4 ring-1 ring-white/5">
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-emerald-400/12 via-transparent to-cyan-300/10" />
@@ -336,14 +397,28 @@ export default function RoomCard({ room, onJoin }: RoomCardProps)
             </h2>
           </div>
 
-          <button
-            type="button"
-            onClick={handleJoin}
-            disabled={isFull}
-            className="h-8 shrink-0 self-start rounded-lg border border-teal-300/35 bg-teal-500/10 px-3 text-xs font-medium text-slate-100 transition-colors transition-shadow duration-150 hover:border-teal-200 hover:bg-teal-300 hover:text-slate-900 hover:shadow-lg hover:shadow-teal-400/25 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {isFull ? "Full" : "Join"}
-          </button>
+          <div className="flex items-start gap-2">
+            {canDirectWatch ? (
+              <button
+                type="button"
+                onClick={() => { void handleWatch(); }}
+                disabled={spectatorsFull || watching}
+                className="inline-flex h-8 shrink-0 items-center gap-1.5 self-start rounded-lg border border-violet-300/35 bg-violet-500/10 px-3 text-xs font-medium text-slate-100 transition-colors transition-shadow duration-150 hover:border-violet-200 hover:bg-violet-300 hover:text-slate-900 hover:shadow-lg hover:shadow-violet-400/25 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Eye className="h-3.5 w-3.5" />
+                {watching ? "Watching..." : spectatorsFull ? "Watch Full" : "Watch"}
+              </button>
+            ) : null}
+
+            <button
+              type="button"
+              onClick={handleJoin}
+              disabled={isFull}
+              className="h-8 shrink-0 self-start rounded-lg border border-teal-300/35 bg-teal-500/10 px-3 text-xs font-medium text-slate-100 transition-colors transition-shadow duration-150 hover:border-teal-200 hover:bg-teal-300 hover:text-slate-900 hover:shadow-lg hover:shadow-teal-400/25 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isFull ? "Full" : "Join"}
+            </button>
+          </div>
 
           <div className="col-span-2 flex justify-end overflow-hidden">
             <div className="flex flex-nowrap items-center gap-1.5">
@@ -372,6 +447,12 @@ export default function RoomCard({ room, onJoin }: RoomCardProps)
           <p className="mt-3 line-clamp-2 text-sm leading-6 text-slate-300">
             {trimmedDescription}
           </p>
+        ) : null}
+
+        {watchError ? (
+          <div className="mt-3 rounded-xl border border-red-400/25 bg-red-500/10 px-3 py-2 text-xs text-red-100">
+            {watchError}
+          </div>
         ) : null}
 
         <div className="mt-4 grid gap-2">

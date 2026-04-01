@@ -8,11 +8,6 @@ const { clearPresenceForGame, clearPresenceForUser } = require("../../middleware
 
 router.get("/", (req, res) => res.json({ ok: true, route: "live-games" }));
 
-function getMaxPlayersForFormat(format)
-{
-  return format === "commander" ? 4 : 2;
-}
-
 function getStartingLife(format)
 {
   return format === "commander" ? 40 : 20;
@@ -33,7 +28,7 @@ function getHostUserIdForGame(game, room)
 
 function normalizeRoomStatus(room)
 {
-  const maxPlayers = getMaxPlayersForFormat(room.settings?.format);
+  const maxPlayers = Number(room.settings?.maxPlayers ?? 4);
   const memberCount = Array.isArray(room.members) ? room.members.length : 0;
   return memberCount >= maxPlayers ? "full" : "open";
 }
@@ -134,6 +129,18 @@ function emitRoomUpdated(io, room)
 {
   io.to(`room:${room._id}`).emit("room:updated", { room });
   io.emit("rooms:changed");
+}
+
+function getSpectatorParticipant(game, userId)
+{
+  return Array.isArray(game?.spectators)
+    ? game.spectators.find((spectator) => spectator.userId?.toString() === String(userId))
+    : null;
+}
+
+function getSpectatorCount(game)
+{
+  return Array.isArray(game?.spectators) ? game.spectators.length : 0;
 }
 
 function emitPlayerKicked(io, game, payload)
@@ -498,19 +505,17 @@ router.post("/start", requireAuth, async (req, res) =>
       return res.status(200).json({ ok: true, game: existingGame, alreadyActive: true });
     }
 
-    const resolvedFormat = room.settings?.format || format || "commander";
-    const startingLife = getStartingLife(resolvedFormat);
-    const usesCommanderOnlyTrackers = resolvedFormat === "commander";
+    const startingLife = getStartingLife(format);
 
     const game = await LiveGameModel.create({
       roomId,
       status: "active",
 
       settings: {
-        format: resolvedFormat,
+        format,
         trackEnergy: false,
-        trackMonarch: usesCommanderOnlyTrackers,
-        trackInitiative: usesCommanderOnlyTrackers,
+        trackMonarch: true,
+        trackInitiative: true,
         trackExperience: false,
         enableDayNight: false,
       },
@@ -536,7 +541,8 @@ router.post("/start", requireAuth, async (req, res) =>
             experience: 0,
           }
         }
-      ]
+      ],
+      spectators: []
     });
 
     syncBoardOrder(game);
@@ -559,6 +565,7 @@ router.post("/:gameId/join", requireAuth, async (req, res) =>
   try
   {
     const { seatNumber } = req.body || {};
+    const requestedRole = req.body?.role === "spectator" ? "spectator" : "player";
 
     const game = await LiveGameModel.findById(req.params.gameId).exec();
     if (!game)
@@ -577,18 +584,72 @@ router.post("/:gameId/join", requireAuth, async (req, res) =>
       return res.status(404).json({ ok: false, error: "Room not found for game." });
     }
 
-    const isRoomMember = room.members?.some(
+    const roomMember = room.members?.find(
       (member) => member.userID.toString() === req.user._id.toString()
     );
 
-    if (!isRoomMember)
+    if (!roomMember)
     {
-      return res.status(403).json({ ok: false, error: "You must join the room before joining a game seat." });
+      return res.status(403).json({ ok: false, error: "You must join the room before joining a game." });
     }
 
     const existingSeat = game.seats?.find(
       (seat) => seat.userId?.toString() === req.user._id.toString()
     );
+
+    const existingSpectator = getSpectatorParticipant(game, req.user._id);
+
+    if (requestedRole === "spectator")
+    {
+      if (existingSeat)
+      {
+        return res.status(400).json({ ok: false, error: "Seated players cannot join the game as spectators." });
+      }
+
+      if (existingSpectator)
+      {
+        existingSpectator.connectionStatus = "connected";
+        existingSpectator.username = req.user.username;
+        existingSpectator.lastSeenAt = new Date();
+        existingSpectator.lastActiveAt = new Date();
+        if (!existingSpectator.joinedAt) existingSpectator.joinedAt = new Date();
+
+        await game.save();
+
+        const io = req.app.get("io");
+        emitGameUpdated(io, game);
+
+        return res.status(200).json({ ok: true, game, alreadySpectating: true });
+      }
+
+      if (getSpectatorCount(game) >= 4)
+      {
+        return res.status(400).json({ ok: false, error: "This game already has the maximum number of spectators." });
+      }
+
+      game.spectators.push({
+        userId: req.user._id,
+        username: req.user.username,
+        joinedAt: new Date(),
+        connectionStatus: "connected",
+        lastSeenAt: new Date(),
+        lastActiveAt: new Date(),
+        disconnectDeadlineAt: null,
+        awaySinceAt: null,
+      });
+
+      await game.save();
+
+      const io = req.app.get("io");
+      emitGameUpdated(io, game);
+
+      return res.status(200).json({ ok: true, game, role: "spectator" });
+    }
+
+    if (roomMember.role === "spectator")
+    {
+      return res.status(403).json({ ok: false, error: "Spectators cannot claim a player seat." });
+    }
 
     if (existingSeat)
     {
@@ -606,7 +667,12 @@ router.post("/:gameId/join", requireAuth, async (req, res) =>
       return res.status(200).json({ ok: true, game, alreadySeated: true });
     }
 
-    const maxPlayers = getMaxPlayersForFormat(room.settings?.format || game.settings?.format);
+    if (existingSpectator)
+    {
+      return res.status(400).json({ ok: false, error: "Spectators cannot claim a player seat." });
+    }
+
+    const maxPlayers = Number(room.settings?.maxPlayers ?? 4);
     const takenSeatNumbers = new Set(game.seats.map((seat) => seat.seatNumber));
 
     let assignedSeatNumber = seatNumber;
@@ -661,7 +727,7 @@ router.post("/:gameId/join", requireAuth, async (req, res) =>
     const io = req.app.get("io");
     emitGameUpdated(io, game);
 
-    return res.status(200).json({ ok: true, game });
+    return res.status(200).json({ ok: true, game, role: "player" });
   }
   catch (err)
   {
@@ -683,17 +749,32 @@ router.post("/:gameId/leave", requireAuth, async (req, res) =>
     const userId = req.user._id.toString();
     const seatIndex = game.seats.findIndex((seat) => seat.userId?.toString() === userId);
 
-    if (seatIndex === -1)
+    if (seatIndex !== -1)
+    {
+      const [removedSeat] = game.seats.splice(seatIndex, 1);
+
+      clearSeatMarkersIfNeeded(game, removedSeat.seatNumber);
+      syncBoardOrder(game);
+      clearActiveTurnIfNeeded(game);
+
+      await game.save();
+
+      const io = req.app.get("io");
+      emitGameUpdated(io, game);
+
+      return res.status(200).json({ ok: true, game });
+    }
+
+    const spectatorIndex = Array.isArray(game.spectators)
+      ? game.spectators.findIndex((spectator) => spectator.userId?.toString() === userId)
+      : -1;
+
+    if (spectatorIndex === -1)
     {
       return res.status(200).json({ ok: true, game, alreadyLeft: true });
     }
 
-    const [removedSeat] = game.seats.splice(seatIndex, 1);
-
-    clearSeatMarkersIfNeeded(game, removedSeat.seatNumber);
-    syncBoardOrder(game);
-    clearActiveTurnIfNeeded(game);
-
+    game.spectators.splice(spectatorIndex, 1);
     await game.save();
 
     const io = req.app.get("io");
@@ -704,7 +785,7 @@ router.post("/:gameId/leave", requireAuth, async (req, res) =>
   catch (err)
   {
     console.error("Error leaving game seat:", err);
-    return res.status(500).json({ ok: false, error: err.message || "Failed to leave game seat." });
+    return res.status(500).json({ ok: false, error: err.message || "Failed to leave game." });
   }
 });
 

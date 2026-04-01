@@ -65,7 +65,7 @@ type MediaSessionContextType =
   startPreview: () => Promise<void>;
   stopPreview: () => void;
 
-  connectToSFU: (roomId: string) => Promise<void>;
+  connectToSFU: (roomId: string, options?: { publishLocal?: boolean }) => Promise<void>;
   disconnectFromSFU: () => void;
 
   toggleCam: () => void;
@@ -351,7 +351,10 @@ export function MediaSessionProvider({ children }: { children: React.ReactNode }
     setPrefs({ selectedAudioId: deviceId });
   }, [setPrefs]);
 
-  const connectToSFU = useCallback(async (roomId: string) =>
+  const connectToSFU = useCallback(async (
+    roomId: string,
+    options: { publishLocal?: boolean } = {}
+  ) =>
   {
     setStatus("connecting");
     setError(null);
@@ -458,7 +461,11 @@ export function MediaSessionProvider({ children }: { children: React.ReactNode }
         }
       }
 
-      await publishLocalTracks();
+      if (options.publishLocal !== false)
+      {
+        await publishLocalTracks();
+      }
+
       setPlayer(peerId);
       setStatus("connected");
     }
@@ -530,6 +537,12 @@ export function MediaSessionProvider({ children }: { children: React.ReactNode }
 
   useEffect(() =>
   {
+    if (session.viewerMode === "spectator")
+    {
+      stopPreview();
+      return;
+    }
+
     if (!selectedVideoId && !selectedAudioId) return;
 
     void startPreview();
@@ -538,7 +551,7 @@ export function MediaSessionProvider({ children }: { children: React.ReactNode }
     {
       stopPreview();
     };
-  }, [selectedVideoId, selectedAudioId, startPreview, stopPreview]);
+  }, [selectedVideoId, selectedAudioId, startPreview, stopPreview, session.viewerMode]);
 
   const value = useMemo<MediaSessionContextType>(() => ({
     status,

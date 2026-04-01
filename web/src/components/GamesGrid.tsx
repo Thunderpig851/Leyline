@@ -19,6 +19,9 @@ type GridRoom =
   status?: "open" | "full";
   members?: Array<unknown>;
   seats?: GridSeat[];
+  activeGameId?: string | null;
+  spectatorCount?: number;
+  maxSpectators?: number;
   settings?:
   {
     format?: string;
@@ -66,6 +69,9 @@ export default function GamesGrid({ rooms, onJoinRoom }: GamesGridProps)
         playersCount,
         maxPlayers: r.settings?.maxPlayers ?? 4,
         seats,
+        activeGameId: r.activeGameId ?? null,
+        spectatorCount: Number(r.spectatorCount ?? 0),
+        maxSpectators: Number(r.maxSpectators ?? 4),
         createdAt: r.createdAt,
       };
     }),

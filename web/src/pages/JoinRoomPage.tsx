@@ -27,6 +27,9 @@ type RoomResponse =
     visibility?: "public" | "private";
     hostName?: string;
     isHost?: boolean;
+    activeGameId?: string | null;
+    spectatorCount?: number;
+    maxSpectators?: number;
     settings?:
     {
       format?: string;
@@ -34,6 +37,16 @@ type RoomResponse =
       maxPlayers?: number;
       allowSpectators?: boolean;
     };
+  };
+  error?: string;
+};
+
+type ActiveGameSummaryResponse =
+{
+  ok: boolean;
+  game?: {
+    _id: string;
+    spectators?: Array<{ userId: string }>;
   };
   error?: string;
 };
@@ -63,7 +76,7 @@ export default function JoinRoomPage()
   const { roomId = "" } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const { setRoom, reset } = useGameSession();
+  const { session, setRoom, setViewerMode, reset } = useGameSession();
 
   const {
     videoInputs,
@@ -87,6 +100,9 @@ export default function JoinRoomPage()
   const [roomFormat, setRoomFormat] = useState("");
   const [isHost, setIsHost] = useState(false);
   const [hostPrivateCode, setHostPrivateCode] = useState<string | null>(null);
+  const [activeGameId, setActiveGameId] = useState<string | null>(null);
+  const [spectatorCount, setSpectatorCount] = useState(0);
+  const [maxSpectators, setMaxSpectators] = useState(4);
   const [copyMessage, setCopyMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [aspect, setAspect] = useState<Aspect>("16:9");
@@ -169,6 +185,9 @@ export default function JoinRoomPage()
         setRoomVisibility(room.visibility === "private" ? "private" : "public");
         setRoomFormat(room.settings?.format || "");
         setIsHost(Boolean(room.isHost));
+        setActiveGameId(room.activeGameId || null);
+        setSpectatorCount(Number(room.spectatorCount ?? 0));
+        setMaxSpectators(Number(room.maxSpectators ?? 4));
 
         await ensurePermissionAndListDevices();
       }
@@ -260,7 +279,7 @@ export default function JoinRoomPage()
     }
   }
 
-  async function joinGame()
+  async function enterRoom(mode: "player" | "spectator")
   {
     if (!roomId) return;
 
@@ -270,16 +289,18 @@ export default function JoinRoomPage()
     try
     {
       setRoom(roomId, roomTitle);
+      setViewerMode(mode);
 
       const normalizedCode = normalizePrivateCode(joinCode);
-      const res = await apiPost<{ ok: boolean }>(`/api/rooms/${roomId}/join`, {
+      const roomJoinResult = await apiPost<{ ok: boolean }>(`/api/rooms/${roomId}/join`, {
         privateCode: normalizedCode || undefined,
+        role: mode,
       });
 
-      if (!res.ok)
+      if (!roomJoinResult.ok)
       {
-        const joinError = res.error;
-        setErrorMessage(joinError || "Failed to join room.");
+        const joinError = roomJoinResult.error;
+        setErrorMessage(joinError || `Failed to join room as ${mode}.`);
         return;
       }
 
@@ -293,12 +314,42 @@ export default function JoinRoomPage()
         });
       }
 
+      const resolvedActiveGameId =
+        activeGameId ||
+        (await (async () =>
+        {
+          const activeGameResult = await apiGet<ActiveGameSummaryResponse>(`/api/live-games/room/${roomId}`);
+
+          if (!activeGameResult.ok || !activeGameResult.data?.game?._id)
+          {
+            return null;
+          }
+
+          setActiveGameId(activeGameResult.data.game._id);
+          setSpectatorCount(activeGameResult.data.game.spectators?.length ?? 0);
+          return activeGameResult.data.game._id;
+        })());
+
+      if (!resolvedActiveGameId)
+      {
+        setErrorMessage(mode === "spectator"
+          ? "There is no active game to spectate right now."
+          : "No active game was found for this room.");
+        await apiPost(`/api/rooms/${roomId}/leave`, {});
+        return;
+      }
+
       if (socket.connected)
       {
         socket.emit("room:join", { roomId });
       }
 
-      await connectToSFU(roomId);
+      if (mode === "spectator")
+      {
+        stopPreview();
+      }
+
+      await connectToSFU(roomId, { publishLocal: mode === "player" });
 
       navigate(`/rooms/${roomId}/game`);
     }
@@ -306,11 +357,17 @@ export default function JoinRoomPage()
     {
       console.error("Failed to join room:", err);
       setErrorMessage(err?.message || "Failed to join room.");
+      await apiPost(`/api/rooms/${roomId}/leave`, {});
     }
     finally
     {
       setLoading(false);
     }
+  }
+
+  async function joinGame()
+  {
+    await enterRoom("player");
   }
 
   async function leaveRoomAndGoBack()
@@ -363,6 +420,12 @@ export default function JoinRoomPage()
           {roomFormat ? (
             <span className="rounded-full border border-teal-300/20 bg-teal-500/10 px-2 py-0.5 text-[11px] uppercase tracking-[0.18em] text-teal-100">
               {roomFormat}
+            </span>
+          ) : null}
+
+          {activeGameId ? (
+            <span className="rounded-full border border-cyan-300/20 bg-cyan-500/10 px-2 py-0.5 text-[11px] uppercase tracking-[0.18em] text-cyan-100">
+              {spectatorCount}/{maxSpectators} spectators
             </span>
           ) : null}
         </div>
@@ -492,7 +555,9 @@ export default function JoinRoomPage()
             <div className="flex h-full flex-col">
               <div className="flex items-end justify-between gap-3">
                 <div>
-                  <div className="text-sm font-semibold text-slate-100">Preview</div>
+                  <div className="text-sm font-semibold text-slate-100">
+                    Preview
+                  </div>
                   <div className="mt-1 flex items-center gap-3 text-xs text-slate-400">
                     <div className="flex items-center gap-1.5">
                       {selectedVideoId ? <StatusOkIcon /> : <StatusBadIcon />}
@@ -564,7 +629,7 @@ export default function JoinRoomPage()
                              disabled:opacity-50 disabled:cursor-not-allowed"
                   onClick={() => { void joinGame(); }}
                 >
-                  {loading ? "Joining..." : "Join Room"}
+                  {loading && session.viewerMode !== "spectator" ? "Joining..." : "Join Room"}
                 </button>
               </div>
             </div>

@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import {
   Copy,
-  Crown,
   KeyRound,
   Skull,
   Mic,
@@ -25,6 +24,9 @@ type LeftSidePanelProps =
   privateCodeCopiedMessage?: string | null;
   playerCount: number;
   maxPlayers: number;
+  spectatorCount?: number;
+  maxSpectators?: number;
+  showLocalMediaControls?: boolean;
   randomizingOrder?: boolean;
   resettingGame?: boolean;
   endingGame?: boolean;
@@ -50,6 +52,9 @@ export default function LeftSidePanel({
   privateCodeCopiedMessage = null,
   playerCount,
   maxPlayers,
+  spectatorCount = 0,
+  maxSpectators = 4,
+  showLocalMediaControls = true,
   randomizingOrder = false,
   resettingGame = false,
   endingGame = false,
@@ -97,6 +102,9 @@ export default function LeftSidePanel({
             </div>
             <div className="mt-1 text-xs text-slate-400">
               {playerCount}/{maxPlayers} players seated
+            </div>
+            <div className="mt-1 text-xs text-slate-500">
+              {spectatorCount}/{maxSpectators} spectators
             </div>
           </div>
 
@@ -193,37 +201,43 @@ export default function LeftSidePanel({
               </div>
             </div>
 
-            <div className="rounded-2xl border border-white/10 bg-slate-950/55 p-3">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-sm font-medium text-slate-100">
-                    Media
+            {showLocalMediaControls ? (
+              <div className="rounded-2xl border border-white/10 bg-slate-950/55 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-medium text-slate-100">
+                      Media
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={onToggleSelfMic}
-                  disabled={!onToggleSelfMic}
-                  className={`inline-flex items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold transition ${micButtonClass} disabled:cursor-not-allowed disabled:opacity-50`}
-                >
-                  {micEnabled ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
-                  {micEnabled ? "Mic On" : "Mic Off"}
-                </button>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={onToggleSelfMic}
+                    disabled={!onToggleSelfMic}
+                    className={`inline-flex items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold transition ${micButtonClass} disabled:cursor-not-allowed disabled:opacity-50`}
+                  >
+                    {micEnabled ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
+                    {micEnabled ? "Mic On" : "Mic Off"}
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={onToggleSelfCam}
-                  disabled={!onToggleSelfCam}
-                  className={`inline-flex items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold transition ${camButtonClass} disabled:cursor-not-allowed disabled:opacity-50`}
-                >
-                  {camEnabled ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}
-                  {camEnabled ? "Screen On" : "Screen Off"}
-                </button>
+                  <button
+                    type="button"
+                    onClick={onToggleSelfCam}
+                    disabled={!onToggleSelfCam}
+                    className={`inline-flex items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold transition ${camButtonClass} disabled:cursor-not-allowed disabled:opacity-50`}
+                  >
+                    {camEnabled ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}
+                    {camEnabled ? "Screen On" : "Screen Off"}
+                  </button>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="rounded-2xl border border-white/10 bg-slate-950/55 p-3 text-sm text-slate-300">
+                Spectators can watch the table, but they do not publish mic or camera.
+              </div>
+            )}
           </div>
         </section>
       </div>

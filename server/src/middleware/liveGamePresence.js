@@ -28,15 +28,12 @@ function clearPresenceForUser(gameId, userId)
   livePresence.delete(makeKey(normalizedGameId, normalizedUserId));
 }
 
-function getMaxPlayersForFormat(format)
-{
-  return format === "commander" ? 4 : 2;
-}
-
 function normalizeRoomStatus(room)
 {
-  const maxPlayers = getMaxPlayersForFormat(room.settings?.format);
-  const memberCount = Array.isArray(room.members) ? room.members.length : 0;
+  const maxPlayers = Number(room.settings?.maxPlayers ?? 4);
+  const memberCount = Array.isArray(room.members)
+    ? room.members.filter((member) => member.role !== "spectator").length
+    : 0;
   return memberCount >= maxPlayers ? "full" : "open";
 }
 
@@ -68,7 +65,10 @@ function getNextHostCandidate(room, liveGame, excludedUserId)
 
   const roomCandidates = Array.isArray(room.members)
     ? [...room.members]
-        .filter((member) => String(member.userID || "") !== normalizedExcludedUserId)
+        .filter((member) =>
+          String(member.userID || "") !== normalizedExcludedUserId
+          && member.role !== "spectator"
+        )
         .sort((a, b) => new Date(a.joinedAt || 0).getTime() - new Date(b.joinedAt || 0).getTime())
     : [];
 
@@ -89,7 +89,18 @@ function applyHostToRoomMembers(room, nextHostUserId)
 {
   for (const member of room.members)
   {
-    member.role = String(member.userID) === String(nextHostUserId) ? "host" : "player";
+    if (String(member.userID) === String(nextHostUserId))
+    {
+      member.role = "host";
+      continue;
+    }
+
+    if (member.role === "spectator")
+    {
+      continue;
+    }
+
+    member.role = "player";
   }
 }
 
@@ -132,26 +143,42 @@ function getOrCreateEntry({ gameId, roomId, userId, username })
   return entry;
 }
 
-async function markSeatState(gameId, userId, updates = {})
+async function markParticipantState(gameId, userId, updates = {})
 {
   const game = await LiveGameModel.findById(gameId).exec();
   if (!game) return null;
 
-  const seat = game.seats.find((s) => s.userId?.toString() === userId);
-  if (!seat) return null;
+  const applyUpdates = (participant) =>
+  {
+    if (!participant) return false;
 
-  if (updates.connectionStatus !== undefined) seat.connectionStatus = updates.connectionStatus;
-  if (updates.lastSeenAt !== undefined) seat.lastSeenAt = updates.lastSeenAt;
-  if (updates.lastActiveAt !== undefined) seat.lastActiveAt = updates.lastActiveAt;
-  if (updates.disconnectDeadlineAt !== undefined) seat.disconnectDeadlineAt = updates.disconnectDeadlineAt;
-  if (updates.awaySinceAt !== undefined) seat.awaySinceAt = updates.awaySinceAt;
-  if (updates.username !== undefined && updates.username) seat.username = updates.username;
+    if (updates.connectionStatus !== undefined) participant.connectionStatus = updates.connectionStatus;
+    if (updates.lastSeenAt !== undefined) participant.lastSeenAt = updates.lastSeenAt;
+    if (updates.lastActiveAt !== undefined) participant.lastActiveAt = updates.lastActiveAt;
+    if (updates.disconnectDeadlineAt !== undefined) participant.disconnectDeadlineAt = updates.disconnectDeadlineAt;
+    if (updates.awaySinceAt !== undefined) participant.awaySinceAt = updates.awaySinceAt;
+    if (updates.username !== undefined && updates.username) participant.username = updates.username;
+
+    return true;
+  };
+
+  const seat = game.seats.find((entry) => entry.userId?.toString() === userId);
+  const spectator = Array.isArray(game.spectators)
+    ? game.spectators.find((entry) => entry.userId?.toString() === userId)
+    : null;
+
+  const didUpdate = applyUpdates(seat) || applyUpdates(spectator);
+
+  if (!didUpdate)
+  {
+    return null;
+  }
 
   await game.save();
   return game;
 }
 
-async function removePlayerFromGameAndRoom(gameId, roomId, userId)
+async function removeParticipantFromGameAndRoom(gameId, roomId, userId)
 {
   const [game, room] = await Promise.all([
     LiveGameModel.findById(gameId).exec(),
@@ -166,7 +193,7 @@ async function removePlayerFromGameAndRoom(gameId, roomId, userId)
   if (game)
   {
     const removedSeat = game.seats.find((seat) => seat.userId?.toString() === userId) || null;
-    const before = game.seats.length;
+    const beforeSeats = game.seats.length;
     game.seats = game.seats.filter((seat) => seat.userId?.toString() !== userId);
 
     if (removedSeat)
@@ -188,7 +215,12 @@ async function removePlayerFromGameAndRoom(gameId, roomId, userId)
       }
     }
 
-    if (game.seats.length !== before)
+    const beforeSpectators = Array.isArray(game.spectators) ? game.spectators.length : 0;
+    game.spectators = Array.isArray(game.spectators)
+      ? game.spectators.filter((spectator) => spectator.userId?.toString() !== userId)
+      : [];
+
+    if (game.seats.length !== beforeSeats || game.spectators.length !== beforeSpectators)
     {
       await game.save();
       updatedGame = game;
@@ -329,7 +361,7 @@ async function handleJoin(io, socket, payload = {})
   socket.join(`live-game:${gameId}`);
   socket.join(`room:${roomId}`);
 
-  const game = await markSeatState(gameId, userId, {
+  const game = await markParticipantState(gameId, userId, {
     connectionStatus: "connected",
     lastSeenAt: new Date(),
     lastActiveAt: new Date(),
@@ -366,7 +398,7 @@ async function handleHeartbeat(io, payload = {})
     entry.disconnectDeadlineAt = null;
     entry.awayDeadlineAt = Date.now() + AWAY_GRACE_MS;
 
-    const game = await markSeatState(gameId, userId, {
+    const game = await markParticipantState(gameId, userId, {
       connectionStatus: "away",
       lastSeenAt: new Date(),
       awaySinceAt: new Date(),
@@ -382,7 +414,7 @@ async function handleHeartbeat(io, payload = {})
     entry.disconnectDeadlineAt = null;
     entry.awayDeadlineAt = null;
 
-    const game = await markSeatState(gameId, userId, {
+    const game = await markParticipantState(gameId, userId, {
       connectionStatus: "connected",
       lastSeenAt: new Date(),
       lastActiveAt: new Date(),
@@ -411,7 +443,7 @@ async function handleExplicitLeave(io, socket, payload = {})
   socket.leave(`live-game:${gameId}`);
   socket.leave(`room:${roomId}`);
 
-  const { game, room, roomDeleted, hostTransferred } = await removePlayerFromGameAndRoom(gameId, roomId, userId);
+  const { game, room, roomDeleted, hostTransferred } = await removeParticipantFromGameAndRoom(gameId, roomId, userId);
 
   if (roomDeleted)
   {
@@ -453,7 +485,7 @@ async function handleDisconnect(io, socket)
   entry.disconnectDeadlineAt = Date.now() + DISCONNECT_GRACE_MS;
   entry.awayDeadlineAt = null;
 
-  const game = await markSeatState(gameId, userId, {
+  const game = await markParticipantState(gameId, userId, {
     connectionStatus: "reconnecting",
     lastSeenAt: new Date(),
     disconnectDeadlineAt: new Date(entry.disconnectDeadlineAt),
@@ -478,7 +510,7 @@ async function sweep(io)
       entry.state = "away";
       entry.awayDeadlineAt = now + AWAY_GRACE_MS;
 
-      const game = await markSeatState(entry.gameId, entry.userId, {
+      const game = await markParticipantState(entry.gameId, entry.userId, {
         connectionStatus: "away",
         lastSeenAt: new Date(),
         awaySinceAt: new Date(),
@@ -504,7 +536,7 @@ async function sweep(io)
 
     livePresence.delete(key);
 
-    const { game, room, roomDeleted, hostTransferred } = await removePlayerFromGameAndRoom(
+    const { game, room, roomDeleted, hostTransferred } = await removeParticipantFromGameAndRoom(
       entry.gameId,
       entry.roomId,
       entry.userId

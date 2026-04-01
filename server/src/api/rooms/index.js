@@ -21,29 +21,9 @@ function getPlayerMemberCount(room)
     : 0;
 }
 
-function getMaxPlayersForFormat(format)
-{
-  return format === "commander" ? 4 : 2;
-}
-
-function normalizeRoomSettings(settings = {})
-{
-  const format = typeof settings?.format === "string"
-    ? settings.format
-    : "commander";
-
-  return {
-    ...settings,
-    format,
-    bracket: format === "commander" ? String(settings?.bracket || "1") : "1",
-    maxPlayers: getMaxPlayersForFormat(format),
-    allowSpectators: Boolean(settings?.allowSpectators),
-  };
-}
-
 function normalizeRoomStatus(room)
 {
-  const maxPlayers = getMaxPlayersForFormat(room.settings?.format);
+  const maxPlayers = Number(room.settings?.maxPlayers ?? 4);
   const memberCount = getPlayerMemberCount(room);
   return memberCount >= maxPlayers ? "full" : "open";
 }
@@ -174,7 +154,10 @@ function getNextHostCandidate(room, liveGame, excludedUserId)
 
   const roomCandidates = Array.isArray(room.members)
     ? [...room.members]
-        .filter((member) => String(member.userID || "") !== normalizedExcludedUserId)
+        .filter((member) =>
+          String(member.userID || "") !== normalizedExcludedUserId
+          && member.role !== "spectator"
+        )
         .sort((a, b) => new Date(a.joinedAt || 0).getTime() - new Date(b.joinedAt || 0).getTime())
     : [];
 
@@ -195,7 +178,18 @@ function applyHostToRoomMembers(room, nextHostUserId)
 {
   for (const member of room.members)
   {
-    member.role = String(member.userID) === String(nextHostUserId) ? "host" : "player";
+    if (String(member.userID) === String(nextHostUserId))
+    {
+      member.role = "host";
+      continue;
+    }
+
+    if (member.role === "spectator")
+    {
+      continue;
+    }
+
+    member.role = "player";
   }
 }
 
@@ -284,7 +278,7 @@ router.post("/create", requireAuth, async (req, res) =>
         }
       ],
 
-      settings: normalizeRoomSettings(settings),
+      settings: settings,
     });
 
     const io = req.app.get("io");
@@ -354,6 +348,9 @@ router.get("/all", async (req, res) =>
         ...room,
         status: normalizeRoomStatus(room),
         seats: seatSnapshot,
+        activeGameId: liveGame?._id ? String(liveGame._id) : null,
+        spectatorCount: Array.isArray(liveGame?.spectators) ? liveGame.spectators.length : 0,
+        maxSpectators: 4,
       };
     });
 
@@ -450,6 +447,13 @@ router.get("/:id", async (req, res) =>
 
     const requesterId = getRequesterIdFromToken(req);
     const isHost = requesterId ? String(room.hostID) === requesterId : false;
+    const activeGame = await LiveGameModel.findOne({
+      roomId: room._id,
+      status: "active",
+    })
+      .select("_id spectators")
+      .lean()
+      .exec();
 
     return res.status(200).json({
       ok: true,
@@ -464,6 +468,9 @@ router.get("/:id", async (req, res) =>
         createdAt: room.createdAt,
         settings: room.settings,
         isHost,
+        activeGameId: activeGame?._id ? String(activeGame._id) : null,
+        spectatorCount: Array.isArray(activeGame?.spectators) ? activeGame.spectators.length : 0,
+        maxSpectators: 4,
       },
     });
   }
@@ -510,7 +517,7 @@ router.patch("/:id/update", requireAuth, async (req, res) =>
       }
     }
 
-    if (settings) room.settings = normalizeRoomSettings(settings);
+    if (settings) room.settings = settings;
 
     room.status = normalizeRoomStatus(room);
 
@@ -534,6 +541,7 @@ router.post("/:id/join", requireAuth, async (req, res) =>
   {
     const userId = req.user._id.toString();
     const privateCode = normalizePrivateCode(req.body?.privateCode);
+    const requestedRole = req.body?.role === "spectator" ? "spectator" : "player";
 
     const room = await RoomModel.findById(req.params.id).exec();
 
@@ -542,7 +550,7 @@ router.post("/:id/join", requireAuth, async (req, res) =>
       return res.status(404).json({ ok: false, error: "Room not found." });
     }
 
-    const maxPlayers = getMaxPlayersForFormat(room.settings?.format);
+    const maxPlayers = Number(room.settings?.maxPlayers ?? 4);
 
     const existingMember = room.members?.find(
       (m) => m.userID.toString() === userId
@@ -556,7 +564,7 @@ router.post("/:id/join", requireAuth, async (req, res) =>
       const io = req.app.get("io");
       io.emit("rooms:changed");
 
-      return res.status(200).json({ ok: true, room, alreadyMember: true });
+      return res.status(200).json({ ok: true, room, alreadyMember: true, role: existingMember.role });
     }
 
     if (room.visibility === "private")
@@ -578,6 +586,38 @@ router.post("/:id/join", requireAuth, async (req, res) =>
       }
     }
 
+    if (requestedRole === "spectator")
+    {
+      const activeLiveGame = await LiveGameModel.findOne({ roomId: room._id, status: "active" })
+        .select("_id spectators")
+        .lean()
+        .exec();
+
+      if (!activeLiveGame?._id)
+      {
+        return res.status(400).json({ ok: false, error: "There is no active game to spectate right now." });
+      }
+
+      if (Array.isArray(activeLiveGame.spectators) && activeLiveGame.spectators.length >= 4)
+      {
+        return res.status(400).json({ ok: false, error: "This game already has the maximum number of spectators." });
+      }
+
+      room.members.push({
+        userID: req.user._id,
+        role: "spectator",
+        joinedAt: new Date(),
+      });
+
+      room.status = normalizeRoomStatus(room);
+      await room.save();
+
+      const io = req.app.get("io");
+      io.emit("rooms:changed");
+
+      return res.status(200).json({ ok: true, room, role: "spectator" });
+    }
+
     if (getPlayerMemberCount(room) >= maxPlayers)
     {
       return res.status(400).json({ ok: false, error: "Room is full." });
@@ -595,7 +635,7 @@ router.post("/:id/join", requireAuth, async (req, res) =>
     const io = req.app.get("io");
     io.emit("rooms:changed");
 
-    return res.status(200).json({ ok: true, room });
+    return res.status(200).json({ ok: true, room, role: "player" });
   }
   catch (err)
   {

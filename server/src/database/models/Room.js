@@ -42,7 +42,7 @@ const RoomSettingsSchema = new mongoose.Schema(
     required: true,
   },
   maxPlayers: { type: Number, default: 4 },
-  allowSpectators: { type: Boolean, default: false },
+  allowSpectators: { type: Boolean, default: true },
 },
 { _id: false }
 );

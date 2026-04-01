@@ -21,6 +21,7 @@ export type GameSessionState =
 
   camEnabled: boolean;
   micEnabled: boolean;
+  viewerMode: "player" | "spectator";
 };
 
 type GameSessionContextType =
@@ -31,6 +32,7 @@ type GameSessionContextType =
   setPrefs: (patch: Partial<Omit<GameSessionState, "roomId" | "playerId">>) => void;
   setRoom: (roomId: string, roomTitle: string) => void;
   setPlayer: (playerId: string) => void;
+  setViewerMode: (viewerMode: "player" | "spectator") => void;
   reset: () => void;
 };
 
@@ -45,6 +47,7 @@ const initialSession: GameSessionState =
 
   camEnabled: true,
   micEnabled: true,
+  viewerMode: "player",
 };
 
 const GameSessionContext = createContext<GameSessionContextType | undefined>(undefined);
@@ -66,6 +69,7 @@ export function GameSessionProvider({ children }: { children: React.ReactNode })
         selectedAudioId: nextSession.selectedAudioId,
         camEnabled: nextSession.camEnabled,
         micEnabled: nextSession.micEnabled,
+        viewerMode: nextSession.viewerMode,
       });
     }
     catch (error)
@@ -99,6 +103,16 @@ export function GameSessionProvider({ children }: { children: React.ReactNode })
     setSession((prev) => ({ ...prev, playerId }));
   }, []);
 
+  const setViewerMode = useCallback((viewerMode: "player" | "spectator") =>
+  {
+    setSession((prev) =>
+    {
+      const nextSession = { ...prev, viewerMode };
+      void persistSession(nextSession);
+      return nextSession;
+    });
+  }, [persistSession]);
+
   const reset = useCallback(() =>
   {
     setSession(initialSession);
@@ -131,6 +145,7 @@ export function GameSessionProvider({ children }: { children: React.ReactNode })
 
             camEnabled: saved.camEnabled,
             micEnabled: saved.micEnabled,
+            viewerMode: saved.viewerMode === "spectator" ? "spectator" : "player",
           });
         }
       }
@@ -161,8 +176,9 @@ export function GameSessionProvider({ children }: { children: React.ReactNode })
     setPrefs,
     setRoom,
     setPlayer,
+    setViewerMode,
     reset,
-  }), [session, isHydrated, setPrefs, setRoom, setPlayer, reset]);
+  }), [session, isHydrated, setPrefs, setRoom, setPlayer, setViewerMode, reset]);
 
   return (
     <GameSessionContext.Provider value={value}>

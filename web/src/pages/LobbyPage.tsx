@@ -24,6 +24,9 @@ type Room =
   status: "open" | "full";
   members: string[];
   seats?: RoomSeat[];
+  activeGameId?: string | null;
+  spectatorCount?: number;
+  maxSpectators?: number;
   createdAt: string;
   settings:
   {
