@@ -105,7 +105,7 @@ export default function LeftSidePanel({
               <div className="border-b border-white/10 bg-gradient-to-r from-emerald-400/14 via-teal-400/12 to-cyan-300/10 px-4 py-3">
                 <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.24em] text-teal-100/90">
                   <KeyRound className="h-3.5 w-3.5 text-teal-200" />
-                  Host Share Code
+                  Access Code
                 </div>
               </div>
 

@@ -14,7 +14,7 @@ function getPlayerMemberCount(room)
 
 function getMaxPlayers(room)
 {
-  return Number(room.settings?.maxPlayers ?? 4);
+  return room.settings?.format === "commander" ? 4 : 2;
 }
 
 function isListedRoom(room)

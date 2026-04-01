@@ -135,6 +135,23 @@ type ShuffleOverlayState =
   finalOrder: string[];
 };
 
+type KickPlayerResponse =
+{
+  ok: boolean;
+  game?: ActiveGame;
+  roomId?: string;
+  targetUserId?: string;
+  error?: string;
+};
+
+type PlayerKickedPayload =
+{
+  gameId?: string;
+  roomId?: string;
+  targetUserId?: string;
+  removedByUserId?: string;
+};
+
 function clampCounter(value: number, min: number, max: number)
 {
   if (!Number.isFinite(value))
@@ -145,9 +162,24 @@ function clampCounter(value: number, min: number, max: number)
   return Math.max(min, Math.min(max, Math.round(value)));
 }
 
+function isCommanderFormat(format?: string)
+{
+  return String(format || "").toLowerCase() === "commander";
+}
+
+function getMaxPlayersForFormat(format?: string)
+{
+  return isCommanderFormat(format) ? 4 : 2;
+}
+
+function getVisibleSeatNumbers(format?: string)
+{
+  return getMaxPlayersForFormat(format) === 4 ? [1, 2, 3, 4] : [1, 2];
+}
+
 function getStartingLife(format?: string)
 {
-  return format === "commander" ? 40 : 20;
+  return isCommanderFormat(format) ? 40 : 20;
 }
 
 function getSeatCommanders(seat?: GameSeat | null)
@@ -226,6 +258,7 @@ export default function GamePage()
   const [privateCodeCopiedMessage, setPrivateCodeCopiedMessage] = useState<string | null>(null);
   const [transferringHostSeatNumber, setTransferringHostSeatNumber] = useState<number | null>(null);
   const [leaving, setLeaving] = useState(false);
+  const [kickingSeatNumber, setKickingSeatNumber] = useState<number | null>(null);
   const [endingGame, setEndingGame] = useState(false);
   const [randomizingOrder, setRandomizingOrder] = useState(false);
   const [resettingGame, setResettingGame] = useState(false);
@@ -244,6 +277,7 @@ export default function GamePage()
   const shuffleTimeoutRef = useRef<number | null>(null);
   const shuffleCloseTimeoutRef = useRef<number | null>(null);
   const advancingTurnRef = useRef(false);
+  const forcedExitRef = useRef(false);
 
   const { session, reset } = useGameSession();
   const mediaSession = useMediaSession();
@@ -256,9 +290,12 @@ export default function GamePage()
       .sort((a, b) => a.seatNumber - b.seatNumber)[0]?.userId ?? "";
 
   const roomTitle = session.roomTitle || "Placeholder Room";
+  const gameFormat = game?.settings?.format;
+  const isCommanderGame = isCommanderFormat(gameFormat);
   const effectiveHostUserId = currentHostUserId || fallbackHostUserId;
   const isHost = effectiveHostUserId === getStoredUserId();
-  const maxPlayers = 4;
+  const maxPlayers = getMaxPlayersForFormat(gameFormat);
+  const visibleSeatNumbers = getVisibleSeatNumbers(gameFormat);
   const playerCount = game?.seats?.filter((seat) => Boolean(seat.userId)).length ?? 0;
 
   useEffect(() =>
@@ -292,13 +329,19 @@ export default function GamePage()
 
     if (mediaSession.status !== "connected")
     {
+      if (forcedExitRef.current)
+      {
+        navigate("/lobby", { replace: true });
+        return;
+      }
+
       navigate(`/rooms/${roomId}`,
       {
         replace: true,
         state: { reason: "refresh-reconnect" },
       });
     }
-  }, [roomId, mediaSession.status, navigate]);
+}, [roomId, mediaSession.status, navigate]);
 
   useEffect(() =>
   {
@@ -365,6 +408,52 @@ export default function GamePage()
 
   useEffect(() =>
   {
+    if (!gameId || !roomId) return;
+
+    function handlePlayerKicked(payload: PlayerKickedPayload)
+    {
+      const storedUserId = getStoredUserId();
+
+      if (!storedUserId) return;
+      if (payload?.gameId !== gameId) return;
+      if (payload?.targetUserId !== storedUserId) return;
+
+      if (socket.connected)
+      {
+        socket.emit("live-game:leave",
+        {
+          gameId,
+          roomId,
+          userId: storedUserId,
+        });
+      }
+
+      forcedExitRef.current = true;
+
+      if (typeof mediaSession.disconnectFromSFU === "function")
+      {
+        mediaSession.disconnectFromSFU();
+      }
+
+      if (typeof mediaSession.stopPreview === "function")
+      {
+        mediaSession.stopPreview();
+      }
+
+      reset();
+      navigate("/lobby", { replace: true });
+    }
+
+    socket.on("game:player-kicked", handlePlayerKicked);
+
+    return () =>
+    {
+      socket.off("game:player-kicked", handlePlayerKicked);
+    };
+  }, [gameId, roomId, mediaSession, navigate, reset]);
+
+  useEffect(() =>
+  {
     if (roomVisibility !== "private" || !isHost || !roomId)
     {
       setHostPrivateCode(null);
@@ -416,6 +505,38 @@ export default function GamePage()
     {
       if (!payload?.game) return;
       if (payload.game._id !== gameId) return;
+
+      const storedUserId = getStoredUserId();
+      const stillSeated = storedUserId
+        ? payload.game.seats.some((seat) => seat.userId === storedUserId)
+        : true;
+
+      if (!stillSeated)
+      {
+        if (socket.connected && roomId && storedUserId)
+        {
+          socket.emit("live-game:leave",
+          {
+            gameId,
+            roomId,
+            userId: storedUserId,
+          });
+        }
+
+        if (typeof mediaSession.disconnectFromSFU === "function")
+        {
+          mediaSession.disconnectFromSFU();
+        }
+
+        if (typeof mediaSession.stopPreview === "function")
+        {
+          mediaSession.stopPreview();
+        }
+
+        reset();
+        navigate("/lobby", { replace: true });
+        return;
+      }
 
       setGame(payload.game);
     }
@@ -521,7 +642,7 @@ export default function GamePage()
       socket.off("game:player-order-randomized", handlePlayerOrderRandomized);
       socket.off("game:host-transferred", handleHostTransferred);
     };
-  }, [gameId, game, roomId]);
+  }, [gameId, game, roomId, mediaSession, navigate, reset]);
 
   useEffect(() =>
   {
@@ -743,7 +864,7 @@ export default function GamePage()
   {
     await updateSeatState(seatNumber,
     {
-      life: clampCounter(nextLife, 0, 999),
+      life: clampCounter(nextLife, 0, 99999),
     });
   }
 
@@ -844,6 +965,43 @@ export default function GamePage()
     }
   }
 
+  async function handleKickPlayer(seatNumber: number)
+  {
+    if (!gameId || !isHost) return;
+
+    const targetSeat = game?.seats.find((seat) => seat.seatNumber === seatNumber);
+    if (!targetSeat?.userId) return;
+
+    setKickingSeatNumber(seatNumber);
+
+    try
+    {
+      const res = await apiPost<KickPlayerResponse>(
+        `/api/live-games/${gameId}/kick-player`,
+        { targetUserId: targetSeat.userId }
+      );
+
+      if (!res.ok)
+      {
+        console.error("Failed to kick player:", res.error);
+        return;
+      }
+
+      if (res.data?.ok && res.data.game)
+      {
+        setGame(res.data.game);
+      }
+    }
+    catch (err)
+    {
+      console.error("Failed to kick player:", err);
+    }
+    finally
+    {
+      setKickingSeatNumber(null);
+    }
+  }
+
   async function handlePromoteToHost(seatNumber: number)
   {
     if (!gameId || !isHost) return;
@@ -907,6 +1065,8 @@ export default function GamePage()
           userId: getStoredUserId(),
         });
       }
+
+      forcedExitRef.current = true;
 
       if (typeof mediaSession.disconnectFromSFU === "function")
       {
@@ -1153,8 +1313,9 @@ export default function GamePage()
     );
 
     const defaultLife = getStartingLife(game?.settings?.format);
+    const showCommanderFeatures = isCommanderFormat(game?.settings?.format);
 
-    return [1, 2, 3, 4].map((seatNumber) =>
+    return visibleSeatNumbers.map((seatNumber) =>
     {
       const seat = orderedSeats.find((entry) => entry.seatNumber === seatNumber);
 
@@ -1189,13 +1350,15 @@ export default function GamePage()
 
       const commanderDamageMap = seat.stats?.commanderDamage ?? {};
 
-      const commanderDamageOptions: CommanderDamageOption[] = orderedSeats
-        .filter((entry) => entry.userId !== seat.userId)
-        .map((entry) => ({
-          userId: entry.userId,
-          label: getSeatCommanders(entry).map((card) => card.name).join(" / ") || entry.username,
-          amount: commanderDamageMap[entry.userId] ?? 0,
-        }));
+      const commanderDamageOptions: CommanderDamageOption[] = showCommanderFeatures
+        ? orderedSeats
+            .filter((entry) => entry.userId !== seat.userId)
+            .map((entry) => ({
+              userId: entry.userId,
+              label: getSeatCommanders(entry).map((card) => card.name).join(" / ") || entry.username,
+              amount: commanderDamageMap[entry.userId] ?? 0,
+            }))
+        : [];
 
       return {
         seatNumber,
@@ -1210,24 +1373,26 @@ export default function GamePage()
         experience: seat.stats?.experience ?? 0,
         trackEnergy: Boolean(game?.settings?.trackEnergy),
         trackExperience: Boolean(game?.settings?.trackExperience),
-        commanders: getSeatCommanders(seat),
+        commanders: showCommanderFeatures ? getSeatCommanders(seat) : [],
         commanderDamageOptions,
-        hasMonarch: game?.monarchSeatNumber === seatNumber,
-        hasInitiative: game?.initiativeSeatNumber === seatNumber,
+        hasMonarch: showCommanderFeatures && game?.monarchSeatNumber === seatNumber,
+        hasInitiative: showCommanderFeatures && game?.initiativeSeatNumber === seatNumber,
         isSaving: savingSeatNumbers.includes(seatNumber),
       };
     });
-  }, [game, mediaSession.localStream, mediaSession.remoteMedia, savingSeatNumbers]);
+  }, [game, mediaSession.localStream, mediaSession.remoteMedia, savingSeatNumbers, visibleSeatNumbers]);
 
   const displaySeatSlots = useMemo(() =>
   {
     const normalizedBoardOrder = getNormalizedBoardOrder(game?.boardOrder);
     const seatSlotMap = new Map(seatSlots.map((slot) => [slot.seatNumber, slot]));
+    const allowedSeatNumbers = new Set(visibleSeatNumbers);
 
     return normalizedBoardOrder
+      .filter((seatNumber) => allowedSeatNumbers.has(seatNumber))
       .map((seatNumber) => seatSlotMap.get(seatNumber))
       .filter((slot): slot is (typeof seatSlots)[number] => Boolean(slot));
-  }, [game?.boardOrder, seatSlots]);
+  }, [game?.boardOrder, seatSlots, visibleSeatNumbers]);
 
   const activeCommanderSeat = useMemo(() =>
   {
@@ -1412,19 +1577,26 @@ export default function GamePage()
               disabled={leaving}
               className="inline-flex shrink-0 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:border-red-400/40 hover:bg-red-500/12 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {leaving ? "Leaving..." : "Leave"}
+              {leaving ? "Leaving..." : "Leave Game "}
             </button>
           </div>
         </div>
       </header>
 
       <div className="relative h-[calc(100dvh-74px)] w-full overflow-hidden">
-        <main className="h-full w-full px-4 py-3">
-          <div className="grid h-full grid-cols-2 grid-rows-2 gap-2.5">
+                <main className="h-full w-full px-4 py-3">
+                <div
+                  className={`grid h-full gap-2.5 ${
+                    isCommanderGame
+                      ? "grid-cols-2 grid-rows-2"
+                      : "mx-auto max-w-[1200px] grid-cols-1 grid-rows-2"
+                  }`}
+                >
             {displaySeatSlots.map((slot) => (
               <PlayerTile
                 key={slot.seatNumber}
                 seatNumber={slot.seatNumber}
+                mode={isCommanderGame ? "commander" : "duel"}
                 isSelf={slot.isSelf}
                 title={slot.title}
                 stream={slot.stream}
@@ -1441,20 +1613,38 @@ export default function GamePage()
                 hasInitiative={slot.hasInitiative}
                 isActiveTurn={game?.activeTurnSeatNumber === slot.seatNumber}
                 isSaving={slot.isSaving}
-                canPromoteToHost={
-                  Boolean(
-                    isHost &&
-                    slot.userId &&
-                    !slot.isSelf &&
-                    slot.userId !== effectiveHostUserId
-                  )
-                }
-                promotingToHost={transferringHostSeatNumber === slot.seatNumber}
-                onPromoteToHost={
-                  isHost && slot.userId && !slot.isSelf
-                    ? () => { void handlePromoteToHost(slot.seatNumber); }
-                    : undefined
-                }
+                canPromoteToHost=
+                {
+                    Boolean(
+                      isHost &&
+                      slot.userId &&
+                      !slot.isSelf &&
+                      slot.userId !== effectiveHostUserId
+                    )
+                  }
+                  canKickPlayer=
+                  {
+                    Boolean(
+                      isHost &&
+                      slot.userId &&
+                      !slot.isSelf &&
+                      slot.userId !== effectiveHostUserId
+                    )
+                  }
+                  promotingToHost={transferringHostSeatNumber === slot.seatNumber}
+                  kickingPlayer={kickingSeatNumber === slot.seatNumber}
+                  onPromoteToHost=
+                  {
+                    isHost && slot.userId && !slot.isSelf
+                      ? () => { void handlePromoteToHost(slot.seatNumber); }
+                      : undefined
+                  }
+                  onKickPlayer=
+                  {
+                    isHost && slot.userId && !slot.isSelf
+                      ? () => { void handleKickPlayer(slot.seatNumber); }
+                      : undefined
+                  }
                 onLifeChange={
                   slot.isSelf
                     ? (nextLife) => { void handleLifeChange(slot.seatNumber, nextLife); }
@@ -1476,7 +1666,7 @@ export default function GamePage()
                     : undefined
                 }
                 onCommanderDamageChange={
-                  slot.isSelf
+                  isCommanderGame && slot.isSelf
                     ? (nextCommanderDamage) =>
                     {
                       void handleCommanderDamageChange(slot.seatNumber, nextCommanderDamage);
@@ -1484,17 +1674,17 @@ export default function GamePage()
                     : undefined
                 }
                 onSetMonarch={
-                  slot.isSelf
+                  isCommanderGame && slot.isSelf
                     ? (nextSeatNumber) => { void handleSetMonarch(nextSeatNumber); }
                     : undefined
                 }
                 onSetInitiative={
-                  slot.isSelf
+                  isCommanderGame && slot.isSelf
                     ? (nextSeatNumber) => { void handleSetInitiative(nextSeatNumber); }
                     : undefined
                 }
                 onOpenCommanderPanel={
-                  slot.isSelf
+                  isCommanderGame && slot.isSelf
                     ? () =>
                     {
                       setCommanderPanelSeatNumber(slot.seatNumber);
@@ -1514,6 +1704,7 @@ export default function GamePage()
           finalOrder={shuffleOverlay.finalOrder}
         />
 
+{isCommanderGame ? (
         <CommanderPanel
           open={commanderPanelOpen}
           seatTitle={activeCommanderSeat?.title || "You"}
@@ -1532,6 +1723,7 @@ export default function GamePage()
             }
           }}
         />
+        ) : null}
 
         <LeftSidePanel
           open={leftOpen}

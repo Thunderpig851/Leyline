@@ -446,9 +446,6 @@ export default function JoinRoomPage()
                     placeholder="ABC123"
                     maxLength={6}
                   />
-                  <div className="mt-1 text-xs text-slate-400">
-                    Enter the 6-character code to join this private room.
-                  </div>
                 </label>
               ) : null}
 
@@ -457,7 +454,7 @@ export default function JoinRoomPage()
                   <div className="border-b border-white/10 bg-gradient-to-r from-emerald-400/14 via-teal-400/12 to-cyan-300/10 px-4 py-3">
                     <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.24em] text-teal-100/90">
                       <Crown className="h-3.5 w-3.5" />
-                      Host Share Code
+                      Access Code
                     </div>
                   </div>
 

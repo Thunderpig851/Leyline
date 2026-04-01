@@ -17,6 +17,7 @@ type CommanderDamageOption =
 type PlayerTileProps =
 {
   seatNumber?: number;
+  mode?: "commander" | "duel";
   title?: string;
   stream?: MediaStream | null;
   isSelf?: boolean;
@@ -34,7 +35,9 @@ type PlayerTileProps =
   isActiveTurn?: boolean;
   isSaving?: boolean;
   canPromoteToHost?: boolean;
+  canKickPlayer?: boolean;
   promotingToHost?: boolean;
+  kickingPlayer?: boolean;
   onLifeChange?: (nextLife: number) => void;
   onPoisonChange?: (nextPoison: number) => void;
   onEnergyChange?: (nextEnergy: number) => void;
@@ -44,6 +47,7 @@ type PlayerTileProps =
   onSetInitiative?: (seatNumber: number | null) => void;
   onOpenCommanderPanel?: () => void;
   onPromoteToHost?: () => void;
+  onKickPlayer?: () => void;
 };
 
 type CommanderVisual =
@@ -223,6 +227,7 @@ function buildCommanderTextStyle(colors: string[]): CSSProperties
 
 export default function PlayerTile({
   seatNumber = 0,
+  mode = "commander",
   title = "Player",
   stream = null,
   isSelf = false,
@@ -240,7 +245,9 @@ export default function PlayerTile({
   isActiveTurn = false,
   isSaving = false,
   canPromoteToHost = false,
+  canKickPlayer = false,
   promotingToHost = false,
+  kickingPlayer = false,
   onLifeChange,
   onPoisonChange,
   onEnergyChange,
@@ -250,19 +257,22 @@ export default function PlayerTile({
   onSetInitiative,
   onOpenCommanderPanel,
   onPromoteToHost,
+  onKickPlayer,
 }: PlayerTileProps)
 {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const isCommanderMode = mode === "commander";
   const counterButtonRef = useRef<HTMLButtonElement | null>(null);
   const countersOverlayRef = useRef<HTMLDivElement | null>(null);
 
   const [countersOpen, setCountersOpen] = useState(false);
+  const [showHostActions, setShowHostActions] = useState(false);
   const [lifeInput, setLifeInput] = useState(String(life));
   const [hoveredCommanderName, setHoveredCommanderName] = useState<string | null>(null);
   const [commanderVisualMap, setCommanderVisualMap] = useState<Record<string, CommanderVisual | null>>({});
 
   const canEditLife = Boolean(isSelf && onLifeChange);
-  const canEditCommander = Boolean(isSelf && onOpenCommanderPanel);
+  const canEditCommander = Boolean(isCommanderMode && isSelf && onOpenCommanderPanel);
   const canEditCounters = Boolean(
     isSelf && (onPoisonChange || onEnergyChange || onExperienceChange || onCommanderDamageChange)
   );
@@ -309,16 +319,19 @@ export default function PlayerTile({
   const visibleTopCounters = compactCounters.filter((entry) => entry.value > 0);
 
   const canManageSharedStates = Boolean(
+    isCommanderMode &&
     isSelf &&
     Number.isInteger(seatNumber) &&
     seatNumber > 0 &&
     (onSetMonarch || onSetInitiative)
   );
 
+  const canManageHostActions = Boolean(canPromoteToHost || canKickPlayer);
+
   const canOpenCounters =
-    commanderDamageOptions.length > 0 ||
     compactCounters.length > 0 ||
-    canManageSharedStates;
+    canManageSharedStates ||
+    (isCommanderMode && commanderDamageOptions.length > 0);
 
   useEffect(() =>
   {
@@ -540,14 +553,18 @@ export default function PlayerTile({
       ) : null}
 
       <div className="absolute left-3 right-3 top-3 z-10 flex items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-col gap-1.5">
+        <div
+          className="relative flex min-w-0 flex-col gap-1.5"
+          onMouseEnter={canManageHostActions ? () => setShowHostActions(true) : undefined}
+          onMouseLeave={canManageHostActions ? () => setShowHostActions(false) : undefined}
+        >
           <div className="rounded-xl border border-white/10 bg-slate-950/75 px-3 py-2 text-xs text-slate-100 shadow-lg backdrop-blur">
             <div className="flex items-center justify-between gap-2">
               <div className="min-w-0">
                 <div className="flex min-w-0 items-center gap-1.5">
                   <div className="truncate font-semibold tracking-tight">{title}</div>
 
-                  {hasMonarch ? (
+                  {isCommanderMode && hasMonarch ? (
                     <span
                       className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-amber-400/20 bg-amber-400/10 text-amber-200"
                       title="Monarch"
@@ -557,7 +574,7 @@ export default function PlayerTile({
                     </span>
                   ) : null}
 
-                  {hasInitiative ? (
+                  {isCommanderMode && hasInitiative ? (
                     <span
                       className="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full border border-sky-400/20 bg-sky-400/10 px-1 text-[10px] font-black leading-none text-sky-100"
                       title="Initiative"
@@ -602,16 +619,35 @@ export default function PlayerTile({
             </div>
           </div>
 
-          {canPromoteToHost ? (
-            <div className="flex justify-start">
-              <button
-                type="button"
-                onClick={onPromoteToHost}
-                disabled={!onPromoteToHost || promotingToHost}
-                className="pointer-events-auto inline-flex rounded-full border border-teal-300/30 bg-slate-950/78 px-2.5 py-1 text-[10px] font-semibold text-teal-100 shadow-lg backdrop-blur transition hover:border-teal-200/50 hover:bg-teal-400/16 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {promotingToHost ? "Promoting..." : "Promote to host"}
-              </button>
+          {canManageHostActions ? (
+            <div
+              className={`absolute left-0 top-full z-20 mt-2 flex flex-wrap items-center gap-2 transition-all duration-150 ${
+                showHostActions
+                  ? "translate-y-0 opacity-100"
+                  : "pointer-events-none -translate-y-1 opacity-0"
+              }`}
+            >
+              {canPromoteToHost ? (
+                <button
+                  type="button"
+                  onClick={onPromoteToHost}
+                  disabled={!onPromoteToHost || promotingToHost || kickingPlayer}
+                  className="pointer-events-auto inline-flex rounded-full border border-teal-300/30 bg-slate-950/90 px-2.5 py-1 text-[10px] font-semibold text-teal-100 shadow-lg backdrop-blur transition hover:border-teal-200/50 hover:bg-teal-400/16 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {promotingToHost ? "Promoting..." : "Promote to Host"}
+                </button>
+              ) : null}
+
+              {canKickPlayer ? (
+                <button
+                  type="button"
+                  onClick={onKickPlayer}
+                  disabled={!onKickPlayer || kickingPlayer || promotingToHost}
+                  className="pointer-events-auto inline-flex rounded-full border border-red-300/30 bg-slate-950/90 px-2.5 py-1 text-[10px] font-semibold text-red-100 shadow-lg backdrop-blur transition hover:border-red-200/50 hover:bg-red-500/16 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {kickingPlayer ? "Kicking..." : "Kick Player"}
+                </button>
+              ) : null}
             </div>
           ) : null}
 
@@ -630,6 +666,7 @@ export default function PlayerTile({
         </div>
 
         <div className="flex items-start gap-2">
+          {isCommanderMode ? (
           <div className="relative flex items-start gap-2 rounded-xl border border-white/10 bg-slate-950/92 px-2 py-2 shadow-lg backdrop-blur">
             {commanders.length > 0 ? (
               commanders.length === 1 ? (
@@ -749,6 +786,7 @@ export default function PlayerTile({
               </button>
             ) : null}
           </div>
+          ) : null}
 
           <button
             ref={counterButtonRef}
@@ -862,7 +900,7 @@ export default function PlayerTile({
               </div>
             ) : null}
 
-            {commanderDamageOptions.length > 0 ? (
+            {isCommanderMode && commanderDamageOptions.length > 0 ? (
               <div className="rounded-xl border border-white/10 bg-black/20 p-1.5">
                 <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
                   Commander Damage

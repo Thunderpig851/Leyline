@@ -32,6 +32,11 @@ type CreateGamePopUpProps =
   onClose: () => void;
 };
 
+function getMaxPlayersForFormat(format: string)
+{
+  return format === "commander" ? 4 : 2;
+}
+
 export default function CreateGamePopUp({ onClose }: CreateGamePopUpProps)
 {
   const navigate = useNavigate();
@@ -42,7 +47,7 @@ export default function CreateGamePopUp({ onClose }: CreateGamePopUpProps)
   {
     format: "commander",
     bracket: "1",
-    maxPlayers: 4,
+    maxPlayers: getMaxPlayersForFormat("commander"),
     allowSpectators: false
   });
 
@@ -183,7 +188,18 @@ export default function CreateGamePopUp({ onClose }: CreateGamePopUpProps)
                 <select
                   className="mt-1 w-full rounded-xl border border-white/10 bg-slate-950/50 px-3 py-2 text-sm text-slate-100 outline-none focus:border-teal-300/80 focus:ring-4 focus:ring-emerald-400/20"
                   value={settings.format}
-                  onChange={(e) => setSettings({ ...settings, format: e.target.value })}
+                  onChange={(e) =>
+                  {
+                    const nextFormat = e.target.value;
+
+                    setSettings((current) =>
+                    ({
+                      ...current,
+                      format: nextFormat,
+                      bracket: nextFormat === "commander" ? current.bracket : "1",
+                      maxPlayers: getMaxPlayersForFormat(nextFormat),
+                    }));
+                  }}
                 >
                   <option value="commander">Commander</option>
                   <option value="standard">Standard</option>
@@ -195,6 +211,7 @@ export default function CreateGamePopUp({ onClose }: CreateGamePopUpProps)
                 </select>
               </label>
 
+{settings.format === "commander" ? (
               <label className="block">
                 <span className="text-xs text-slate-300">Bracket</span>
                 <select
@@ -209,6 +226,14 @@ export default function CreateGamePopUp({ onClose }: CreateGamePopUpProps)
                   <option value="5">5</option>
                 </select>
               </label>
+              ) : (
+              <div className="rounded-xl border border-white/10 bg-slate-950/45 px-3 py-2">
+                <div className="text-xs font-medium text-slate-200">1v1 layout</div>
+                <div className="mt-1 text-[11px] text-slate-400">
+                  Non-commander formats use 2 seats and the duel game-page split.
+                </div>
+              </div>
+              )}
             </div>
 
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">

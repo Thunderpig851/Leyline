@@ -15,9 +15,27 @@ function makeKey(gameId, userId)
   return `${gameId}:${userId}`;
 }
 
+function clearPresenceForUser(gameId, userId)
+{
+  const normalizedGameId = String(gameId || "");
+  const normalizedUserId = String(userId || "");
+
+  if (!normalizedGameId || !normalizedUserId)
+  {
+    return;
+  }
+
+  livePresence.delete(makeKey(normalizedGameId, normalizedUserId));
+}
+
+function getMaxPlayersForFormat(format)
+{
+  return format === "commander" ? 4 : 2;
+}
+
 function normalizeRoomStatus(room)
 {
-  const maxPlayers = Number(room.settings?.maxPlayers ?? 4);
+  const maxPlayers = getMaxPlayersForFormat(room.settings?.format);
   const memberCount = Array.isArray(room.members) ? room.members.length : 0;
   return memberCount >= maxPlayers ? "full" : "open";
 }
@@ -564,6 +582,7 @@ function registerLiveGamePresence(io)
 
 module.exports =
 {
+  clearPresenceForUser,
   clearPresenceForGame,
   registerLiveGamePresence,
 };

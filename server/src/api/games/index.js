@@ -4,9 +4,14 @@ const router = require("express").Router();
 const LiveGameModel = require("../../database/models/LiveGame");
 const RoomModel = require("../../database/models/Room");
 const RoomChatMessageModel = require("../../database/models/RoomChatMessage");
-const { clearPresenceForGame } = require("../../middleware/liveGamePresence");
+const { clearPresenceForGame, clearPresenceForUser } = require("../../middleware/liveGamePresence");
 
 router.get("/", (req, res) => res.json({ ok: true, route: "live-games" }));
+
+function getMaxPlayersForFormat(format)
+{
+  return format === "commander" ? 4 : 2;
+}
 
 function getStartingLife(format)
 {
@@ -24,6 +29,44 @@ function getHostUserIdForGame(game, room)
     .sort((a, b) => a.seatNumber - b.seatNumber)[0];
 
   return firstSeat?.userId?.toString() || null;
+}
+
+function normalizeRoomStatus(room)
+{
+  const maxPlayers = getMaxPlayersForFormat(room.settings?.format);
+  const memberCount = Array.isArray(room.members) ? room.members.length : 0;
+  return memberCount >= maxPlayers ? "full" : "open";
+}
+
+function clearCommanderDamageForUser(game, removedUserId)
+{
+  const normalizedRemovedUserId = String(removedUserId || "");
+
+  if (!normalizedRemovedUserId)
+  {
+    return;
+  }
+
+  for (const seat of game.seats || [])
+  {
+    const commanderDamage = seat?.stats?.commanderDamage;
+
+    if (!commanderDamage)
+    {
+      continue;
+    }
+
+    if (typeof commanderDamage.delete === "function")
+    {
+      commanderDamage.delete(normalizedRemovedUserId);
+      continue;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(commanderDamage, normalizedRemovedUserId))
+    {
+      delete commanderDamage[normalizedRemovedUserId];
+    }
+  }
 }
 
 function emitGameUpdated(io, game)
@@ -85,6 +128,57 @@ function emitBoardOrderRandomized(io, game)
     roomId: game.roomId,
     boardOrder: game.boardOrder,
   });
+}
+
+function emitRoomUpdated(io, room)
+{
+  io.to(`room:${room._id}`).emit("room:updated", { room });
+  io.emit("rooms:changed");
+}
+
+function emitPlayerKicked(io, game, payload)
+{
+  io.to(`room:${game.roomId}`).emit("game:player-kicked", payload);
+  io.to(`live-game:${game._id}`).emit("game:player-kicked", payload);
+}
+
+async function forceKickUserSockets(io, game, room, targetUserId, payload)
+{
+  if (!io || !game?._id || !room?._id || !targetUserId)
+  {
+    return;
+  }
+
+  const normalizedTargetUserId = String(targetUserId);
+  const liveGameRoom = `live-game:${game._id}`;
+  const presenceRoom = `room:${room._id}`;
+  const sfuRoom = String(room._id);
+  const sockets = await io.fetchSockets();
+
+  for (const clientSocket of sockets)
+  {
+    if (String(clientSocket.data?.userId || "") !== normalizedTargetUserId)
+    {
+      continue;
+    }
+
+    const belongsToThisGame =
+      String(clientSocket.data?.gameId || "") === String(game._id) ||
+      clientSocket.rooms.has(liveGameRoom) ||
+      clientSocket.rooms.has(presenceRoom) ||
+      clientSocket.rooms.has(sfuRoom);
+
+    if (!belongsToThisGame)
+    {
+      continue;
+    }
+
+    clientSocket.emit("game:player-kicked", payload);
+
+    await clientSocket.leave(liveGameRoom);
+    await clientSocket.leave(presenceRoom);
+    await clientSocket.leave(sfuRoom);
+  }
 }
 
 function clampCounter(value, min, max)
@@ -404,17 +498,19 @@ router.post("/start", requireAuth, async (req, res) =>
       return res.status(200).json({ ok: true, game: existingGame, alreadyActive: true });
     }
 
-    const startingLife = getStartingLife(format);
+    const resolvedFormat = room.settings?.format || format || "commander";
+    const startingLife = getStartingLife(resolvedFormat);
+    const usesCommanderOnlyTrackers = resolvedFormat === "commander";
 
     const game = await LiveGameModel.create({
       roomId,
       status: "active",
 
       settings: {
-        format,
+        format: resolvedFormat,
         trackEnergy: false,
-        trackMonarch: true,
-        trackInitiative: true,
+        trackMonarch: usesCommanderOnlyTrackers,
+        trackInitiative: usesCommanderOnlyTrackers,
         trackExperience: false,
         enableDayNight: false,
       },
@@ -510,7 +606,7 @@ router.post("/:gameId/join", requireAuth, async (req, res) =>
       return res.status(200).json({ ok: true, game, alreadySeated: true });
     }
 
-    const maxPlayers = Number(room.settings?.maxPlayers ?? 4);
+    const maxPlayers = getMaxPlayersForFormat(room.settings?.format || game.settings?.format);
     const takenSeatNumbers = new Set(game.seats.map((seat) => seat.seatNumber));
 
     let assignedSeatNumber = seatNumber;
@@ -1054,17 +1150,45 @@ router.post("/:gameId/kick-player", requireAuth, async (req, res) =>
       return res.status(404).json({ ok: false, error: "Target player must still be in the room." });
     }
 
+    const targetSeat = game.seats[targetSeatIndex];
+    const targetSeatNumber = Number(targetSeat?.seatNumber ?? 0);
+
     game.seats.splice(targetSeatIndex, 1);
-    clearSeatMarkersIfNeeded(game, game.seats[targetSeatIndex]?.seatNumber);
+    clearSeatMarkersIfNeeded(game, targetSeatNumber);
+    clearCommanderDamageForUser(game, targetUserId);
     syncBoardOrder(game);
     clearActiveTurnIfNeeded(game);
 
-    await game.save();
+    room.members.splice(targetMemberIndex, 1);
+    room.status = normalizeRoomStatus(room);
+
+    await Promise.all([
+      game.save(),
+      room.save(),
+    ]);
+
+    clearPresenceForUser(String(game._id), targetUserId);
 
     const io = req.app.get("io");
-    emitGameUpdated(io, game);
+    const kickedPayload = {
+      gameId: String(game._id),
+      roomId: String(game.roomId),
+      targetUserId,
+      removedByUserId: requesterUserId,
+    };
 
-    return res.status(200).json({ ok: true, game });
+    await forceKickUserSockets(io, game, room, targetUserId, kickedPayload);
+
+    emitGameUpdated(io, game);
+    emitRoomUpdated(io, room);
+    emitPlayerKicked(io, game, kickedPayload);
+
+    return res.status(200).json({
+      ok: true,
+      game,
+      roomId: String(room._id),
+      targetUserId,
+    });
   }
   catch (err)
   {

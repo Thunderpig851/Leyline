@@ -21,9 +21,29 @@ function getPlayerMemberCount(room)
     : 0;
 }
 
+function getMaxPlayersForFormat(format)
+{
+  return format === "commander" ? 4 : 2;
+}
+
+function normalizeRoomSettings(settings = {})
+{
+  const format = typeof settings?.format === "string"
+    ? settings.format
+    : "commander";
+
+  return {
+    ...settings,
+    format,
+    bracket: format === "commander" ? String(settings?.bracket || "1") : "1",
+    maxPlayers: getMaxPlayersForFormat(format),
+    allowSpectators: Boolean(settings?.allowSpectators),
+  };
+}
+
 function normalizeRoomStatus(room)
 {
-  const maxPlayers = Number(room.settings?.maxPlayers ?? 4);
+  const maxPlayers = getMaxPlayersForFormat(room.settings?.format);
   const memberCount = getPlayerMemberCount(room);
   return memberCount >= maxPlayers ? "full" : "open";
 }
@@ -264,7 +284,7 @@ router.post("/create", requireAuth, async (req, res) =>
         }
       ],
 
-      settings: settings,
+      settings: normalizeRoomSettings(settings),
     });
 
     const io = req.app.get("io");
@@ -490,7 +510,7 @@ router.patch("/:id/update", requireAuth, async (req, res) =>
       }
     }
 
-    if (settings) room.settings = settings;
+    if (settings) room.settings = normalizeRoomSettings(settings);
 
     room.status = normalizeRoomStatus(room);
 
@@ -522,7 +542,7 @@ router.post("/:id/join", requireAuth, async (req, res) =>
       return res.status(404).json({ ok: false, error: "Room not found." });
     }
 
-    const maxPlayers = Number(room.settings?.maxPlayers ?? 4);
+    const maxPlayers = getMaxPlayersForFormat(room.settings?.format);
 
     const existingMember = room.members?.find(
       (m) => m.userID.toString() === userId
