@@ -92,6 +92,45 @@ function getRequesterIdFromToken(req)
   }
 }
 
+
+function buildRejoinSnapshot(liveGame, requesterId)
+{
+  if (!liveGame || !requesterId)
+  {
+    return null;
+  }
+
+  const normalizedRequesterId = String(requesterId);
+
+  const matchingSeat = Array.isArray(liveGame.seats)
+    ? liveGame.seats.find((seat) => String(seat.userId || "") === normalizedRequesterId)
+    : null;
+
+  if (matchingSeat)
+  {
+    return {
+      canRejoin: true,
+      role: "player",
+      connectionStatus: matchingSeat.connectionStatus || "connected",
+    };
+  }
+
+  const matchingSpectator = Array.isArray(liveGame.spectators)
+    ? liveGame.spectators.find((spectator) => String(spectator.userId || "") === normalizedRequesterId)
+    : null;
+
+  if (matchingSpectator)
+  {
+    return {
+      canRejoin: true,
+      role: "spectator",
+      connectionStatus: matchingSpectator.connectionStatus || "connected",
+    };
+  }
+
+  return null;
+}
+
 function getSeatSnapshot(room, liveGame)
 {
   if (Array.isArray(liveGame?.seats) && liveGame.seats.length > 0)
@@ -163,14 +202,28 @@ function getNextHostCandidate(room, liveGame, excludedUserId)
 
   const firstRoomCandidate = roomCandidates[0];
 
-  if (!firstRoomCandidate)
+  if (firstRoomCandidate)
+  {
+    return {
+      userId: String(firstRoomCandidate.userID),
+      username: firstRoomCandidate.userID?.username || "",
+    };
+  }
+
+  const spectatorCandidate = Array.isArray(room.members)
+    ? [...room.members]
+        .filter((member) => String(member.userID || "") !== normalizedExcludedUserId)
+        .sort((a, b) => new Date(a.joinedAt || 0).getTime() - new Date(b.joinedAt || 0).getTime())[0]
+    : null;
+
+  if (!spectatorCandidate)
   {
     return null;
   }
 
   return {
-    userId: String(firstRoomCandidate.userID),
-    username: firstRoomCandidate.userID?.username || "",
+    userId: String(spectatorCandidate.userID),
+    username: spectatorCandidate.userID?.username || "",
   };
 }
 
@@ -226,6 +279,76 @@ function emitHostTransferred(io, room, liveGame)
   }
 
   io.emit("rooms:changed");
+}
+
+function buildRoomMembersFromLiveGame(liveGame, excludedUserId)
+{
+  if (!liveGame)
+  {
+    return [];
+  }
+
+  const normalizedExcludedUserId = excludedUserId ? String(excludedUserId) : "";
+  const seenUserIds = new Set();
+  const rebuiltMembers = [];
+
+  const addMember = (userId, role, joinedAt) =>
+  {
+    const normalizedUserId = String(userId || "");
+
+    if (!normalizedUserId || normalizedUserId === normalizedExcludedUserId || seenUserIds.has(normalizedUserId))
+    {
+      return;
+    }
+
+    seenUserIds.add(normalizedUserId);
+    rebuiltMembers.push({
+      userID: userId,
+      role,
+      joinedAt: joinedAt || new Date(),
+    });
+  };
+
+  const orderedSeats = Array.isArray(liveGame.seats)
+    ? [...liveGame.seats].sort((a, b) => Number(a.seatNumber ?? 99) - Number(b.seatNumber ?? 99))
+    : [];
+
+  for (const seat of orderedSeats)
+  {
+    addMember(seat.userId, "player", seat.joinedAt);
+  }
+
+  const orderedSpectators = Array.isArray(liveGame.spectators)
+    ? [...liveGame.spectators].sort(
+        (a, b) => new Date(a.joinedAt || 0).getTime() - new Date(b.joinedAt || 0).getTime()
+      )
+    : [];
+
+  for (const spectator of orderedSpectators)
+  {
+    addMember(spectator.userId, "spectator", spectator.joinedAt);
+  }
+
+  return rebuiltMembers;
+}
+
+function restoreRoomMembersFromLiveGame(room, liveGame, excludedUserId)
+{
+  if (!room || !liveGame)
+  {
+    return false;
+  }
+
+  const rebuiltMembers = buildRoomMembersFromLiveGame(liveGame, excludedUserId);
+
+  if (rebuiltMembers.length === 0)
+  {
+    return false;
+  }
+
+  room.members = rebuiltMembers;
+  room.status = normalizeRoomStatus(room);
+  return true;
 }
 
 async function deleteRoomArtifacts(roomId)
@@ -310,6 +433,8 @@ router.get("/all", async (req, res) =>
 {
   try
   {
+    const requesterId = getRequesterIdFromToken(req);
+
     const rooms = await RoomModel.find({})
       .populate("members.userID", "username")
       .sort({ createdAt: -1 })
@@ -351,6 +476,7 @@ router.get("/all", async (req, res) =>
         activeGameId: liveGame?._id ? String(liveGame._id) : null,
         spectatorCount: Array.isArray(liveGame?.spectators) ? liveGame.spectators.length : 0,
         maxSpectators: 4,
+        rejoin: buildRejoinSnapshot(liveGame, requesterId),
       };
     });
 
@@ -673,7 +799,7 @@ router.post("/:id/leave", requireAuth, async (req, res) =>
 
     room.members.splice(memberIndex, 1);
 
-    if (room.members.length === 0)
+    if (room.members.length === 0 && !restoreRoomMembersFromLiveGame(room, activeLiveGame, userId))
     {
       const deletedGames = await deleteRoomArtifacts(room._id);
 

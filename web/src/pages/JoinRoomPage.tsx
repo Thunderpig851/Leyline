@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Copy, Crown, KeyRound } from "lucide-react";
-import { apiGet, apiPost } from "../lib/api";
+import { apiGet, apiPost, isAuthErrorMessage, isMissingRoomErrorMessage, isNetworkErrorMessage, isPrivateCodeErrorMessage } from "../lib/api";
+import ActionableErrorPanel from "../components/ActionableErrorPanel";
 
 import StatusOkIcon from "../components/icons/StatusOkIcon";
 import StatusBadIcon from "../components/icons/StatusBadIcon";
@@ -73,6 +74,7 @@ function normalizePrivateCode(value: string)
 export default function JoinRoomPage()
 {
   const navigate = useNavigate();
+  const location = useLocation();
   const { roomId = "" } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -95,6 +97,9 @@ export default function JoinRoomPage()
     connectToSFU,
   } = useMediaSession();
 
+  const rejoinState = (location.state as { rejoin?: boolean; role?: "player" | "spectator" } | null) || null;
+  const isRejoinIntent = Boolean(rejoinState?.rejoin);
+
   const [roomTitle, setRoomTitle] = useState("");
   const [roomVisibility, setRoomVisibility] = useState<"public" | "private">("public");
   const [roomFormat, setRoomFormat] = useState("");
@@ -111,6 +116,7 @@ export default function JoinRoomPage()
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
+  const privateCodeInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() =>
   {
@@ -239,6 +245,18 @@ export default function JoinRoomPage()
   {
     if (!roomId) return;
 
+    function joinRoomChannel()
+    {
+      if (!socket.connected) return;
+      socket.emit("room:join", { roomId });
+    }
+
+    function leaveRoomChannel()
+    {
+      if (!socket.connected) return;
+      socket.emit("room:leave", { roomId });
+    }
+
     function handleRoomDeleted(payload: { roomId?: string })
     {
       if (payload?.roomId !== roomId) return;
@@ -248,11 +266,65 @@ export default function JoinRoomPage()
       navigate("/lobby", { replace: true });
     }
 
+    function handleRoomUpdated(payload: { room?: any })
+    {
+      const nextRoom = payload?.room;
+      if (!nextRoom || String(nextRoom._id || "") !== roomId) return;
+
+      setRoomTitle(nextRoom.title || "");
+      setRoomVisibility(nextRoom.visibility === "private" ? "private" : "public");
+      setRoomFormat(nextRoom.settings?.format || "");
+      setIsHost(String(nextRoom.hostID || "") === String(sessionStorage.getItem("userId") || ""));
+    }
+
+    function handleLiveGameUpdated(payload: { game?: any })
+    {
+      const nextGame = payload?.game;
+      if (!nextGame || String(nextGame.roomId || "") !== roomId) return;
+
+      setActiveGameId(String(nextGame._id || "") || null);
+      setSpectatorCount(Array.isArray(nextGame.spectators) ? nextGame.spectators.length : 0);
+    }
+
+    function handleGameStarted(payload: { roomId?: string; gameId?: string })
+    {
+      if (payload?.roomId !== roomId) return;
+      setActiveGameId(payload?.gameId || null);
+    }
+
+    function handleGameEnded(payload: { roomId?: string })
+    {
+      if (payload?.roomId !== roomId) return;
+      setActiveGameId(null);
+      setSpectatorCount(0);
+    }
+
+    function handleHostTransferred(payload: { roomId?: string; hostUserId?: string })
+    {
+      if (payload?.roomId !== roomId) return;
+      setIsHost(String(payload?.hostUserId || "") === String(sessionStorage.getItem("userId") || ""));
+    }
+
+    joinRoomChannel();
+
+    socket.on("connect", joinRoomChannel);
     socket.on("room:deleted", handleRoomDeleted);
+    socket.on("room:updated", handleRoomUpdated);
+    socket.on("live-game:updated", handleLiveGameUpdated);
+    socket.on("game:started", handleGameStarted);
+    socket.on("game:ended", handleGameEnded);
+    socket.on("game:host-transferred", handleHostTransferred);
 
     return () =>
     {
+      leaveRoomChannel();
+      socket.off("connect", joinRoomChannel);
       socket.off("room:deleted", handleRoomDeleted);
+      socket.off("room:updated", handleRoomUpdated);
+      socket.off("live-game:updated", handleLiveGameUpdated);
+      socket.off("game:started", handleGameStarted);
+      socket.off("game:ended", handleGameEnded);
+      socket.off("game:host-transferred", handleHostTransferred);
     };
   }, [roomId, navigate, reset, stopPreview]);
 
@@ -400,12 +472,71 @@ export default function JoinRoomPage()
     }
   }
 
+
+
+  function renderErrorPanel(message: string | null)
+  {
+    if (!message)
+    {
+      return null;
+    }
+
+    if (isAuthErrorMessage(message))
+    {
+      return (
+        <ActionableErrorPanel
+          message={message}
+          actionLabel="Log in"
+          actionHref="/login"
+        />
+      );
+    }
+
+    if (isPrivateCodeErrorMessage(message))
+    {
+      return (
+        <ActionableErrorPanel
+          message={message}
+          actionLabel="Enter Code"
+          onAction={() => privateCodeInputRef.current?.focus()}
+        />
+      );
+    }
+
+    if (isMissingRoomErrorMessage(message))
+    {
+      return (
+        <ActionableErrorPanel
+          message={message}
+          actionLabel="Back to Lobby"
+          onAction={() => navigate("/lobby")}
+        />
+      );
+    }
+
+    if (isNetworkErrorMessage(message))
+    {
+      return (
+        <ActionableErrorPanel
+          message={message}
+          actionLabel="Retry"
+          onAction={() => window.location.reload()}
+        />
+      );
+    }
+
+    return <ActionableErrorPanel message={message} />;
+  }
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
       <div className="mx-auto max-w-5xl px-6 py-10">
         <h1 className="text-2xl font-semibold tracking-tight">
-          <span className="bg-gradient-to-r from-emerald-300 via-teal-300 to-cyan-200 bg-clip-text text-transparent">
-            Join Room
+          <span className={`bg-clip-text text-transparent ${
+            isRejoinIntent
+              ? "bg-gradient-to-r from-amber-200 via-yellow-200 to-amber-300"
+              : "bg-gradient-to-r from-emerald-300 via-teal-300 to-cyan-200"
+          }`}>
+            {isRejoinIntent ? "Rejoin Room" : "Join Room"}
           </span>
         </h1>
 
@@ -418,7 +549,11 @@ export default function JoinRoomPage()
           </span>
 
           {roomFormat ? (
-            <span className="rounded-full border border-teal-300/20 bg-teal-500/10 px-2 py-0.5 text-[11px] uppercase tracking-[0.18em] text-teal-100">
+            <span className={`rounded-full px-2 py-0.5 text-[11px] uppercase tracking-[0.18em] ${
+              isRejoinIntent
+                ? "border border-amber-300/20 bg-amber-500/10 text-amber-100"
+                : "border border-teal-300/20 bg-teal-500/10 text-teal-100"
+            }`}>
               {roomFormat}
             </span>
           ) : null}
@@ -430,20 +565,31 @@ export default function JoinRoomPage()
           ) : null}
         </div>
 
-        {error && (
-          <div className="mt-4 rounded-xl border border-red-400/40 bg-red-500/10 px-4 py-3 text-sm text-red-100">
-            {error}
+        {error ? (
+          <div className="mt-4">
+            {renderErrorPanel(error)}
           </div>
-        )}
+        ) : null}
 
-        {errorMessage && (
-          <div className="mt-4 rounded-xl border border-red-400/40 bg-red-500/10 px-4 py-3 text-sm text-red-100">
-            {errorMessage}
+        {errorMessage ? (
+          <div className="mt-4">
+            {renderErrorPanel(errorMessage)}
           </div>
-        )}
+        ) : null}
+
+        {isRejoinIntent ? (
+          <div className="mt-4 inline-flex items-center rounded-full border border-amber-300/25 bg-amber-400/10 px-3 py-1 text-sm font-medium text-amber-100">
+            Would you like to rejoin?
+          </div>
+        ) : null}
 
         <div className="mt-6 grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
-          <aside className="rounded-2xl border border-white/10 bg-slate-950/40 p-4 lg:h-[620px]">
+          <aside className={`rounded-2xl p-4 lg:h-[620px] ${
+            isRejoinIntent
+              ? "border border-amber-300/15 bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.12),transparent_34%),rgba(2,6,23,0.4)]"
+              : "border border-white/10 bg-slate-950/40"
+          }`}>
+
             <div className="space-y-4">
               <label className="block">
                 <span className="text-xs text-slate-300">Camera</span>
@@ -497,6 +643,7 @@ export default function JoinRoomPage()
                 <label className="block">
                   <span className="text-xs text-slate-300">Private Room Code</span>
                   <input
+                    ref={privateCodeInputRef}
                     type="text"
                     className="mt-1 w-full rounded-xl border border-white/10 bg-slate-950/50 px-3 py-2 text-sm tracking-[0.28em] text-slate-100 uppercase outline-none
                                focus:border-teal-300/80 focus:ring-4 focus:ring-emerald-400/20"
@@ -513,9 +660,19 @@ export default function JoinRoomPage()
               ) : null}
 
               {isHost && roomVisibility === "private" && hostPrivateCode ? (
-                <div className="overflow-hidden rounded-2xl border border-teal-300/20 bg-teal-500/10 shadow-[0_18px_50px_-30px_rgba(20,184,166,0.65)]">
-                  <div className="border-b border-white/10 bg-gradient-to-r from-emerald-400/14 via-teal-400/12 to-cyan-300/10 px-4 py-3">
-                    <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.24em] text-teal-100/90">
+                <div className={`overflow-hidden rounded-2xl shadow-[0_18px_50px_-30px_rgba(20,184,166,0.65)] ${
+                  isRejoinIntent
+                    ? "border border-amber-300/20 bg-amber-500/10 shadow-[0_18px_50px_-30px_rgba(245,158,11,0.5)]"
+                    : "border border-teal-300/20 bg-teal-500/10"
+                }`}>
+                  <div className={`border-b border-white/10 px-4 py-3 ${
+                    isRejoinIntent
+                      ? "bg-gradient-to-r from-amber-400/14 via-yellow-300/12 to-amber-200/10"
+                      : "bg-gradient-to-r from-emerald-400/14 via-teal-400/12 to-cyan-300/10"
+                  }`}>
+                    <div className={`flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.24em] ${
+                      isRejoinIntent ? "text-amber-100/90" : "text-teal-100/90"
+                    }`}>
                       <Crown className="h-3.5 w-3.5" />
                       Access Code
                     </div>
@@ -523,7 +680,7 @@ export default function JoinRoomPage()
 
                   <div className="p-4">
                     <div className="flex items-center gap-2 text-xs text-slate-300">
-                      <KeyRound className="h-3.5 w-3.5 text-teal-200" />
+                      <KeyRound className={`h-3.5 w-3.5 ${isRejoinIntent ? "text-amber-200" : "text-teal-200"}`} />
                       Share this with invited players.
                     </div>
 
@@ -542,7 +699,7 @@ export default function JoinRoomPage()
                       </button>
 
                       {copyMessage ? (
-                        <div className="text-xs text-teal-100">{copyMessage}</div>
+                        <div className={`text-xs ${isRejoinIntent ? "text-amber-100" : "text-teal-100"}`}>{copyMessage}</div>
                       ) : null}
                     </div>
                   </div>
@@ -551,7 +708,12 @@ export default function JoinRoomPage()
             </div>
           </aside>
 
-          <main className="rounded-2xl border border-white/10 bg-slate-950/40 p-4 lg:h-[620px]">
+          <main className={`rounded-2xl p-4 lg:h-[620px] ${
+            isRejoinIntent
+              ? "border border-amber-300/15 bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.1),transparent_34%),rgba(2,6,23,0.4)]"
+              : "border border-white/10 bg-slate-950/40"
+          }`}>
+
             <div className="flex h-full flex-col">
               <div className="flex items-end justify-between gap-3">
                 <div>
@@ -624,12 +786,17 @@ export default function JoinRoomPage()
                 <button
                   type="button"
                   disabled={loading || !roomId}
-                  className="flex-1 rounded-xl border border-teal-300/60 bg-gradient-to-r from-emerald-400/25 via-teal-400/20 to-cyan-300/20
-                             px-4 py-2 text-sm font-medium text-slate-100 hover:bg-teal-300 hover:border-teal-200 hover:text-slate-900
-                             disabled:opacity-50 disabled:cursor-not-allowed"
+                  className={`flex-1 rounded-xl px-4 py-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed ${
+                    isRejoinIntent
+                      ? "border border-amber-300/60 bg-gradient-to-r from-amber-400/25 via-yellow-300/20 to-amber-300/20 text-slate-100 hover:border-amber-200 hover:bg-amber-300 hover:text-slate-900"
+                      : "border border-teal-300/60 bg-gradient-to-r from-emerald-400/25 via-teal-400/20 to-cyan-300/20 text-slate-100 hover:border-teal-200 hover:bg-teal-300 hover:text-slate-900"
+                  }`}
+
                   onClick={() => { void joinGame(); }}
                 >
-                  {loading && session.viewerMode !== "spectator" ? "Joining..." : "Join Room"}
+                  {loading && session.viewerMode !== "spectator"
+                    ? isRejoinIntent ? "Rejoining..." : "Joining..."
+                    : isRejoinIntent ? "Rejoin" : "Join Room"}
                 </button>
               </div>
             </div>

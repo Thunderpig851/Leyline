@@ -223,6 +223,31 @@ function getNormalizedBoardOrder(boardOrder?: number[])
   return normalized;
 }
 
+function getClockwiseDisplayBoardOrder(boardOrder?: number[])
+{
+  const normalized = getNormalizedBoardOrder(boardOrder);
+
+  if (normalized.length < 4)
+  {
+    return normalized;
+  }
+
+  const [first, second, third, fourth, ...rest] = normalized;
+  return [first, second, fourth, third, ...rest];
+}
+
+function truncateLabel(value: string, maxLength = 26)
+{
+  const trimmed = value.trim();
+
+  if (trimmed.length <= maxLength)
+  {
+    return trimmed;
+  }
+
+  return `${trimmed.slice(0, maxLength - 1).trimEnd()}…`;
+}
+
 function formatTurnDuration(totalSeconds: number)
 {
   const safeSeconds = Math.max(0, Math.floor(totalSeconds));
@@ -1392,7 +1417,7 @@ export default function GamePage()
         .filter((entry) => entry.userId !== seat.userId)
         .map((entry) => ({
           userId: entry.userId,
-          label: getSeatCommanders(entry).map((card) => card.name).join(" / ") || entry.username,
+          label: truncateLabel(getSeatCommanders(entry).map((card) => card.name).join(" / ") || entry.username),
           amount: commanderDamageMap[entry.userId] ?? 0,
         }));
 
@@ -1420,13 +1445,15 @@ export default function GamePage()
 
   const displaySeatSlots = useMemo(() =>
   {
-    const normalizedBoardOrder = getNormalizedBoardOrder(game?.boardOrder);
+    const normalizedBoardOrder = isCommanderGame
+      ? getClockwiseDisplayBoardOrder(game?.boardOrder)
+      : getNormalizedBoardOrder(game?.boardOrder);
     const seatSlotMap = new Map(seatSlots.map((slot) => [slot.seatNumber, slot]));
 
     return normalizedBoardOrder
       .map((seatNumber) => seatSlotMap.get(seatNumber))
       .filter((slot): slot is (typeof seatSlots)[number] => Boolean(slot));
-  }, [game?.boardOrder, seatSlots]);
+  }, [game?.boardOrder, isCommanderGame, seatSlots]);
 
   const activeCommanderSeat = useMemo(() =>
   {

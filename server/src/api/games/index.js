@@ -131,6 +131,11 @@ function emitRoomUpdated(io, room)
   io.emit("rooms:changed");
 }
 
+function emitLobbyRefresh(io)
+{
+  io.emit("rooms:changed");
+}
+
 function getSpectatorParticipant(game, userId)
 {
   return Array.isArray(game?.spectators)
@@ -618,6 +623,7 @@ router.post("/:gameId/join", requireAuth, async (req, res) =>
 
         const io = req.app.get("io");
         emitGameUpdated(io, game);
+        emitLobbyRefresh(io);
 
         return res.status(200).json({ ok: true, game, alreadySpectating: true });
       }
@@ -642,6 +648,7 @@ router.post("/:gameId/join", requireAuth, async (req, res) =>
 
       const io = req.app.get("io");
       emitGameUpdated(io, game);
+      emitLobbyRefresh(io);
 
       return res.status(200).json({ ok: true, game, role: "spectator" });
     }
@@ -663,6 +670,7 @@ router.post("/:gameId/join", requireAuth, async (req, res) =>
 
       const io = req.app.get("io");
       emitGameUpdated(io, game);
+      emitLobbyRefresh(io);
 
       return res.status(200).json({ ok: true, game, alreadySeated: true });
     }
@@ -726,6 +734,7 @@ router.post("/:gameId/join", requireAuth, async (req, res) =>
 
     const io = req.app.get("io");
     emitGameUpdated(io, game);
+    emitLobbyRefresh(io);
 
     return res.status(200).json({ ok: true, game, role: "player" });
   }
@@ -761,6 +770,7 @@ router.post("/:gameId/leave", requireAuth, async (req, res) =>
 
       const io = req.app.get("io");
       emitGameUpdated(io, game);
+      emitLobbyRefresh(io);
 
       return res.status(200).json({ ok: true, game });
     }
@@ -779,6 +789,7 @@ router.post("/:gameId/leave", requireAuth, async (req, res) =>
 
     const io = req.app.get("io");
     emitGameUpdated(io, game);
+    emitLobbyRefresh(io);
 
     return res.status(200).json({ ok: true, game });
   }
@@ -872,6 +883,11 @@ router.post("/:gameId/seats/:seatNumber/state", requireAuth, async (req, res) =>
 
     const io = req.app.get("io");
     emitGameUpdated(io, game);
+
+    if (commanders !== undefined || commander !== undefined)
+    {
+      emitLobbyRefresh(io);
+    }
 
     return res.status(200).json({ ok: true, game });
   }
@@ -1322,6 +1338,7 @@ router.post("/:gameId/reset", requireAuth, async (req, res) =>
 
     const io = req.app.get("io");
     emitGameUpdated(io, game);
+    emitLobbyRefresh(io);
 
     return res.status(200).json({ ok: true, game });
   }

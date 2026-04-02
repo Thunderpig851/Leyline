@@ -4,7 +4,9 @@ import { KeyRound, Search, X } from "lucide-react";
 import { socket } from "../lib/socket";
 import CreateGamePopUp from "../components/CreateGamePopUp";
 import GamesGrid from "../components/GamesGrid";
-import { apiGet, apiPost } from "../lib/api";
+import ActionableErrorPanel from "../components/ActionableErrorPanel";
+import { apiGet, apiPost, isAuthErrorMessage, isNetworkErrorMessage } from "../lib/api";
+import LeylineBackdrop from "../components/layout/LeylineBackdrop";
 
 type RoomSeat =
 {
@@ -27,6 +29,12 @@ type Room =
   activeGameId?: string | null;
   spectatorCount?: number;
   maxSpectators?: number;
+  rejoin?:
+  {
+    canRejoin?: boolean;
+    role?: "player" | "spectator" | null;
+    connectionStatus?: "connected" | "reconnecting" | "away" | null;
+  };
   createdAt: string;
   settings:
   {
@@ -255,6 +263,7 @@ function JoinCodeModal(
   );
 }
 
+
 export default function LobbyPage()
 {
   const navigate = useNavigate();
@@ -299,12 +308,14 @@ export default function LobbyPage()
 
   useEffect(() =>
   {
-    loadRooms();
+    void loadRooms();
 
+    socket.on("connect", loadRooms);
     socket.on("rooms:changed", loadRooms);
 
     return () =>
     {
+      socket.off("connect", loadRooms);
       socket.off("rooms:changed", loadRooms);
     };
   }, [loadRooms]);
@@ -335,16 +346,23 @@ export default function LobbyPage()
       return true;
     });
 
-    if (sortBy === "title")
+    result = [...result].sort((a, b) =>
     {
-      result = [...result].sort((a, b) => a.title.localeCompare(b.title));
-    }
-    else
-    {
-      result = [...result].sort(
-        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-      );
-    }
+      const aRejoin = a.rejoin?.canRejoin ? 1 : 0;
+      const bRejoin = b.rejoin?.canRejoin ? 1 : 0;
+
+      if (aRejoin !== bRejoin)
+      {
+        return bRejoin - aRejoin;
+      }
+
+      if (sortBy === "title")
+      {
+        return a.title.localeCompare(b.title);
+      }
+
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
 
     return result;
   }, [rooms, query, filterStatus, filterVisibility, filterFormat, filterBracket, sortBy]);
@@ -446,8 +464,10 @@ export default function LobbyPage()
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <div className="mx-auto max-w-5xl px-6 py-10">
+    <div className="relative min-h-screen overflow-hidden bg-slate-950 text-slate-100">
+      <LeylineBackdrop />
+
+      <div className="relative mx-auto max-w-5xl px-6 py-10">
         <h1 className="text-2xl font-semibold tracking-tight">
           <span className="bg-gradient-to-r from-emerald-300 via-teal-300 to-cyan-200 bg-clip-text text-transparent">
             Lobby
@@ -648,8 +668,13 @@ export default function LobbyPage()
             Loading rooms...
           </div>
         ) : error ? (
-          <div className="mt-8 rounded-2xl border border-red-300/20 bg-red-500/10 p-6 text-sm text-red-100 ring-1 ring-red-300/10">
-            {error}
+          <div className="mt-8">
+            <ActionableErrorPanel
+              message={error}
+              actionLabel={isAuthErrorMessage(error) ? "Log in" : isNetworkErrorMessage(error) ? "Retry" : undefined}
+              actionHref={isAuthErrorMessage(error) ? "/login" : undefined}
+              onAction={isNetworkErrorMessage(error) ? () => { void loadRooms(); } : undefined}
+            />
           </div>
         ) : (
           <GamesGrid rooms={filteredRooms} />

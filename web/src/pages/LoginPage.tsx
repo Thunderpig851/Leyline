@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import LeylineBackdrop from "../components/layout/LeylineBackdrop";
 import { apiPost, setAuthSession } from "../lib/api";
 import { useNavigate } from "react-router-dom";
 
@@ -74,13 +75,11 @@ export default function LoginPage()
   }
 
   return (
-    <div className="min-h-screen text-slate-100 grid place-items-center px-6 bg-slate-950 relative">
-      <div className="absolute inset-0 -z-10 overflow-hidden">
-        <div className="absolute left-1/2 top-1/3 h-[520px] w-[520px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-emerald-500/10 blur-3xl" />
-        <div className="absolute left-1/3 top-2/3 h-[520px] w-[520px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-teal-500/10 blur-3xl" />
-      </div>
+    <div className="relative min-h-screen overflow-hidden bg-slate-950 px-6 text-slate-100">
+      <LeylineBackdrop />
 
-      <div className="w-full max-w-md rounded-2xl border border-teal-400/25 bg-slate-900/70 backdrop-blur p-6 shadow-[0_0_0_1px_rgba(45,212,191,0.14),0_22px_90px_-28px_rgba(0,0,0,0.85)]">
+      <div className="relative z-10 grid min-h-screen place-items-center">
+        <div className="w-full max-w-md rounded-2xl border border-teal-400/25 bg-slate-900/70 p-6 backdrop-blur shadow-[0_0_0_1px_rgba(45,212,191,0.14),0_22px_90px_-28px_rgba(0,0,0,0.85)]">
         <h1 className="text-2xl font-semibold tracking-tight text-center">
           <span className="bg-gradient-to-r from-emerald-300 via-teal-300 to-cyan-200 bg-clip-text text-transparent">
             Log In
@@ -143,6 +142,7 @@ export default function LoginPage()
             </a>
           </div>
         </form>
+        </div>
       </div>
     </div>
   );

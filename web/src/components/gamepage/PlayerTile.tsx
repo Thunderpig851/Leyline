@@ -1082,7 +1082,10 @@ function DamageRow({
 {
   return (
     <div className="flex items-center justify-between gap-1.5 rounded-lg border border-white/10 bg-slate-950/70 px-1.5 py-1">
-      <div className="min-w-0 flex-1 truncate text-[10px] text-slate-200">
+      <div
+        className="min-w-0 flex-1 basis-0 truncate pr-1 text-[10px] text-slate-200"
+        title={label}
+      >
         {label}
       </div>
 

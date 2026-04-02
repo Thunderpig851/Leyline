@@ -74,14 +74,28 @@ function getNextHostCandidate(room, liveGame, excludedUserId)
 
   const firstRoomCandidate = roomCandidates[0];
 
-  if (!firstRoomCandidate)
+  if (firstRoomCandidate)
+  {
+    return {
+      userId: String(firstRoomCandidate.userID),
+      username: firstRoomCandidate.userID?.username || "",
+    };
+  }
+
+  const spectatorCandidate = Array.isArray(room.members)
+    ? [...room.members]
+        .filter((member) => String(member.userID || "") !== normalizedExcludedUserId)
+        .sort((a, b) => new Date(a.joinedAt || 0).getTime() - new Date(b.joinedAt || 0).getTime())[0]
+    : null;
+
+  if (!spectatorCandidate)
   {
     return null;
   }
 
   return {
-    userId: String(firstRoomCandidate.userID),
-    username: firstRoomCandidate.userID?.username || "",
+    userId: String(spectatorCandidate.userID),
+    username: spectatorCandidate.userID?.username || "",
   };
 }
 
@@ -113,6 +127,76 @@ async function resolveUsername(userId, fallback = "")
 
   const user = await UserModel.findById(userId).select("username").lean().exec();
   return user?.username || fallback;
+}
+
+function buildRoomMembersFromLiveGame(liveGame, excludedUserId)
+{
+  if (!liveGame)
+  {
+    return [];
+  }
+
+  const normalizedExcludedUserId = excludedUserId ? String(excludedUserId) : "";
+  const seenUserIds = new Set();
+  const rebuiltMembers = [];
+
+  const addMember = (userId, role, joinedAt) =>
+  {
+    const normalizedUserId = String(userId || "");
+
+    if (!normalizedUserId || normalizedUserId === normalizedExcludedUserId || seenUserIds.has(normalizedUserId))
+    {
+      return;
+    }
+
+    seenUserIds.add(normalizedUserId);
+    rebuiltMembers.push({
+      userID: userId,
+      role,
+      joinedAt: joinedAt || new Date(),
+    });
+  };
+
+  const orderedSeats = Array.isArray(liveGame.seats)
+    ? [...liveGame.seats].sort((a, b) => Number(a.seatNumber ?? 99) - Number(b.seatNumber ?? 99))
+    : [];
+
+  for (const seat of orderedSeats)
+  {
+    addMember(seat.userId, "player", seat.joinedAt);
+  }
+
+  const orderedSpectators = Array.isArray(liveGame.spectators)
+    ? [...liveGame.spectators].sort(
+        (a, b) => new Date(a.joinedAt || 0).getTime() - new Date(b.joinedAt || 0).getTime()
+      )
+    : [];
+
+  for (const spectator of orderedSpectators)
+  {
+    addMember(spectator.userId, "spectator", spectator.joinedAt);
+  }
+
+  return rebuiltMembers;
+}
+
+function restoreRoomMembersFromLiveGame(room, liveGame, excludedUserId)
+{
+  if (!room || !liveGame)
+  {
+    return false;
+  }
+
+  const rebuiltMembers = buildRoomMembersFromLiveGame(liveGame, excludedUserId);
+
+  if (rebuiltMembers.length === 0)
+  {
+    return false;
+  }
+
+  room.members = rebuiltMembers;
+  room.status = normalizeRoomStatus(room);
+  return true;
 }
 
 function getOrCreateEntry({ gameId, roomId, userId, username })
@@ -235,7 +319,7 @@ async function removeParticipantFromGameAndRoom(gameId, roomId, userId)
 
     if (room.members.length !== before)
     {
-      if (room.members.length === 0)
+      if (room.members.length === 0 && !restoreRoomMembersFromLiveGame(room, updatedGame || game, userId))
       {
         await Promise.all([
           RoomChatMessageModel.deleteMany({ roomId }).exec(),
@@ -282,6 +366,11 @@ function emitPresenceChanged(io, entry)
     username: entry.username,
     state: entry.state,
   });
+}
+
+function emitLobbyRefresh(io)
+{
+  io.emit("rooms:changed");
 }
 
 function emitGameUpdated(io, game)
@@ -345,6 +434,7 @@ async function handleJoin(io, socket, payload = {})
   if (!gameId || !roomId || !userId) return;
 
   const entry = getOrCreateEntry({ gameId, roomId, userId, username });
+  const previousState = entry.state;
 
   entry.socketIds.add(socket.id);
   entry.state = "connected";
@@ -372,6 +462,11 @@ async function handleJoin(io, socket, payload = {})
 
   if (game) emitGameUpdated(io, game);
   emitPresenceChanged(io, entry);
+
+  if (previousState !== entry.state)
+  {
+    emitLobbyRefresh(io);
+  }
 }
 
 async function handleHeartbeat(io, payload = {})
@@ -388,6 +483,7 @@ async function handleHeartbeat(io, payload = {})
   if (!gameId || !roomId || !userId) return;
 
   const entry = getOrCreateEntry({ gameId, roomId, userId, username });
+  const previousState = entry.state;
   entry.lastHeartbeatAt = Date.now();
 
   const shouldBeAway = hidden || page !== "game";
@@ -427,6 +523,11 @@ async function handleHeartbeat(io, payload = {})
   }
 
   emitPresenceChanged(io, entry);
+
+  if (previousState !== entry.state)
+  {
+    emitLobbyRefresh(io);
+  }
 }
 
 async function handleExplicitLeave(io, socket, payload = {})
@@ -481,6 +582,8 @@ async function handleDisconnect(io, socket)
 
   if (entry.socketIds.size > 0) return;
 
+  const previousState = entry.state;
+
   entry.state = "reconnecting";
   entry.disconnectDeadlineAt = Date.now() + DISCONNECT_GRACE_MS;
   entry.awayDeadlineAt = null;
@@ -494,6 +597,11 @@ async function handleDisconnect(io, socket)
 
   if (game) emitGameUpdated(io, game);
   emitPresenceChanged(io, entry);
+
+  if (previousState !== entry.state)
+  {
+    emitLobbyRefresh(io);
+  }
 }
 
 async function sweep(io)
@@ -519,6 +627,7 @@ async function sweep(io)
 
       if (game) emitGameUpdated(io, game);
       emitPresenceChanged(io, entry);
+      emitLobbyRefresh(io);
       continue;
     }
 

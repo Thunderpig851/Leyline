@@ -1,9 +1,9 @@
-import { useState } from "react";
+// import { useState } from "react";
 
 export default function SocialPanel()
 {
-    const [friends, setFriends] = useState<string[]>([]);
-    const [blockedUsers, setBlockedUsers] = useState<string[]>([]);
+    // const [friends, setFriends] = useState<string[]>([]);
+    // const [blockedUsers, setBlockedUsers] = useState<string[]>([]);
 
     return (
         <div>

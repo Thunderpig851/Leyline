@@ -9,6 +9,13 @@ type GridSeat =
   commanders?: string[];
 };
 
+type GridRejoin =
+{
+  canRejoin?: boolean;
+  role?: "player" | "spectator" | null;
+  connectionStatus?: "connected" | "reconnecting" | "away" | null;
+};
+
 type GridRoom =
 {
   _id: string;
@@ -22,6 +29,7 @@ type GridRoom =
   activeGameId?: string | null;
   spectatorCount?: number;
   maxSpectators?: number;
+  rejoin?: GridRejoin;
   settings?:
   {
     format?: string;
@@ -73,6 +81,11 @@ export default function GamesGrid({ rooms, onJoinRoom }: GamesGridProps)
         spectatorCount: Number(r.spectatorCount ?? 0),
         maxSpectators: Number(r.maxSpectators ?? 4),
         createdAt: r.createdAt,
+        rejoin: {
+          canRejoin: Boolean(r.rejoin?.canRejoin),
+          role: r.rejoin?.role ?? null,
+          connectionStatus: r.rejoin?.connectionStatus ?? null,
+        },
       };
     }),
   [rooms]);
@@ -95,7 +108,7 @@ export default function GamesGrid({ rooms, onJoinRoom }: GamesGridProps)
 
   return (
     <div className="mt-8">
-      <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-slate-950/40 p-4 ring-1 ring-white/5">
+      <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-slate-950/28 p-4 ring-1 ring-white/5 backdrop-blur-[2px]">
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-emerald-400/5 via-teal-400/5 to-cyan-300/5" />
         <div className="relative flex flex-wrap items-center justify-between gap-3">
           <div className="text-xs text-slate-300">
@@ -141,14 +154,16 @@ export default function GamesGrid({ rooms, onJoinRoom }: GamesGridProps)
         </div>
       </div>
 
-      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {pageCards.map((room) => (
-          <RoomCard
-            key={room.id}
-            room={room}
-            onJoin={onJoinRoom}
-          />
-        ))}
+      <div className="relative mt-6 overflow-hidden rounded-[28px] border border-teal-300/15 bg-slate-950/22 px-4 py-5 ring-1 ring-white/5 backdrop-blur-[3px] sm:px-5 sm:py-6">
+        <div className="relative grid auto-rows-fr grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {pageCards.map((room) => (
+            <RoomCard
+              key={room.id}
+              room={room}
+              onJoin={onJoinRoom}
+            />
+          ))}
+        </div>
       </div>
     </div>
   );

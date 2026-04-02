@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
-import { Crown, Eye } from "lucide-react";
+import { Crown, Eye, RotateCcw } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { apiPost } from "../lib/api";
 import { socket } from "../lib/socket";
@@ -13,6 +13,13 @@ type RoomSeat =
   username: string;
   seatNumber?: number;
   commanders?: string[];
+};
+
+type RoomCardRejoin =
+{
+  canRejoin?: boolean;
+  role?: "player" | "spectator" | null;
+  connectionStatus?: "connected" | "reconnecting" | "away" | null;
 };
 
 export type RoomCardData =
@@ -32,6 +39,7 @@ export type RoomCardData =
   spectatorCount?: number;
   maxSpectators?: number;
   createdAt?: string;
+  rejoin?: RoomCardRejoin;
 };
 
 type RoomCardProps =
@@ -221,22 +229,44 @@ function formatLabel(value?: string)
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
+function formatRejoinStatus(value?: RoomCardRejoin["connectionStatus"])
+{
+  if (value === "reconnecting")
+  {
+    return "Reconnecting";
+  }
+
+  if (value === "away")
+  {
+    return "Away";
+  }
+
+  if (value === "connected")
+  {
+    return "Connected";
+  }
+
+  return "Rejoin";
+}
+
 function MetaPill(
   {
     children,
     tone = "default",
   }: {
     children: ReactNode;
-    tone?: "default" | "accent" | "danger";
+    tone?: "default" | "accent" | "danger" | "rejoin";
   }
 )
 {
   const toneClass =
     tone === "accent"
-      ? "border-teal-300/20 bg-teal-400/10 text-teal-100"
+      ? "border-emerald-300/20 bg-emerald-400/10 text-emerald-100"
       : tone === "danger"
         ? "border-red-300/20 bg-red-400/10 text-red-200"
-        : "border-white/10 bg-slate-900/80 text-slate-200";
+        : tone === "rejoin"
+          ? "border-amber-300/25 bg-amber-400/12 text-amber-100"
+          : "border-white/10 bg-slate-900/80 text-slate-200";
 
   return (
     <span
@@ -254,7 +284,8 @@ export default function RoomCard({ room, onJoin }: RoomCardProps)
   const { stopPreview, disconnectFromSFU } = useMediaSession();
   const [commanderVisualMap, setCommanderVisualMap] = useState<Record<string, CommanderVisual | null>>({});
   const [watching, setWatching] = useState(false);
-  const [watchError, setWatchError] = useState<string | null>(null);
+  const [rejoining, setRejoining] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const {
     id,
@@ -272,6 +303,7 @@ export default function RoomCard({ room, onJoin }: RoomCardProps)
     spectatorCount = 0,
     maxSpectators = 4,
     createdAt,
+    rejoin,
   } = room;
 
   const sortedSeats = useMemo(() =>
@@ -284,7 +316,11 @@ export default function RoomCard({ room, onJoin }: RoomCardProps)
   const showBracket = format?.toLowerCase() === "commander" && bracket;
   const trimmedDescription = description?.trim();
   const canDirectWatch = Boolean(activeGameId) && visibility !== "private";
+  const showWatchButton = canDirectWatch && isFull;
   const spectatorsFull = spectatorCount >= maxSpectators;
+  const canRejoin = Boolean(rejoin?.canRejoin && activeGameId);
+  const rejoinRole = rejoin?.role === "spectator" ? "spectator" : "player";
+  const isRejoinCard = canRejoin;
 
   useEffect(() =>
   {
@@ -347,7 +383,7 @@ export default function RoomCard({ room, onJoin }: RoomCardProps)
     }
 
     setWatching(true);
-    setWatchError(null);
+    setActionError(null);
 
     try
     {
@@ -362,7 +398,7 @@ export default function RoomCard({ room, onJoin }: RoomCardProps)
 
       if (!roomJoinResult.ok)
       {
-        setWatchError(roomJoinResult.error || "Failed to join as spectator.");
+        setActionError(roomJoinResult.error || "Failed to join as spectator.");
         return;
       }
 
@@ -376,7 +412,7 @@ export default function RoomCard({ room, onJoin }: RoomCardProps)
     catch (error)
     {
       console.error("Failed to watch room:", error);
-      setWatchError("Failed to join as spectator.");
+      setActionError("Failed to join as spectator.");
     }
     finally
     {
@@ -384,10 +420,56 @@ export default function RoomCard({ room, onJoin }: RoomCardProps)
     }
   }
 
+  async function handleRejoin()
+  {
+    if (!canRejoin || rejoining)
+    {
+      return;
+    }
+
+    setRejoining(true);
+    setActionError(null);
+
+    try
+    {
+      disconnectFromSFU();
+      stopPreview();
+      setRoom(id, title);
+      setViewerMode(rejoinRole);
+      navigate(`/rooms/${id}`, {
+        state: {
+          rejoin: true,
+          role: rejoinRole,
+        },
+      });
+    }
+    catch (error)
+    {
+      console.error("Failed to route back to room:", error);
+      setActionError("Failed to open the room.");
+    }
+    finally
+    {
+      setRejoining(false);
+    }
+  }
+
+  const articleClass = isRejoinCard
+    ? "group relative h-full min-h-[410px] overflow-hidden rounded-[24px] border border-amber-200/35 bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.16),transparent_38%),linear-gradient(180deg,rgba(15,23,42,0.98),rgba(2,6,23,0.94))] p-4 ring-1 ring-amber-100/15 shadow-[0_0_0_1px_rgba(245,158,11,0.12),0_22px_80px_-34px_rgba(245,158,11,0.34)] backdrop-blur-sm"
+    : "group relative h-full min-h-[410px] overflow-hidden rounded-[24px] border border-emerald-200/15 bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.16),transparent_34%),linear-gradient(180deg,rgba(15,23,42,0.98),rgba(2,6,23,0.92))] p-4 ring-1 ring-white/8 shadow-[0_20px_70px_-38px_rgba(15,23,42,0.95),0_0_0_1px_rgba(16,185,129,0.12)] backdrop-blur-sm";
+
+  const topGlowClass = isRejoinCard
+    ? "pointer-events-none absolute inset-0 bg-gradient-to-br from-amber-200/18 via-transparent to-yellow-100/10"
+    : "pointer-events-none absolute inset-0 bg-gradient-to-br from-emerald-300/18 via-transparent to-teal-200/10";
+
+  const accentLineClass = isRejoinCard
+    ? "pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-amber-100/70 to-transparent"
+    : "pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-emerald-100/55 to-transparent";
+
   return (
-    <article className="relative overflow-hidden rounded-2xl border border-white/10 bg-slate-950/60 p-4 ring-1 ring-white/5">
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-emerald-400/12 via-transparent to-cyan-300/10" />
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-teal-200/35 to-transparent" />
+    <article className={articleClass}>
+      <div className={topGlowClass} />
+      <div className={accentLineClass} />
 
       <div className="relative flex h-full flex-col">
         <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-2">
@@ -398,26 +480,41 @@ export default function RoomCard({ room, onJoin }: RoomCardProps)
           </div>
 
           <div className="flex items-start gap-2">
-            {canDirectWatch ? (
+            {isRejoinCard ? (
               <button
                 type="button"
-                onClick={() => { void handleWatch(); }}
-                disabled={spectatorsFull || watching}
-                className="inline-flex h-8 shrink-0 items-center gap-1.5 self-start rounded-lg border border-violet-300/35 bg-violet-500/10 px-3 text-xs font-medium text-slate-100 transition-colors transition-shadow duration-150 hover:border-violet-200 hover:bg-violet-300 hover:text-slate-900 hover:shadow-lg hover:shadow-violet-400/25 disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={() => { void handleRejoin(); }}
+                disabled={rejoining}
+                className="inline-flex h-8 shrink-0 items-center gap-1.5 self-start rounded-lg border border-amber-100/60 bg-gradient-to-r from-amber-300/24 via-yellow-200/20 to-amber-300/22 px-3 text-xs font-medium text-amber-50 transition-colors transition-shadow duration-150 hover:border-amber-50 hover:bg-amber-200 hover:text-slate-950 hover:shadow-lg hover:shadow-amber-300/35 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <Eye className="h-3.5 w-3.5" />
-                {watching ? "Watching..." : spectatorsFull ? "Watch Full" : "Watch"}
+                <RotateCcw className="h-3.5 w-3.5" />
+                {rejoining ? "Rejoining..." : "Rejoin"}
               </button>
-            ) : null}
+            ) : (
+              <>
+                {showWatchButton ? (
+                  <button
+                    type="button"
+                    onClick={() => { void handleWatch(); }}
+                    disabled={spectatorsFull || watching}
+                    className="inline-flex h-8 shrink-0 items-center gap-1.5 self-start rounded-lg border border-emerald-300/35 bg-emerald-500/10 px-3 text-xs font-medium text-slate-100 transition-colors transition-shadow duration-150 hover:border-emerald-200 hover:bg-emerald-300 hover:text-slate-900 hover:shadow-lg hover:shadow-emerald-400/25 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Eye className="h-3.5 w-3.5" />
+                    {watching ? "Watching..." : spectatorsFull ? "Watch Full" : "Watch"}
+                  </button>
+                ) : null}
 
-            <button
-              type="button"
-              onClick={handleJoin}
-              disabled={isFull}
-              className="h-8 shrink-0 self-start rounded-lg border border-teal-300/35 bg-teal-500/10 px-3 text-xs font-medium text-slate-100 transition-colors transition-shadow duration-150 hover:border-teal-200 hover:bg-teal-300 hover:text-slate-900 hover:shadow-lg hover:shadow-teal-400/25 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {isFull ? "Full" : "Join"}
-            </button>
+                {!isFull ? (
+                  <button
+                    type="button"
+                    onClick={handleJoin}
+                    className="h-8 shrink-0 self-start rounded-lg border border-teal-300/35 bg-teal-500/10 px-3 text-xs font-medium text-slate-100 transition-colors transition-shadow duration-150 hover:border-teal-200 hover:bg-teal-300 hover:text-slate-900 hover:shadow-lg hover:shadow-teal-400/25"
+                  >
+                    Join
+                  </button>
+                ) : null}
+              </>
+            )}
           </div>
 
           <div className="col-span-2 flex justify-end overflow-hidden">
@@ -427,7 +524,7 @@ export default function RoomCard({ room, onJoin }: RoomCardProps)
               ) : null}
 
               {showBracket ? (
-                <MetaPill tone="accent">Bracket {bracket}</MetaPill>
+                <MetaPill tone={isRejoinCard ? "rejoin" : "accent"}>Bracket {bracket}</MetaPill>
               ) : null}
 
               {visibility ? (
@@ -435,7 +532,7 @@ export default function RoomCard({ room, onJoin }: RoomCardProps)
               ) : null}
 
               {status ? (
-                <MetaPill tone={isFull ? "danger" : "accent"}>
+                <MetaPill tone={isFull && !isRejoinCard ? "danger" : isRejoinCard ? "rejoin" : "accent"}>
                   {formatLabel(status)}
                 </MetaPill>
               ) : null}
@@ -443,19 +540,38 @@ export default function RoomCard({ room, onJoin }: RoomCardProps)
           </div>
         </div>
 
-        {trimmedDescription ? (
-          <p className="mt-3 line-clamp-2 text-sm leading-6 text-slate-300">
-            {trimmedDescription}
-          </p>
-        ) : null}
+        {isRejoinCard ? (
+          <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl border border-amber-300/20 bg-amber-400/10 px-3.5 py-3 text-xs text-amber-50">
+            <div className="min-w-0">
+              <div className="font-medium text-amber-100">Would you like to rejoin?</div>
+            </div>
 
-        {watchError ? (
-          <div className="mt-3 rounded-xl border border-red-400/25 bg-red-500/10 px-3 py-2 text-xs text-red-100">
-            {watchError}
+            <div className="shrink-0 rounded-full border border-amber-200/20 bg-slate-950/35 px-2.5 py-1 text-[11px] font-medium text-amber-100">
+              {formatRejoinStatus(rejoin?.connectionStatus)}
+            </div>
           </div>
         ) : null}
 
-        <div className="mt-4 grid gap-2">
+        <div className="mt-3 min-h-[3rem]">
+          {trimmedDescription ? (
+            <p className="line-clamp-2 text-sm leading-6 text-slate-300">
+              {trimmedDescription}
+            </p>
+          ) : (
+            <p className="text-sm leading-6 text-slate-500">
+              No description added yet.
+            </p>
+          )}
+        </div>
+
+        {actionError ? (
+          <div className="mt-3 rounded-xl border border-red-400/25 bg-red-500/10 px-3 py-2 text-xs text-red-100">
+            {actionError}
+          </div>
+        ) : null}
+
+        <div className="mt-4 flex-1 overflow-y-auto pr-1">
+          <div className="grid gap-2">
           {sortedSeats.length > 0 ? (
             sortedSeats.map((seat, index) =>
             {
@@ -465,7 +581,9 @@ export default function RoomCard({ room, onJoin }: RoomCardProps)
               return (
                 <div
                   key={`${seat.username}-${seat.seatNumber ?? index}`}
-                  className="rounded-2xl border border-white/10 bg-slate-900/70 px-3 py-2"
+                  className={isRejoinCard
+                    ? "rounded-2xl border border-amber-200/18 bg-slate-900/78 px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+                    : "rounded-2xl border border-white/10 bg-slate-900/72 px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"}
                 >
                   <div className="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] items-center gap-2">
                     <div className="flex min-w-0 items-center gap-1.5">
@@ -519,10 +637,14 @@ export default function RoomCard({ room, onJoin }: RoomCardProps)
               No players listed yet.
             </div>
           )}
+          </div>
         </div>
 
         <div className="mt-4 flex items-center justify-between gap-3 text-xs text-slate-400">
-          <div className="rounded-full border border-white/10 bg-slate-900/75 px-2.5 py-1 text-slate-300">
+          <div className={isRejoinCard
+            ? "rounded-full border border-amber-200/25 bg-amber-300/12 px-2.5 py-1 text-amber-50 shadow-[0_0_24px_-16px_rgba(245,158,11,0.7)]"
+            : "rounded-full border border-white/10 bg-slate-900/75 px-2.5 py-1 text-slate-300"}
+          >
             {playersCount}/{maxPlayers} players
           </div>
 

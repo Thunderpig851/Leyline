@@ -40,10 +40,21 @@ async function start()
     io.on("connection", (socket) =>
     {
       console.log("socket connected:", socket.id);
+
+      socket.on("room:join", ({ roomId } = {}) =>
+      {
+        if (!roomId) return;
+        socket.join(`room:${roomId}`);
+      });
+
+      socket.on("room:leave", ({ roomId } = {}) =>
+      {
+        if (!roomId) return;
+        socket.leave(`room:${roomId}`);
+      });
+
       socket.on("disconnect", () => console.log("socket disconnected:", socket.id));
     });
-
-    
 
     registerSFUSignaling(io);
     registerLiveGamePresence(io);

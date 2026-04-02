@@ -120,3 +120,30 @@ export async function apiGet<T>(
     return { ok: false, error: "Network error. Is the server running?" };
   }
 }
+
+export function isAuthErrorMessage(error?: string | null)
+{
+  const normalized = String(error || "").toLowerCase();
+
+  return normalized.includes("invalid token")
+    || normalized.includes("jwt expired")
+    || normalized.includes("missing token")
+    || normalized.includes("unauthorized")
+    || normalized.includes("forbidden");
+}
+
+export function isNetworkErrorMessage(error?: string | null)
+{
+  return String(error || "").toLowerCase().includes("network error");
+}
+
+export function isPrivateCodeErrorMessage(error?: string | null)
+{
+  return String(error || "").toLowerCase().includes("private room code");
+}
+
+export function isMissingRoomErrorMessage(error?: string | null)
+{
+  const normalized = String(error || "").toLowerCase();
+  return normalized.includes("room not found") || normalized.includes("private room not found");
+}
