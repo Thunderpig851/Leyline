@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="8" y1="6" x2="56" y2="58" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0b1117" />
+      <stop offset="1" stop-color="#14202b" />
+    </linearGradient>
+    <linearGradient id="llGlow" x1="16" y1="14" x2="48" y2="50" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#34d399" />
+      <stop offset="0.5" stop-color="#14b8a6" />
+      <stop offset="1" stop-color="#67e8f9" />
+    </linearGradient>
+    <filter id="softGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="2.6" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect x="6" y="6" width="52" height="52" rx="15" fill="url(#bg)" />
+  <rect x="6.75" y="6.75" width="50.5" height="50.5" rx="14.25" stroke="rgba(255,255,255,0.08)" />
+
+  <g filter="url(#softGlow)" stroke="url(#llGlow)" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <path d="M19 17V46H29" stroke-width="4.6" />
+    <path d="M34 17V46H45" stroke-width="4.6" opacity="0.98" />
+  </g>
+
+  <g opacity="0.9">
+    <circle cx="19" cy="17" r="1.7" fill="#8bf3d0" />
+    <circle cx="34" cy="17" r="1.7" fill="#8bf3d0" />
+    <circle cx="29" cy="46" r="1.7" fill="#8bf3d0" />
+    <circle cx="45" cy="46" r="1.7" fill="#8bf3d0" />
+  </g>
+</svg>

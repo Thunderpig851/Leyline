@@ -81,7 +81,7 @@ export default function LFGChatPanel({
   }
 
   return (
-    <section className="flex min-h-0 flex-col rounded-2xl border border-white/10 bg-slate-200/10 p-3 ring-1 ring-white/5 lg:h-full">
+    <section className="flex min-h-0 h-full flex-col overflow-hidden rounded-2xl border border-white/10 bg-slate-200/10 p-3 ring-1 ring-white/5">
       <div
         ref={logRef}
         className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-white/10 bg-slate-950/45 p-3"
@@ -124,7 +124,7 @@ export default function LFGChatPanel({
         )}
       </div>
 
-      <div className="mt-3 shrink-0">
+      <div className="mt-3 shrink-0 overflow-hidden">
         <textarea
           value={draft}
           onChange={(event) => setDraft(event.target.value)}

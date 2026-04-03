@@ -76,7 +76,7 @@ export default function NavBar()
   }, [openMenu]);
 
   return (
-    <header className="sticky top-0 z-40 border-b border-white/10 bg-slate-950/70 backdrop-blur">
+    <header className="sticky top-0 z-40 border-b border-white/10 bg-slate-950/45 backdrop-blur-xl">
       <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-3">
         <Link to="/lobby" className="flex items-center gap-2">
           <span className="text-sm font-semibold tracking-tight">

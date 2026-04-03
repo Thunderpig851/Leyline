@@ -34,7 +34,7 @@ type LFGGamesPanelProps =
 export default function LFGGamesPanel({ games, loading, error }: LFGGamesPanelProps)
 {
   return (
-    <section className="flex min-h-0 flex-col rounded-2xl border border-white/10 bg-slate-200/10 p-3 ring-1 ring-white/5 lg:h-full">
+    <section className="flex min-h-0 h-full flex-col overflow-hidden rounded-2xl border border-white/10 bg-slate-200/10 p-3 ring-1 ring-white/5">
       <div className="min-h-0 flex-1 overflow-y-auto pr-1">
         {loading ? (
           <div className="rounded-2xl border border-white/10 bg-slate-950/45 px-4 py-10 text-sm text-slate-300">

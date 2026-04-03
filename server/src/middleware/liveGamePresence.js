@@ -9,6 +9,7 @@ const DISCONNECT_GRACE_MS = 90_000;
 const AWAY_GRACE_MS = 120_000;
 const SWEEP_INTERVAL_MS = 10_000;
 const HEARTBEAT_STALE_MS = 30_000;
+const EMPTY_GAME_SWEEP_GRACE_MS = 5 * 60 * 1000;
 
 function makeKey(gameId, userId)
 {
@@ -26,6 +27,62 @@ function clearPresenceForUser(gameId, userId)
   }
 
   livePresence.delete(makeKey(normalizedGameId, normalizedUserId));
+}
+
+
+function isEmptyGame(game)
+{
+  const seatCount = Array.isArray(game?.seats) ? game.seats.length : 0;
+  const spectatorCount = Array.isArray(game?.spectators) ? game.spectators.length : 0;
+  return seatCount === 0 && spectatorCount === 0;
+}
+
+async function sweepExpiredEmptyGames(io)
+{
+  const cutoff = new Date(Date.now() - EMPTY_GAME_SWEEP_GRACE_MS);
+
+  const staleRooms = await RoomModel.find({
+    updatedAt: { $lte: cutoff },
+    "members.0": { $exists: false },
+  })
+    .select("_id")
+    .lean()
+    .exec();
+
+  if (staleRooms.length === 0)
+  {
+    return;
+  }
+
+  const roomIds = staleRooms.map((room) => room._id);
+  const games = await LiveGameModel.find({ roomId: { $in: roomIds } }).lean().exec();
+  const gamesByRoomId = new Map(games.map((game) => [String(game.roomId), game]));
+
+  for (const room of staleRooms)
+  {
+    const roomId = String(room._id);
+    const game = gamesByRoomId.get(roomId);
+
+    if (game && (!isEmptyGame(game) || new Date(game.updatedAt || 0) > cutoff))
+    {
+      continue;
+    }
+
+    await Promise.all([
+      RoomChatMessageModel.deleteMany({ roomId }).exec(),
+      LiveGameModel.deleteMany({ roomId }).exec(),
+      RoomModel.deleteOne({ _id: roomId }).exec(),
+    ]);
+
+    if (game?._id)
+    {
+      clearPresenceForGame(game._id);
+      emitGameEnded(io, game._id, roomId);
+    }
+
+    io.to(`room:${roomId}`).emit("room:deleted", { roomId });
+    io.emit("rooms:changed");
+  }
 }
 
 function normalizeRoomStatus(room)
@@ -321,14 +378,9 @@ async function removeParticipantFromGameAndRoom(gameId, roomId, userId)
     {
       if (room.members.length === 0 && !restoreRoomMembersFromLiveGame(room, updatedGame || game, userId))
       {
-        await Promise.all([
-          RoomChatMessageModel.deleteMany({ roomId }).exec(),
-          LiveGameModel.deleteMany({ roomId }).exec(),
-          RoomModel.deleteOne({ _id: roomId }).exec(),
-        ]);
-
-        clearPresenceForGame(gameId);
-        roomDeleted = true;
+        room.status = normalizeRoomStatus(room);
+        await room.save();
+        updatedRoom = room;
       }
       else
       {
@@ -673,6 +725,8 @@ async function sweep(io)
       }
     }
   }
+
+  await sweepExpiredEmptyGames(io);
 }
 
 function registerLiveGamePresence(io)

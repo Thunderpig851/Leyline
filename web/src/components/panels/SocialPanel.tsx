@@ -7,7 +7,7 @@ export default function SocialPanel()
 
     return (
         <div>
-            Social Panel
+            Social features coming soon.
         </div>
     )
 }

@@ -6,7 +6,6 @@ import CreateGamePopUp from "../components/CreateGamePopUp";
 import GamesGrid from "../components/GamesGrid";
 import ActionableErrorPanel from "../components/ActionableErrorPanel";
 import { apiGet, apiPost, isAuthErrorMessage, isNetworkErrorMessage } from "../lib/api";
-import LeylineBackdrop from "../components/layout/LeylineBackdrop";
 
 type RoomSeat =
 {
@@ -464,10 +463,8 @@ export default function LobbyPage()
   }
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-slate-950 text-slate-100">
-      <LeylineBackdrop />
-
-      <div className="relative mx-auto max-w-5xl px-6 py-10">
+    <div className="relative flex min-h-0 flex-1 text-slate-100">
+      <div className="relative mx-auto w-full max-w-5xl px-6 py-10">
         <h1 className="text-2xl font-semibold tracking-tight">
           <span className="bg-gradient-to-r from-emerald-300 via-teal-300 to-cyan-200 bg-clip-text text-transparent">
             Lobby

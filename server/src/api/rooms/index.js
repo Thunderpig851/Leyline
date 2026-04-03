@@ -801,37 +801,30 @@ router.post("/:id/leave", requireAuth, async (req, res) =>
 
     if (room.members.length === 0 && !restoreRoomMembersFromLiveGame(room, activeLiveGame, userId))
     {
-      const deletedGames = await deleteRoomArtifacts(room._id);
+      room.status = normalizeRoomStatus(room);
+      await room.save();
 
       if (io)
       {
         io.emit("rooms:changed");
-        io.to(`room:${room._id}`).emit("room:deleted", { roomId: String(room._id) });
-
-        for (const game of deletedGames)
-        {
-          io.to(`live-game:${game._id}`).emit("game:ended", {
-            gameId: String(game._id),
-            roomId: String(room._id),
-          });
-        }
       }
 
-      return res.status(200).json({ ok: true, deleted: true, roomId: String(room._id) });
+      return res.status(200).json({ ok: true, room, hostTransferred: false, pendingCleanup: true });
     }
+
+    let hostTransferred = false;
 
     if (wasHost)
     {
       const nextHost = getNextHostCandidate(room, activeLiveGame, userId);
 
-      if (!nextHost)
+      if (nextHost)
       {
-        return res.status(500).json({ ok: false, error: "Failed to assign a new host." });
+        room.hostID = nextHost.userId;
+        room.hostName = await resolveUsername(nextHost.userId, nextHost.username || room.hostName);
+        applyHostToRoomMembers(room, nextHost.userId);
+        hostTransferred = true;
       }
-
-      room.hostID = nextHost.userId;
-      room.hostName = await resolveUsername(nextHost.userId, nextHost.username || room.hostName);
-      applyHostToRoomMembers(room, nextHost.userId);
     }
 
     room.status = normalizeRoomStatus(room);
@@ -839,7 +832,7 @@ router.post("/:id/leave", requireAuth, async (req, res) =>
 
     if (io)
     {
-      if (wasHost)
+      if (hostTransferred)
       {
         emitHostTransferred(io, room, activeLiveGame);
       }
@@ -849,7 +842,7 @@ router.post("/:id/leave", requireAuth, async (req, res) =>
       }
     }
 
-    return res.status(200).json({ ok: true, room, hostTransferred: wasHost });
+    return res.status(200).json({ ok: true, room, hostTransferred });
   }
   catch (err)
   {
