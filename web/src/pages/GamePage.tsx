@@ -8,7 +8,6 @@ import { socket } from "../lib/socket";
 import LeftSidePanel from "../components/gamepage/LeftSidePanel";
 import RightSidePanel from "../components/gamepage/RightSidePanel";
 import PlayerTile from "../components/gamepage/PlayerTile";
-import CommanderPanel from "../components/gamepage/CommanderPanel";
 import PlayerOrderShuffleOverlay from "../components/gamepage/PlayerOrderShuffleOverlay";
 
 type CommanderCard =
@@ -287,8 +286,6 @@ export default function GamePage()
     rollingLabel: "",
     finalOrder: [],
   });
-  const [commanderPanelOpen, setCommanderPanelOpen] = useState(false);
-  const [commanderPanelSeatNumber, setCommanderPanelSeatNumber] = useState<number | null>(null);
   const [timerNow, setTimerNow] = useState(() => Date.now());
 
   const shuffleIntervalRef = useRef<number | null>(null);
@@ -1455,12 +1452,6 @@ export default function GamePage()
       .filter((slot): slot is (typeof seatSlots)[number] => Boolean(slot));
   }, [game?.boardOrder, isCommanderGame, seatSlots]);
 
-  const activeCommanderSeat = useMemo(() =>
-  {
-    if (commanderPanelSeatNumber == null) return null;
-    return seatSlots.find((slot) => slot.seatNumber === commanderPanelSeatNumber) || null;
-  }, [seatSlots, commanderPanelSeatNumber]);
-
   const activeTurnSeat = useMemo(() =>
   {
     if (!game?.activeTurnSeatNumber) return null;
@@ -1663,6 +1654,7 @@ export default function GamePage()
               <PlayerTile
                 key={slot.seatNumber}
                 seatNumber={slot.seatNumber}
+                mode={isCommanderGame ? "commander" : "duel"}
                 isSelf={slot.isSelf}
                 title={slot.title}
                 stream={slot.stream}
@@ -1749,12 +1741,11 @@ export default function GamePage()
                     ? (nextSeatNumber) => { void handleSetInitiative(nextSeatNumber); }
                     : undefined
                 }
-                onOpenCommanderPanel={
+                onCommandersChange={
                   slot.isSelf
-                    ? () =>
+                    ? (nextCommanders) =>
                     {
-                      setCommanderPanelSeatNumber(slot.seatNumber);
-                      setCommanderPanelOpen(true);
+                      void handleCommandersChange(slot.seatNumber, nextCommanders);
                     }
                     : undefined
                 }
@@ -1768,25 +1759,6 @@ export default function GamePage()
           phase={shuffleOverlay.phase}
           rollingLabel={shuffleOverlay.rollingLabel}
           finalOrder={shuffleOverlay.finalOrder}
-        />
-
-        <CommanderPanel
-          open={commanderPanelOpen}
-          seatTitle={activeCommanderSeat?.title || "You"}
-          commanders={activeCommanderSeat?.commanders || []}
-          canEdit={Boolean(activeCommanderSeat?.isSelf)}
-          onClose={() =>
-          {
-            setCommanderPanelOpen(false);
-            setCommanderPanelSeatNumber(null);
-          }}
-          onChange={(nextCommanders) =>
-          {
-            if (commanderPanelSeatNumber != null)
-            {
-              void handleCommandersChange(commanderPanelSeatNumber, nextCommanders);
-            }
-          }}
         />
 
         <LeftSidePanel

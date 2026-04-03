@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
-import { Crown, Eye, RotateCcw } from "lucide-react";
+import { Crown, Eye, Lock, LockOpen, RotateCcw, User } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { apiPost } from "../lib/api";
 import { socket } from "../lib/socket";
@@ -35,6 +35,7 @@ export type RoomCardData =
   bracket?: string;
   format?: string;
   seats?: RoomSeat[];
+  allowSpectators?: boolean;
   activeGameId?: string | null;
   spectatorCount?: number;
   maxSpectators?: number;
@@ -299,6 +300,7 @@ export default function RoomCard({ room, onJoin }: RoomCardProps)
     bracket,
     format,
     seats = [],
+    allowSpectators = false,
     activeGameId,
     spectatorCount = 0,
     maxSpectators = 4,
@@ -312,10 +314,16 @@ export default function RoomCard({ room, onJoin }: RoomCardProps)
       .sort((a, b) => Number(a.seatNumber ?? 99) - Number(b.seatNumber ?? 99)),
   [seats]);
 
+  const spectatorSeats = useMemo(() =>
+    [...seats]
+      .filter((seat) => seat.role === "spectator")
+      .sort((a, b) => a.username.localeCompare(b.username)),
+  [seats]);
+
   const isFull = status === "full";
   const showBracket = format?.toLowerCase() === "commander" && bracket;
   const trimmedDescription = description?.trim();
-  const canDirectWatch = Boolean(activeGameId) && visibility !== "private";
+  const canDirectWatch = Boolean(activeGameId) && visibility !== "private" && allowSpectators;
   const showWatchButton = canDirectWatch && isFull;
   const spectatorsFull = spectatorCount >= maxSpectators;
   const canRejoin = Boolean(rejoin?.canRejoin && activeGameId);
@@ -499,7 +507,6 @@ export default function RoomCard({ room, onJoin }: RoomCardProps)
                     disabled={spectatorsFull || watching}
                     className="inline-flex h-8 shrink-0 items-center gap-1.5 self-start rounded-lg border border-emerald-300/35 bg-emerald-500/10 px-3 text-xs font-medium text-slate-100 transition-colors transition-shadow duration-150 hover:border-emerald-200 hover:bg-emerald-300 hover:text-slate-900 hover:shadow-lg hover:shadow-emerald-400/25 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    <Eye className="h-3.5 w-3.5" />
                     {watching ? "Watching..." : spectatorsFull ? "Watch Full" : "Watch"}
                   </button>
                 ) : null}
@@ -517,8 +524,8 @@ export default function RoomCard({ room, onJoin }: RoomCardProps)
             )}
           </div>
 
-          <div className="col-span-2 flex justify-end overflow-hidden">
-            <div className="flex flex-nowrap items-center gap-1.5">
+          <div className="col-span-2 flex items-center justify-between gap-3 overflow-hidden">
+            <div className="flex min-w-0 flex-nowrap items-center gap-1.5 overflow-hidden">
               {format ? (
                 <MetaPill>{formatLabel(format)}</MetaPill>
               ) : null}
@@ -526,16 +533,30 @@ export default function RoomCard({ room, onJoin }: RoomCardProps)
               {showBracket ? (
                 <MetaPill tone={isRejoinCard ? "rejoin" : "accent"}>Bracket {bracket}</MetaPill>
               ) : null}
+            </div>
 
-              {visibility ? (
-                <MetaPill>{formatLabel(visibility)}</MetaPill>
+            <div className="flex shrink-0 items-center gap-1.5">
+              {allowSpectators ? (
+                <span
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-slate-950/85 text-slate-200 shadow-inner"
+                  title="Spectators allowed"
+                  aria-label="Spectators allowed"
+                >
+                  <Eye className="h-3.5 w-3.5" />
+                </span>
               ) : null}
 
-              {status ? (
-                <MetaPill tone={isFull && !isRejoinCard ? "danger" : isRejoinCard ? "rejoin" : "accent"}>
-                  {formatLabel(status)}
-                </MetaPill>
-              ) : null}
+              <span
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-slate-950/85 text-slate-200 shadow-inner"
+                title={visibility === "private" ? "Private game" : "Public game"}
+                aria-label={visibility === "private" ? "Private game" : "Public game"}
+              >
+                {visibility === "private" ? (
+                  <Lock className="h-3.5 w-3.5" />
+                ) : (
+                  <LockOpen className="h-3.5 w-3.5" />
+                )}
+              </span>
             </div>
           </div>
         </div>
@@ -641,11 +662,24 @@ export default function RoomCard({ room, onJoin }: RoomCardProps)
         </div>
 
         <div className="mt-4 flex items-center justify-between gap-3 text-xs text-slate-400">
-          <div className={isRejoinCard
-            ? "rounded-full border border-amber-200/25 bg-amber-300/12 px-2.5 py-1 text-amber-50 shadow-[0_0_24px_-16px_rgba(245,158,11,0.7)]"
-            : "rounded-full border border-white/10 bg-slate-900/75 px-2.5 py-1 text-slate-300"}
-          >
-            {playersCount}/{maxPlayers} players
+          <div className="flex items-center gap-2">
+            <div className={isRejoinCard
+              ? "inline-flex items-center gap-1.5 rounded-full border border-amber-200/25 bg-amber-300/12 px-2.5 py-1 text-amber-50 shadow-[0_0_24px_-16px_rgba(245,158,11,0.7)]"
+              : "inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-slate-900/75 px-2.5 py-1 text-slate-300"}
+            >
+              <User className="h-3 w-3" />
+              <span>{playersCount}/{maxPlayers}</span>
+            </div>
+
+            {(allowSpectators || spectatorCount > 0 || spectatorSeats.length > 0) ? (
+              <div className={isRejoinCard
+                ? "inline-flex items-center gap-1.5 rounded-full border border-amber-200/25 bg-amber-300/12 px-2.5 py-1 text-amber-50 shadow-[0_0_24px_-16px_rgba(245,158,11,0.7)]"
+                : "inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-slate-900/75 px-2.5 py-1 text-slate-300"}
+              >
+                <Eye className="h-3 w-3" />
+                <span>{spectatorCount}/{maxSpectators}</span>
+              </div>
+            ) : null}
           </div>
 
           <div>Listed {formatRelativeDate(createdAt)}</div>

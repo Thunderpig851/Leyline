@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { apiPost } from "../../lib/api";
+import ActionableErrorPanel from "../ActionableErrorPanel";
+import { apiPost, isAuthErrorMessage } from "../../lib/api";
 
 type AccountResponse =
 {
@@ -114,11 +115,15 @@ export default function AccountSettingsPanel()
               </span>
             </h2>
 
-            {serverError && (
-              <div className="mt-4 rounded-xl border border-red-400/45 bg-red-500/15 px-4 py-3 text-sm text-red-100">
-                {serverError}
+            {serverError ? (
+              <div className="mt-4">
+                <ActionableErrorPanel
+                  message={isAuthErrorMessage(serverError) ? "Please log in to continue." : serverError}
+                  actionLabel={isAuthErrorMessage(serverError) ? "Log in" : undefined}
+                  actionHref={isAuthErrorMessage(serverError) ? "/login" : undefined}
+                />
               </div>
-            )}
+            ) : null}
 
             {successMsg && (
               <div className="mt-4 rounded-xl border border-teal-400/40 bg-teal-500/10 px-4 py-3 text-sm text-teal-100">

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { X } from "lucide-react";
+import { forwardRef, useEffect, useMemo, useState } from "react";
+import { Search, X } from "lucide-react";
 
 type CommanderCard =
 {
@@ -12,6 +12,9 @@ type CommanderPanelProps =
   seatTitle?: string;
   commanders: CommanderCard[];
   canEdit?: boolean;
+  variant?: "drawer" | "overlay";
+  placement?: "top" | "bottom";
+  className?: string;
   onClose: () => void;
   onChange: (nextCommanders: CommanderCard[]) => void;
 };
@@ -77,14 +80,18 @@ async function fetchNamedCard(name: string): Promise<ScryfallCard | null>
   return await response.json();
 }
 
-export default function CommanderPanel(
+const CommanderPanel = forwardRef<HTMLElement, CommanderPanelProps>(function CommanderPanel(
 {
   open,
+  seatTitle,
   commanders,
   canEdit = false,
+  variant = "drawer",
+  placement = "bottom",
+  className = "",
   onClose,
   onChange,
-}: CommanderPanelProps)
+}: CommanderPanelProps, ref)
 {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<string[]>([]);
@@ -103,13 +110,19 @@ export default function CommanderPanel(
 
   useEffect(() =>
   {
-    if (!open) return;
+    if (!open)
+    {
+      return;
+    }
 
     const namesToLoad = commanders
       .map((entry) => entry.name)
       .filter((name) => name && !(name in cardCache));
 
-    if (namesToLoad.length === 0) return;
+    if (namesToLoad.length === 0)
+    {
+      return;
+    }
 
     let cancelled = false;
 
@@ -119,7 +132,10 @@ export default function CommanderPanel(
         namesToLoad.map(async (name): Promise<[string, ScryfallCard | null]> => [name, await fetchNamedCard(name)])
       );
 
-      if (cancelled) return;
+      if (cancelled)
+      {
+        return;
+      }
 
       setCardCache((current) =>
       {
@@ -127,7 +143,7 @@ export default function CommanderPanel(
 
         for (const [name, card] of entries)
         {
-          next[name] = card as ScryfallCard | null;
+          next[name] = card;
         }
 
         return next;
@@ -212,7 +228,10 @@ export default function CommanderPanel(
 
   async function handleSelect(name: string)
   {
-    if (!canEdit) return;
+    if (!canEdit)
+    {
+      return;
+    }
 
     const card = await fetchNamedCard(name);
     const resolvedName = card?.name || name;
@@ -252,7 +271,10 @@ export default function CommanderPanel(
 
   function removeCommander(name: string)
   {
-    if (!canEdit) return;
+    if (!canEdit)
+    {
+      return;
+    }
 
     onChange(
       commanders.filter((entry) => entry.name.toLowerCase() !== name.toLowerCase())
@@ -261,23 +283,44 @@ export default function CommanderPanel(
 
   function clearAll()
   {
-    if (!canEdit) return;
+    if (!canEdit)
+    {
+      return;
+    }
+
     onChange([]);
     setQuery("");
     setResults([]);
   }
 
+  if (!open)
+  {
+    return null;
+  }
+
+  const isOverlay = variant === "overlay";
+  const shellClassName = isOverlay
+    ? `relative w-full overflow-hidden rounded-2xl border border-white/10 bg-slate-950/96 shadow-2xl ring-1 ring-white/10 backdrop-blur-xl ${className}`.trim()
+    : `absolute right-0 top-0 z-50 h-full w-[28rem] border-l border-white/10 bg-slate-950/95 shadow-2xl backdrop-blur ${className}`.trim();
+
+  const bodyClassName = isOverlay
+    ? `overflow-y-auto px-3 py-3 ${placement === "top" ? "max-h-[calc(100%-3.25rem)]" : "max-h-[calc(100%-3.25rem)]"}`
+    : "flex-1 overflow-y-auto px-4 py-4";
+
+  const headerSubtitle = seatTitle
+    ? `${seatTitle} commander selection`
+    : "Commander selection";
+
   return (
-    <aside
-      className={`absolute right-0 top-0 z-50 h-full w-[28rem] border-l border-white/10 bg-slate-950/95 shadow-2xl backdrop-blur transition-transform duration-300 ${
-        open ? "translate-x-0" : "translate-x-full"
-      }`}
-    >
+    <aside ref={ref} className={shellClassName}>
       <div className="flex h-full flex-col">
-        <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-          <div>
+        <div className={`flex items-center justify-between border-b border-white/10 ${isOverlay ? "px-3 py-2.5" : "px-4 py-3"}`}>
+          <div className="min-w-0">
             <div className="text-sm font-semibold text-slate-100">
               Commander Search
+            </div>
+            <div className="truncate text-[11px] text-slate-400">
+              {headerSubtitle}
             </div>
           </div>
 
@@ -291,9 +334,9 @@ export default function CommanderPanel(
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-4 py-4">
-          <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-4">
-            <div className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">
+        <div className={bodyClassName}>
+          <div className={`rounded-2xl border border-white/10 bg-slate-900/60 ${isOverlay ? "p-3" : "p-4"}`}>
+            <div className="text-[11px] font-medium uppercase tracking-[0.18em] text-slate-500">
               Selected
             </div>
 
@@ -304,7 +347,7 @@ export default function CommanderPanel(
                     key={entry.name}
                     className="flex items-center gap-2 rounded-xl border border-emerald-400/20 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200"
                   >
-                    <span className="truncate">{entry.name}</span>
+                    <span className="max-w-[12rem] truncate">{entry.name}</span>
 
                     {canEdit ? (
                       <button
@@ -333,17 +376,20 @@ export default function CommanderPanel(
 
             {canEdit ? (
               <div className="mt-4 flex gap-2">
-                <input
-                  type="text"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder={
-                    commanders.length === 1 && canHavePartner
-                      ? "Search partner commander"
-                      : "Search commander"
-                  }
-                  className="min-w-0 flex-1 rounded-xl border border-white/10 bg-slate-950/80 px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-emerald-400/40"
-                />
+                <div className="relative min-w-0 flex-1">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
+                  <input
+                    type="text"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder={
+                      commanders.length === 1 && canHavePartner
+                        ? "Search partner commander"
+                        : "Search commander"
+                    }
+                    className="min-w-0 w-full rounded-xl border border-white/10 bg-slate-950/80 py-2 pl-9 pr-3 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-emerald-400/40"
+                  />
+                </div>
 
                 <button
                   type="button"
@@ -356,8 +402,8 @@ export default function CommanderPanel(
             ) : null}
           </div>
 
-          <div className="mt-4 rounded-2xl border border-white/10 bg-slate-900/60 p-4">
-            <div className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">
+          <div className={`rounded-2xl border border-white/10 bg-slate-900/60 ${isOverlay ? "mt-3 p-3" : "mt-4 p-4"}`}>
+            <div className="text-[11px] font-medium uppercase tracking-[0.18em] text-slate-500">
               Results
             </div>
 
@@ -392,4 +438,6 @@ export default function CommanderPanel(
       </div>
     </aside>
   );
-}
+});
+
+export default CommanderPanel

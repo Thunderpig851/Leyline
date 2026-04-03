@@ -485,7 +485,7 @@ export default function JoinRoomPage()
     {
       return (
         <ActionableErrorPanel
-          message={message}
+          message="Please log in to continue."
           actionLabel="Log in"
           actionHref="/login"
         />
@@ -496,7 +496,7 @@ export default function JoinRoomPage()
     {
       return (
         <ActionableErrorPanel
-          message={message}
+          message="Please log in to continue."
           actionLabel="Enter Code"
           onAction={() => privateCodeInputRef.current?.focus()}
         />
@@ -507,7 +507,7 @@ export default function JoinRoomPage()
     {
       return (
         <ActionableErrorPanel
-          message={message}
+          message="Please log in to continue."
           actionLabel="Back to Lobby"
           onAction={() => navigate("/lobby")}
         />
@@ -518,7 +518,7 @@ export default function JoinRoomPage()
     {
       return (
         <ActionableErrorPanel
-          message={message}
+          message="Please log in to continue."
           actionLabel="Retry"
           onAction={() => window.location.reload()}
         />

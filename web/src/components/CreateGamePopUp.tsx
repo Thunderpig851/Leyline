@@ -138,7 +138,7 @@ export default function CreateGamePopUp({ onClose }: CreateGamePopUpProps)
             {serverError ? (
               <div className="mt-4">
                 <ActionableErrorPanel
-                  message={serverError}
+                  message={isAuthErrorMessage(serverError) ? "Please log in to continue." : serverError}
                   actionLabel={isAuthErrorMessage(serverError) ? "Log in" : undefined}
                   actionHref={isAuthErrorMessage(serverError) ? "/login" : undefined}
                 />
@@ -211,7 +211,7 @@ export default function CreateGamePopUp({ onClose }: CreateGamePopUpProps)
                   <div className="rounded-xl border border-white/10 bg-slate-950/45 px-3 py-2">
                     <div className="text-xs font-medium text-slate-200">1v1 layout</div>
                     <div className="mt-1 text-[11px] text-slate-400">
-                      Non-commander formats use 2 seats and the duel game-page split.
+                      No brackets for non-commander formats.
                     </div>
                   </div>
                 )}

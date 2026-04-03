@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { Crown, Pencil, Swords } from "lucide-react";
+import CommanderPanel from "./CommanderPanel";
 
 type CommanderCard =
 {
@@ -45,7 +46,7 @@ type PlayerTileProps =
   onCommanderDamageChange?: (nextCommanderDamage: Record<string, number>) => void;
   onSetMonarch?: (seatNumber: number | null) => void;
   onSetInitiative?: (seatNumber: number | null) => void;
-  onOpenCommanderPanel?: () => void;
+  onCommandersChange?: (nextCommanders: CommanderCard[]) => void;
   onPromoteToHost?: () => void;
   onKickPlayer?: () => void;
 };
@@ -255,24 +256,29 @@ export default function PlayerTile({
   onCommanderDamageChange,
   onSetMonarch,
   onSetInitiative,
-  onOpenCommanderPanel,
+  onCommandersChange,
   onPromoteToHost,
   onKickPlayer,
 }: PlayerTileProps)
 {
+  const tileSectionRef = useRef<HTMLElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const isCommanderMode = mode === "commander";
   const counterButtonRef = useRef<HTMLButtonElement | null>(null);
   const countersOverlayRef = useRef<HTMLDivElement | null>(null);
+  const commanderTriggerRef = useRef<HTMLDivElement | null>(null);
+  const commanderPanelRef = useRef<HTMLElement | null>(null);
 
   const [countersOpen, setCountersOpen] = useState(false);
+  const [commanderPanelOpen, setCommanderPanelOpen] = useState(false);
+  const [commanderPanelPlacement, setCommanderPanelPlacement] = useState<"top" | "bottom">("bottom");
   const [showHostActions, setShowHostActions] = useState(false);
   const [lifeInput, setLifeInput] = useState(String(life));
   const [hoveredCommanderName, setHoveredCommanderName] = useState<string | null>(null);
   const [commanderVisualMap, setCommanderVisualMap] = useState<Record<string, CommanderVisual | null>>({});
 
   const canEditLife = Boolean(isSelf && onLifeChange);
-  const canEditCommander = Boolean(isCommanderMode && isSelf && onOpenCommanderPanel);
+  const canEditCommander = Boolean(isCommanderMode && isSelf && onCommandersChange);
   const canEditCounters = Boolean(
     isSelf && (onPoisonChange || onEnergyChange || onExperienceChange || onCommanderDamageChange)
   );
@@ -370,16 +376,59 @@ export default function PlayerTile({
 
   useEffect(() =>
   {
+    if (!commanderPanelOpen)
+    {
+      return;
+    }
+
+    function updateCommanderPanelPlacement()
+    {
+      const tileBounds = tileSectionRef.current?.getBoundingClientRect();
+
+      if (!tileBounds)
+      {
+        return;
+      }
+
+      const viewportHeight = window.innerHeight;
+      const availableBelow = viewportHeight - tileBounds.bottom;
+      const availableAbove = tileBounds.top;
+      const preferredHeight = Math.min(420, Math.max(tileBounds.height * 0.92, 280));
+      const shouldOpenUp = availableBelow < preferredHeight && availableAbove > availableBelow;
+
+      setCommanderPanelPlacement(shouldOpenUp ? "top" : "bottom");
+    }
+
+    updateCommanderPanelPlacement();
+    window.addEventListener("resize", updateCommanderPanelPlacement);
+    window.addEventListener("scroll", updateCommanderPanelPlacement, true);
+
+    return () =>
+    {
+      window.removeEventListener("resize", updateCommanderPanelPlacement);
+      window.removeEventListener("scroll", updateCommanderPanelPlacement, true);
+    };
+  }, [commanderPanelOpen]);
+
+  useEffect(() =>
+  {
     function handlePointerDown(event: MouseEvent)
     {
       const target = event.target as Node;
 
       const clickedOverlay = countersOverlayRef.current?.contains(target);
       const clickedButton = counterButtonRef.current?.contains(target);
+      const clickedCommanderTrigger = commanderTriggerRef.current?.contains(target);
+      const clickedCommanderPanel = commanderPanelRef.current?.contains(target);
 
       if (!clickedOverlay && !clickedButton)
       {
         setCountersOpen(false);
+      }
+
+      if (!clickedCommanderTrigger && !clickedCommanderPanel)
+      {
+        setCommanderPanelOpen(false);
       }
     }
 
@@ -525,27 +574,29 @@ export default function PlayerTile({
   }
 
   return (
-    <section className="relative h-full min-h-0 overflow-hidden rounded-[1.65rem] border border-white/10 bg-slate-900 shadow-[0_18px_60px_rgba(0,0,0,0.45)]">
-      <div className="absolute inset-0 bg-gradient-to-br from-white/[0.06] via-white/[0.025] to-transparent" />
+    <section ref={tileSectionRef} className="relative h-full min-h-0 rounded-[1.65rem]">
+      <div className="absolute inset-0 overflow-hidden rounded-[1.65rem] border border-white/10 bg-slate-900 shadow-[0_18px_60px_rgba(0,0,0,0.45)]">
+        <div className="absolute inset-0 bg-gradient-to-br from-white/[0.06] via-white/[0.025] to-transparent" />
 
-      <div className="relative h-full">
-        {stream ? (
-          <video
-            ref={videoRef}
-            className="h-full w-full object-cover"
-            autoPlay
-            playsInline
-            muted={isSelf}
-          />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center bg-black/20">
-            <span className="text-xs text-slate-400">
-              {status === "empty" ? "" : "No stream"}
-            </span>
-          </div>
-        )}
+        <div className="relative h-full">
+          {stream ? (
+            <video
+              ref={videoRef}
+              className="h-full w-full object-cover"
+              autoPlay
+              playsInline
+              muted={isSelf}
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center bg-black/20">
+              <span className="text-xs text-slate-400">
+                {status === "empty" ? "" : "No stream"}
+              </span>
+            </div>
+          )}
 
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/25 to-transparent" />
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/25 to-transparent" />
+        </div>
       </div>
 
       {isActiveTurn ? (
@@ -667,7 +718,7 @@ export default function PlayerTile({
 
         <div className="flex items-start gap-2">
           {isCommanderMode ? (
-          <div className="relative flex items-start gap-2 rounded-xl border border-white/10 bg-slate-950/92 px-2 py-2 shadow-lg backdrop-blur">
+          <div ref={commanderTriggerRef} className="relative flex items-start gap-2 rounded-xl border border-white/10 bg-slate-950/92 px-2 py-2 shadow-lg backdrop-blur">
             {commanders.length > 0 ? (
               commanders.length === 1 ? (
                 commanders.map((commander) =>
@@ -696,7 +747,7 @@ export default function PlayerTile({
                       <div className="absolute inset-0">
                         <button
                           type="button"
-                          onClick={canEditCommander ? onOpenCommanderPanel : undefined}
+                          onClick={canEditCommander ? () => setCommanderPanelOpen(true) : undefined}
                           className="h-full max-w-[13.5rem] whitespace-normal break-words px-2 py-1 text-left text-[11px] font-medium leading-tight text-transparent"
                         >
                           {commander.name}
@@ -741,7 +792,7 @@ export default function PlayerTile({
                       >
                         <button
                           type="button"
-                          onClick={canEditCommander ? onOpenCommanderPanel : undefined}
+                          onClick={canEditCommander ? () => setCommanderPanelOpen(true) : undefined}
                           className="text-[11px] font-medium text-transparent"
                         >
                           {index > 0 ? " / " : ""}
@@ -763,7 +814,7 @@ export default function PlayerTile({
             ) : (
               <button
                 type="button"
-                onClick={canEditCommander ? onOpenCommanderPanel : undefined}
+                onClick={canEditCommander ? () => setCommanderPanelOpen(true) : undefined}
                 disabled={!canEditCommander}
                 className={`rounded-lg border px-2.5 py-1 text-[11px] ${
                   canEditCommander
@@ -778,13 +829,14 @@ export default function PlayerTile({
             {canEditCommander ? (
               <button
                 type="button"
-                onClick={onOpenCommanderPanel}
+                onClick={() => setCommanderPanelOpen(true)}
                 className="rounded-lg border border-white/10 bg-slate-900/90 p-1.5 text-slate-300 transition hover:border-white/20 hover:bg-slate-800"
-                aria-label="Open commander panel"
+                aria-label="Open commander selector"
               >
                 <Pencil className="h-3.5 w-3.5" />
               </button>
             ) : null}
+
           </div>
           ) : null}
 
@@ -849,6 +901,29 @@ export default function PlayerTile({
           </div>
         </div>
       </div>
+
+      {isCommanderMode && commanderPanelOpen ? (
+        <div
+          className="pointer-events-none absolute inset-x-3 z-30"
+          style={commanderPanelPlacement === "top" ? { bottom: "0.75rem" } : { top: "4rem" }}
+        >
+          <CommanderPanel
+            ref={commanderPanelRef}
+            open={commanderPanelOpen}
+            variant="overlay"
+            placement={commanderPanelPlacement}
+            className="pointer-events-auto max-h-[calc(100%-0.75rem)]"
+            seatTitle={title}
+            commanders={commanders}
+            canEdit={canEditCommander}
+            onClose={() => setCommanderPanelOpen(false)}
+            onChange={(nextCommanders) =>
+            {
+              onCommandersChange?.(nextCommanders);
+            }}
+          />
+        </div>
+      ) : null}
 
       {countersOpen ? (
         <div

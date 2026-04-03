@@ -76,7 +76,8 @@ export default function GamesGrid({ rooms, onJoinRoom }: GamesGridProps)
         status: r.status === "full" ? "full" : (r.status ?? "open"),
         playersCount,
         maxPlayers: r.settings?.maxPlayers ?? 4,
-        seats,
+        seats: Array.isArray(r.seats) ? r.seats : [],
+        allowSpectators: Boolean(r.settings?.allowSpectators),
         activeGameId: r.activeGameId ?? null,
         spectatorCount: Number(r.spectatorCount ?? 0),
         maxSpectators: Number(r.maxSpectators ?? 4),
@@ -154,7 +155,7 @@ export default function GamesGrid({ rooms, onJoinRoom }: GamesGridProps)
         </div>
       </div>
 
-      <div className="relative mt-6 overflow-hidden rounded-[28px] border border-teal-300/15 bg-slate-950/22 px-4 py-5 ring-1 ring-white/5 backdrop-blur-[3px] sm:px-5 sm:py-6">
+      <div className="relative mt-6 px-1 py-1 sm:px-2 sm:py-2">
         <div className="relative grid auto-rows-fr grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {pageCards.map((room) => (
             <RoomCard

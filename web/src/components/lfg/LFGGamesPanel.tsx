@@ -1,3 +1,5 @@
+import ActionableErrorPanel from "../ActionableErrorPanel";
+import { isAuthErrorMessage } from "../../lib/api";
 import LFGGameCard from "./LFGGameCard";
 
 type LFGSeat =
@@ -41,9 +43,11 @@ export default function LFGGamesPanel({ games, loading, error }: LFGGamesPanelPr
             Loading...
           </div>
         ) : error ? (
-          <div className="rounded-2xl border border-red-300/20 bg-red-500/10 px-4 py-10 text-sm text-red-100">
-            {error}
-          </div>
+          <ActionableErrorPanel
+            message={isAuthErrorMessage(error) ? "Please log in to continue." : error}
+            actionLabel={isAuthErrorMessage(error) ? "Log in" : undefined}
+            actionHref={isAuthErrorMessage(error) ? "/login" : undefined}
+          />
         ) : games.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-white/10 bg-slate-950/45 px-4 py-10 text-sm text-slate-400">
             No open public games.

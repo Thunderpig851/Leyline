@@ -232,11 +232,21 @@ function JoinCodeModal(
             <span>{value.length}/6</span>
           </div>
 
-          {error && (
-            <div className="mt-4 rounded-2xl border border-red-400/35 bg-red-500/10 px-4 py-3 text-sm text-red-100">
-              {error}
-            </div>
-          )}
+          {error ? (
+            isAuthErrorMessage(error) ? (
+              <div className="mt-4">
+                <ActionableErrorPanel
+                  message="Please log in to continue."
+                  actionLabel="Log in"
+                  actionHref="/login"
+                />
+              </div>
+            ) : (
+              <div className="mt-4 rounded-2xl border border-red-400/35 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+                {error}
+              </div>
+            )
+          ) : null}
 
           <div className="mt-6 flex gap-3">
             <button
@@ -353,6 +363,14 @@ export default function LobbyPage()
       if (aRejoin !== bRejoin)
       {
         return bRejoin - aRejoin;
+      }
+
+      const aIsFull = a.status === "full" ? 1 : 0;
+      const bIsFull = b.status === "full" ? 1 : 0;
+
+      if (aIsFull !== bIsFull)
+      {
+        return aIsFull - bIsFull;
       }
 
       if (sortBy === "title")
@@ -472,10 +490,10 @@ export default function LobbyPage()
         </h1>
 
         <div
-          className="relative mt-6 rounded-2xl border border-white/10 bg-slate-200/10 p-3 ring-1 ring-white/5"
+          className="relative mt-6 rounded-2xl border border-white/10 bg-slate-200/14 p-3 ring-1 ring-white/5"
         >
-          <div className="pointer-events-none absolute inset-0 rounded-2xl bg-gradient-to-r from-emerald-400/10 via-teal-400/10 to-cyan-300/10" />
-          <div className="pointer-events-none absolute inset-0 rounded-2xl bg-gradient-to-b from-white/10 via-white/5 to-transparent opacity-80" />
+          <div className="pointer-events-none absolute inset-0 rounded-2xl bg-gradient-to-r from-emerald-400/14 via-teal-400/14 to-cyan-300/14" />
+          <div className="pointer-events-none absolute inset-0 rounded-2xl bg-gradient-to-b from-white/12 via-white/6 to-transparent opacity-90" />
 
           <div className="relative flex flex-wrap items-center gap-3">
             <button
@@ -538,7 +556,7 @@ export default function LobbyPage()
                 <path d="M5.4 7.6a1 1 0 0 1 1.4 0L10 10.8l3.2-3.2a1 1 0 1 1 1.4 1.4l-3.9 3.9a1 1 0 0 1-1.4 0L5.4 9a1 1 0 0 1 0-1.4Z" />
               </svg>
 
-              <div className="pointer-events-none absolute inset-0 rounded-xl bg-gradient-to-b from-white/10 via-white/5 to-transparent opacity-80" />
+              <div className="pointer-events-none absolute inset-0 rounded-xl bg-gradient-to-b from-white/12 via-white/6 to-transparent opacity-90" />
             </div>
 
             <div className="relative shrink-0">
@@ -641,23 +659,21 @@ export default function LobbyPage()
             </div>
           </div>
 
-          <div className="relative mt-3 flex min-h-[2.5rem] flex-wrap items-center gap-2 border-t border-white/10 pt-3">
-            {activeFilterChips.length > 0 ? (
-              <>
-                {activeFilterChips.map((chip) => (
-                  <ActiveFilterChip
-                    key={chip.key}
-                    label={chip.label}
-                    onRemove={chip.onRemove}
-                  />
-                ))}
+          {activeFilterChips.length > 0 ? (
+            <div className="relative mt-3 flex flex-wrap items-center gap-2 border-t border-white/10 pt-3">
+              {activeFilterChips.map((chip) => (
+                <ActiveFilterChip
+                  key={chip.key}
+                  label={chip.label}
+                  onRemove={chip.onRemove}
+                />
+              ))}
 
-                <div className="ml-auto text-xs text-slate-400">
-                  {filteredRooms.length} visible game{filteredRooms.length === 1 ? "" : "s"}
-                </div>
-              </>
-            ): null}
-          </div>
+              <div className="ml-auto text-xs text-slate-400">
+                {filteredRooms.length} visible game{filteredRooms.length === 1 ? "" : "s"}
+              </div>
+            </div>
+          ) : null}
         </div>
 
         {loading ? (
@@ -667,7 +683,7 @@ export default function LobbyPage()
         ) : error ? (
           <div className="mt-8">
             <ActionableErrorPanel
-              message={error}
+              message={isAuthErrorMessage(error) ? "Please log in to continue." : error}
               actionLabel={isAuthErrorMessage(error) ? "Log in" : isNetworkErrorMessage(error) ? "Retry" : undefined}
               actionHref={isAuthErrorMessage(error) ? "/login" : undefined}
               onAction={isNetworkErrorMessage(error) ? () => { void loadRooms(); } : undefined}

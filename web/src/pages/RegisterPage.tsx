@@ -1,16 +1,19 @@
 import { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import LeylineBackdrop from "../components/layout/LeylineBackdrop";
-import { apiPost } from "../lib/api";
+import { apiPost, setAuthSession } from "../lib/api";
 
 type RegisterResponse =
 {
   ok: boolean;
-  user?: 
+  token?: string;
+  user?:
   {
     id: string;
     username: string;
     email: string;
     createdAt: string;
+    status?: string;
   };
   error?: string;
 };
@@ -32,6 +35,7 @@ function validatePassword(password: string)
 
 export default function RegisterPage()
 {
+  const navigate = useNavigate();
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -81,9 +85,17 @@ async function onSubmit(e: React.SubmitEvent)
       return;
     }
 
-    setSuccessMsg("Account created. You can log in now.");
-    setPassword("");
-    setConfirm("");
+    const { token, user } = result.data;
+
+    if (!token || !user)
+    {
+      setServerError("Account created, but login could not be completed.");
+      return;
+    }
+
+    setAuthSession(token, user);
+    setSuccessMsg("Account created. Logging you in...");
+    navigate("/lobby");
   }
 
   const ReqItem = ({ label, ok }: { label: string; ok: boolean }) => (

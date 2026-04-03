@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, Coins, Dices, Send } from "lucide-react";
-import { apiGet, apiPost, getStoredUserId } from "../../lib/api";
+import ActionableErrorPanel from "../ActionableErrorPanel";
+import { apiGet, apiPost, getStoredUserId, isAuthErrorMessage } from "../../lib/api";
 import { socket } from "../../lib/socket";
 
 type RoomChatAction =
@@ -311,6 +312,12 @@ export default function RoomChatWidget({ roomId }: RoomChatWidgetProps)
           <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4 text-sm text-slate-400">
             Loading chat...
           </div>
+        ) : error && renderedMessages.length === 0 ? (
+          <ActionableErrorPanel
+            message={isAuthErrorMessage(error) ? "Please log in to continue." : error}
+            actionLabel={isAuthErrorMessage(error) ? "Log in" : undefined}
+            actionHref={isAuthErrorMessage(error) ? "/login" : undefined}
+          />
         ) : renderedMessages.length === 0 ? (
           <div className="rounded-xl border border-dashed border-white/10 bg-white/[0.03] p-4 text-sm text-slate-400">
             No messages yet.
@@ -360,11 +367,15 @@ export default function RoomChatWidget({ roomId }: RoomChatWidgetProps)
       </div>
 
       <form onSubmit={handleSend} className="border-t border-white/10 p-4">
-        {error && (
-          <div className="mb-3 rounded-xl border border-red-400/20 bg-red-500/10 px-3 py-2 text-xs text-red-200">
-            {error}
+        {error ? (
+          <div className="mb-3">
+            <ActionableErrorPanel
+              message={isAuthErrorMessage(error) ? "Please log in to continue." : error}
+              actionLabel={isAuthErrorMessage(error) ? "Log in" : undefined}
+              actionHref={isAuthErrorMessage(error) ? "/login" : undefined}
+            />
           </div>
-        )}
+        ) : null}
 
         <div className="flex items-end gap-2">
           <textarea

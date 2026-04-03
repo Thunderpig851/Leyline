@@ -9,7 +9,6 @@ export type ApiResult<T> =
   | { ok: true; data: T }
   | { ok: false; error: string; status?: number };
 
-
 export function setAuthSession(
   token: string,
   user: { id: string; username: string }
@@ -42,6 +41,27 @@ export function getStoredUserId()
   return sessionStorage.getItem(USER_ID_KEY);
 }
 
+function buildErrorMessage(error?: string | null, status?: number)
+{
+  const rawMessage = String(error || "").trim();
+  const normalized = rawMessage.toLowerCase();
+  const isAuthError =
+    status === 401
+    || status === 403
+    || normalized.includes("invalid token")
+    || normalized.includes("jwt expired")
+    || normalized.includes("missing token")
+    || normalized.includes("unauthorized")
+    || normalized.includes("forbidden");
+
+  if (isAuthError)
+  {
+    return "Please log in to continue.";
+  }
+
+  return rawMessage || (status ? `Request failed (${status})` : "Request failed.");
+}
+
 export async function apiPost<T>(
   path: string,
   body: unknown,
@@ -71,7 +91,7 @@ export async function apiPost<T>(
       return {
         ok: false,
         status: res.status,
-        error: json?.error || `Request failed (${res.status})`,
+        error: buildErrorMessage(json?.error, res.status),
       };
     }
 
@@ -109,7 +129,7 @@ export async function apiGet<T>(
       return {
         ok: false,
         status: res.status,
-        error: json?.error || `Request failed (${res.status})`,
+        error: buildErrorMessage(json?.error, res.status),
       };
     }
 
@@ -129,7 +149,9 @@ export function isAuthErrorMessage(error?: string | null)
     || normalized.includes("jwt expired")
     || normalized.includes("missing token")
     || normalized.includes("unauthorized")
-    || normalized.includes("forbidden");
+    || normalized.includes("forbidden")
+    || normalized.includes("please log in")
+    || normalized.includes("log in to continue");
 }
 
 export function isNetworkErrorMessage(error?: string | null)

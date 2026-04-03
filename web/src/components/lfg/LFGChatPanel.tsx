@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
-import { apiPost, getStoredAccessToken, getStoredUsername } from "../../lib/api";
+import ActionableErrorPanel from "../ActionableErrorPanel";
+import { apiPost, getStoredAccessToken, getStoredUsername, isAuthErrorMessage } from "../../lib/api";
 
 type LFGChatMessage =
 {
@@ -89,9 +90,11 @@ export default function LFGChatPanel({
         {loading ? (
           <div className="text-sm text-slate-300">Loading...</div>
         ) : error ? (
-          <div className="rounded-xl border border-red-300/20 bg-red-500/10 px-3 py-3 text-sm text-red-100">
-            {error}
-          </div>
+          <ActionableErrorPanel
+            message={isAuthErrorMessage(error) ? "Please log in to continue." : error}
+            actionLabel={isAuthErrorMessage(error) ? "Log in" : undefined}
+            actionHref={isAuthErrorMessage(error) ? "/login" : undefined}
+          />
         ) : messages.length === 0 ? (
           <div className="text-sm text-slate-400">No messages yet.</div>
         ) : (
@@ -137,7 +140,15 @@ export default function LFGChatPanel({
         />
 
         <div className="mt-2 flex items-center justify-end gap-3">
-          {sendError ? <div className="mr-auto text-xs text-red-200">{sendError}</div> : null}
+          {sendError ? (
+            <div className="mr-auto max-w-full">
+              <ActionableErrorPanel
+                message={isAuthErrorMessage(sendError) ? "Please log in to continue." : sendError}
+                actionLabel={isAuthErrorMessage(sendError) ? "Log in" : undefined}
+                actionHref={isAuthErrorMessage(sendError) ? "/login" : undefined}
+              />
+            </div>
+          ) : null}
 
           <button
             type="button"
