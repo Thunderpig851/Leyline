@@ -1,5 +1,5 @@
-const API_BASE =
-  import.meta.env.VITE_API_URL?.replace(/\/$/, "") || "http://localhost:3001";
+const configuredApiBase = import.meta.env.VITE_API_URL?.trim();
+const API_BASE = configuredApiBase ? configuredApiBase.replace(/\/$/, "") : "";
 
 const TOKEN_KEY = "accessToken";
 const USERNAME_KEY = "username";

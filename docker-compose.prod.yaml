@@ -1,0 +1,23 @@
+services:
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    env_file:
+      - ./server/.env
+    expose:
+      - "3001"
+    ports:
+      - "40000-40100:40000-40100/udp"
+      - "40000-40100:40000-40100/tcp"
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      - server
+    restart: unless-stopped
