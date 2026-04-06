@@ -520,18 +520,18 @@ export function MediaSessionProvider({ children }: { children: React.ReactNode }
     }
   }, [status]);
 
-  useEffect(() =>
+  useEffect(() => 
   {
-    function onDeviceChange()
-    {
+    if (!navigator.mediaDevices?.addEventListener) return;
+
+    function onDeviceChange() {
       void refreshDevices();
     }
 
     navigator.mediaDevices.addEventListener("devicechange", onDeviceChange);
 
-    return () =>
-    {
-      navigator.mediaDevices.removeEventListener("devicechange", onDeviceChange);
+    return () => {
+      navigator.mediaDevices?.removeEventListener?.("devicechange", onDeviceChange);
     };
   }, [refreshDevices]);
 

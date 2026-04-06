@@ -1,10 +1,9 @@
-import { io } from 'socket.io-client';
+import { io } from "socket.io-client";
 
-const configuredApiBase = import.meta.env.VITE_API_URL?.trim();
-const socketUrl = configuredApiBase ? configuredApiBase.replace(/\/$/, '') : undefined;
+const API_BASE =
+  import.meta.env.VITE_API_URL?.replace(/\/$/, "") || window.location.origin;
 
-export const socket = io(socketUrl,
-{
-  transports: ['websocket'],
+export const socket = io(API_BASE, {
+  transports: ["websocket"],
   withCredentials: true,
 });

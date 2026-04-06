@@ -24,11 +24,12 @@ export default function NavBar()
     {
       try
       {
-        const response = await fetch("http://localhost:3001/api/account/me",
-        {
+        const API_BASE =
+        import.meta.env.VITE_API_URL?.replace(/\/$/, "") || "";
+
+        const response = await fetch(`${API_BASE}/api/account/me`, {
           method: "GET",
-          headers:
-          {
+          headers: {
             Accept: "application/json",
             Authorization: `Bearer ${token}`,
           },
