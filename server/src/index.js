@@ -3,7 +3,7 @@ const mongoose = require("mongoose");
 const http = require("http");
 const { Server } = require("socket.io");
 
-const { createApp } = require("./app");
+const { createApp, createCorsOriginHandler } = require("./app");
 const { registerSFUSignaling, getWorker } = require("./sfu");
 const { registerLiveGamePresence } = require("./middleware/liveGamePresence");
 
@@ -32,7 +32,7 @@ async function start()
     {
       cors:
       {
-        origin: process.env.CLIENT_ORIGIN || "http://localhost:5173",
+        origin: createCorsOriginHandler(),
         credentials: true
       }
     });

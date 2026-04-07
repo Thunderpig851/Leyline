@@ -11,15 +11,43 @@ const liveGamesRoutes = require("./api/games");
 const chatRoutes = require("./api/chat");
 const lfgRoutes = require("./api/lfg");
 
-function createApp() {
+function buildAllowedOrigins()
+{
+  return String(process.env.CLIENT_ORIGIN || "http://localhost:5173")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+}
+
+function createCorsOriginHandler()
+{
+  const allowedOrigins = buildAllowedOrigins();
+
+  return function corsOriginHandler(origin, callback)
+  {
+    if (!origin)
+    {
+      return callback(null, true);
+    }
+
+    if (allowedOrigins.includes(origin))
+    {
+      return callback(null, true);
+    }
+
+    return callback(new Error(`CORS blocked for origin: ${origin}`));
+  };
+}
+
+function createApp()
+{
   const app = express();
 
-  // Middleware
   app.use(express.json());
   app.use(cookieParser());
   app.use(
     cors({
-      origin: process.env.CLIENT_ORIGIN || "http://localhost:5173",
+      origin: createCorsOriginHandler(),
       credentials: true,
     })
   );
@@ -30,12 +58,12 @@ function createApp() {
 
   app.use("/api/auth", authRoutes);
   app.use("/api/account", requireAuth, accountRoutes);
-  app.use("/api/rooms", roomsRoutes); 
+  app.use("/api/rooms", roomsRoutes);
   app.use("/api/live-games", requireAuth, liveGamesRoutes);
   app.use("/api/chat", requireAuth, chatRoutes);
   app.use("/api/lfg", requireAuth, lfgRoutes);
 
-  app.use((req, res) => 
+  app.use((req, res) =>
   {
     res.status(404).json({ error: "Not found" });
   });
@@ -43,4 +71,4 @@ function createApp() {
   return app;
 }
 
-module.exports = { createApp };
+module.exports = { createApp, buildAllowedOrigins, createCorsOriginHandler };
