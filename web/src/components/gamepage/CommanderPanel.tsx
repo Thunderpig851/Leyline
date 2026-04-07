@@ -83,13 +83,11 @@ async function fetchNamedCard(name: string): Promise<ScryfallCard | null>
 const CommanderPanel = forwardRef<HTMLElement, CommanderPanelProps>(function CommanderPanel(
 {
   open,
-  seatTitle,
   commanders,
   canEdit = false,
   variant = "drawer",
   placement = "bottom",
   className = "",
-  onClose,
   onChange,
 }: CommanderPanelProps, ref)
 {
@@ -416,4 +414,4 @@ const CommanderPanel = forwardRef<HTMLElement, CommanderPanelProps>(function Com
   );
 });
 
-export default CommanderPanel
+export default CommanderPanel;
