@@ -1356,7 +1356,9 @@ router.post("/:gameId/reset", requireAuth, async (req, res) =>
         energy: 0,
         experience: 0,
       };
+
       seat.commanders = [];
+      seat.isReady = false;
     }
 
     game.boardOrder = normalizeBoardOrder(game);
@@ -1364,6 +1366,7 @@ router.post("/:gameId/reset", requireAuth, async (req, res) =>
     game.initiativeSeatNumber = null;
     game.activeTurnSeatNumber = null;
     game.turnStartedAt = null;
+    game.gameStartedAt = null;
     game.dayNightState = null;
 
     await game.save();
@@ -1379,7 +1382,7 @@ router.post("/:gameId/reset", requireAuth, async (req, res) =>
     console.error("Error resetting game:", err);
     return res.status(500).json({ ok: false, error: err.message || "Failed to reset game." });
   }
-}); 
+});
 
 router.post("/:gameId/transfer-host", requireAuth, async (req, res) =>
 {
