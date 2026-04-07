@@ -896,15 +896,11 @@ router.post("/:gameId/seats/:seatNumber/state", requireAuth, async (req, res) =>
 
     if (connectionStatus !== undefined)
     {
-      if (!["connected", "away"].includes(connectionStatus))
-      {
-        return res.status(400).json({ ok: false, error: "Invalid connection status." });
-      }
-
-      seat.connectionStatus = connectionStatus;
-      seat.awaySinceAt = connectionStatus === "away" ? new Date() : null;
-      seat.lastSeenAt = new Date();
+      seat.connectionStatus = connectionStatus === "away" ? "away" : "connected";
+      seat.awaySinceAt = seat.connectionStatus === "away" ? new Date() : null;
       seat.lastActiveAt = new Date();
+      seat.lastSeenAt = new Date();
+      seat.disconnectDeadlineAt = null;
     }
 
     await game.save();
@@ -1023,17 +1019,18 @@ router.post("/:gameId/turn/advance", requireAuth, async (req, res) =>
       ? occupiedTurnOrder[0]
       : occupiedTurnOrder[(currentIndex + 1) % occupiedTurnOrder.length];
 
-    const occupiedSeats = (game.seats || []).filter((seat) => Boolean(seat.userId));
-
-    if (!game.gameStartedAt && occupiedSeats.some((seat) => !seat.isReady))
-    {
-      return res.status(400).json({ ok: false, error: "All seated players must be ready before the game can start." });
-    }
-
     const now = new Date();
 
     if (!game.gameStartedAt)
     {
+      const occupiedSeats = game.seats.filter((seat) => Boolean(seat.userId));
+      const allReady = occupiedSeats.length > 0 && occupiedSeats.every((seat) => seat.isReady);
+
+      if (!allReady)
+      {
+        return res.status(400).json({ ok: false, error: "All seated players must be ready before the game can start." });
+      }
+
       game.gameStartedAt = now;
     }
 
