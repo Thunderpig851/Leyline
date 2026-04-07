@@ -843,7 +843,17 @@ router.post("/:gameId/seats/:seatNumber/state", requireAuth, async (req, res) =>
       seat.stats = {};
     }
 
-    const { life, poison, energy, experience, commanderDamage, commanders, commander } = req.body || {};
+    const {
+      life,
+      poison,
+      energy,
+      experience,
+      commanderDamage,
+      commanders,
+      commander,
+      isReady,
+      connectionStatus,
+    } = req.body || {};
 
     if (life !== undefined)
     {
@@ -877,6 +887,24 @@ router.post("/:gameId/seats/:seatNumber/state", requireAuth, async (req, res) =>
     else if (commander !== undefined)
     {
       seat.commanders = sanitizeCommanders(commander);
+    }
+
+    if (isReady !== undefined)
+    {
+      seat.isReady = Boolean(isReady);
+    }
+
+    if (connectionStatus !== undefined)
+    {
+      if (!["connected", "away"].includes(connectionStatus))
+      {
+        return res.status(400).json({ ok: false, error: "Invalid connection status." });
+      }
+
+      seat.connectionStatus = connectionStatus;
+      seat.awaySinceAt = connectionStatus === "away" ? new Date() : null;
+      seat.lastSeenAt = new Date();
+      seat.lastActiveAt = new Date();
     }
 
     await game.save();
@@ -994,6 +1022,13 @@ router.post("/:gameId/turn/advance", requireAuth, async (req, res) =>
     const nextSeatNumber = currentIndex === -1
       ? occupiedTurnOrder[0]
       : occupiedTurnOrder[(currentIndex + 1) % occupiedTurnOrder.length];
+
+    const occupiedSeats = (game.seats || []).filter((seat) => Boolean(seat.userId));
+
+    if (!game.gameStartedAt && occupiedSeats.some((seat) => !seat.isReady))
+    {
+      return res.status(400).json({ ok: false, error: "All seated players must be ready before the game can start." });
+    }
 
     const now = new Date();
 

@@ -41,11 +41,39 @@ function createCorsOriginHandler()
   };
 }
 
-function createApp() {
+function buildAllowedOrigins()
+{
+  return String(process.env.CLIENT_ORIGIN || "http://localhost:5173")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+}
+
+function createCorsOriginHandler()
+{
+  const allowedOrigins = buildAllowedOrigins();
+
+  return function corsOriginHandler(origin, callback)
+  {
+    if (!origin)
+    {
+      return callback(null, true);
+    }
+
+    if (allowedOrigins.includes(origin))
+    {
+      return callback(null, true);
+    }
+
+    return callback(new Error(`CORS blocked for origin: ${origin}`));
+  };
+}
+
+function createApp()
+{
   const app = express();
 
-  app.set("trust proxy", 1);
-
+  // Middleware
   app.use(express.json());
   app.use(cookieParser());
   app.use(
@@ -74,4 +102,4 @@ function createApp() {
   return app;
 }
 
-module.exports = { createApp, getAllowedOrigins };
+module.exports = { createApp };
