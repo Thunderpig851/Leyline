@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
-import { Crown, Pencil, Swords } from "lucide-react";
+import { Check, Coffee, Crown, FlipVertical2, Maximize2, Minimize2, Pencil, Swords, X } from "lucide-react";
 import CommanderPanel from "./CommanderPanel";
 
 type CommanderCard =
@@ -23,6 +23,10 @@ type PlayerTileProps =
   stream?: MediaStream | null;
   isSelf?: boolean;
   status?: "connected" | "reconnecting" | "away" | "empty";
+  isReady?: boolean;
+  showSeatStateOverlay?: boolean;
+  isFlipped?: boolean;
+  isExpanded?: boolean;
   life?: number;
   poison?: number;
   energy?: number;
@@ -49,6 +53,8 @@ type PlayerTileProps =
   onCommandersChange?: (nextCommanders: CommanderCard[]) => void;
   onPromoteToHost?: () => void;
   onKickPlayer?: () => void;
+  onToggleFlip?: () => void;
+  onToggleExpand?: () => void;
 };
 
 type CommanderVisual =
@@ -233,6 +239,10 @@ export default function PlayerTile({
   stream = null,
   isSelf = false,
   status = "connected",
+  isReady = false,
+  showSeatStateOverlay = true,
+  isFlipped = false,
+  isExpanded = false,
   life = 40,
   poison = 0,
   energy = 0,
@@ -259,6 +269,8 @@ export default function PlayerTile({
   onCommandersChange,
   onPromoteToHost,
   onKickPlayer,
+  onToggleFlip,
+  onToggleExpand,
 }: PlayerTileProps)
 {
   const tileSectionRef = useRef<HTMLElement | null>(null);
@@ -574,7 +586,7 @@ export default function PlayerTile({
   }
 
   return (
-    <section ref={tileSectionRef} className="relative h-full min-h-0 rounded-[1.65rem]">
+    <section ref={tileSectionRef} className="group relative h-full min-h-0 rounded-[1.65rem]">
       <div className="absolute inset-0 overflow-hidden rounded-[1.65rem] border border-white/10 bg-slate-900 shadow-[0_18px_60px_rgba(0,0,0,0.45)]">
         <div className="absolute inset-0 bg-gradient-to-br from-white/[0.06] via-white/[0.025] to-transparent" />
 
@@ -582,7 +594,7 @@ export default function PlayerTile({
           {stream ? (
             <video
               ref={videoRef}
-              className="h-full w-full object-cover"
+              className={`h-full w-full object-cover transition-transform duration-200 ${isFlipped ? "rotate-180" : ""}`}
               autoPlay
               playsInline
               muted={isSelf}
@@ -601,6 +613,46 @@ export default function PlayerTile({
 
       {isActiveTurn ? (
         <div className="pointer-events-none absolute inset-[4px] z-[1] rounded-[1.4rem] ring-2 ring-emerald-400 shadow-[0_0_0_1px_rgba(16,185,129,0.35),0_0_28px_rgba(16,185,129,0.35)]" />
+      ) : null}
+
+      {status !== "empty" && showSeatStateOverlay ? (
+        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-6">
+          {status === "away" ? (
+            <StatusOverlayBadge
+              tone="away"
+              size="large"
+              icon={<Coffee className="h-10 w-10" />}
+              label="AFK"
+            />
+          ) : (
+            <StatusOverlayBadge
+              tone={isReady ? "ready" : "not-ready"}
+              size="large"
+              icon={isReady ? <Check className="h-10 w-10" /> : <X className="h-10 w-10" />}
+              label={isReady ? "Ready" : "Not Ready"}
+            />
+          )}
+        </div>
+      ) : null}
+
+      {(onToggleFlip || onToggleExpand) && status !== "empty" ? (
+        <div className="absolute bottom-3 right-3 z-20 flex items-center gap-2 opacity-0 transition-all duration-150 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:opacity-100">
+          {onToggleFlip ? (
+            <TileViewActionButton
+              label={isFlipped ? "Return Upright" : "Flip Stream"}
+              icon={<FlipVertical2 className="h-4 w-4" />}
+              onClick={onToggleFlip}
+            />
+          ) : null}
+
+          {onToggleExpand ? (
+            <TileViewActionButton
+              label={isExpanded ? "Return to Grid" : "Focus Stream"}
+              icon={isExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+              onClick={onToggleExpand}
+            />
+          ) : null}
+        </div>
       ) : null}
 
       <div className="absolute left-3 right-3 top-3 z-10 flex items-start justify-between gap-3">
@@ -1000,6 +1052,61 @@ export default function PlayerTile({
         </div>
       ) : null}
     </section>
+  );
+}
+
+function StatusOverlayBadge({
+  tone,
+  icon,
+  label,
+  size = "default",
+}: {
+  tone: "ready" | "not-ready" | "away";
+  icon: ReactNode;
+  label: string;
+  size?: "default" | "large";
+})
+{
+  const toneClass =
+    tone === "ready"
+      ? "border-emerald-300/35 bg-emerald-500/18 text-emerald-50 shadow-[0_10px_30px_rgba(16,185,129,0.26)]"
+      : tone === "away"
+        ? "border-amber-300/35 bg-amber-500/18 text-amber-50 shadow-[0_10px_30px_rgba(245,158,11,0.22)]"
+        : "border-red-300/35 bg-red-500/18 text-red-50 shadow-[0_10px_30px_rgba(239,68,68,0.24)]";
+
+  const sizeClass =
+    size === "large"
+      ? "min-w-[9.5rem] justify-center gap-3 rounded-[1.65rem] px-6 py-4 text-base tracking-[0.18em]"
+      : "gap-1.5 rounded-full px-2.5 py-1 text-[10px] tracking-[0.12em]";
+
+  return (
+    <div className={`inline-flex items-center border font-semibold uppercase backdrop-blur ${sizeClass} ${toneClass}`}>
+      {icon}
+      <span>{label}</span>
+    </div>
+  );
+}
+
+function TileViewActionButton({
+  label,
+  icon,
+  onClick,
+}: {
+  label: string;
+  icon: ReactNode;
+  onClick?: () => void;
+})
+{
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-teal-300/28 bg-slate-950/84 text-teal-50 shadow-[0_14px_34px_rgba(2,8,23,0.34)] backdrop-blur transition duration-150 hover:-translate-y-0.5 hover:border-teal-200/45 hover:bg-teal-400/14 hover:text-white hover:shadow-[0_18px_36px_rgba(20,184,166,0.24)]"
+      title={label}
+      aria-label={label}
+    >
+      {icon}
+    </button>
   );
 }
 

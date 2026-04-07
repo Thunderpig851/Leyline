@@ -31,6 +31,7 @@ type GameSeat =
   userId: string;
   username: string;
   connectionStatus: "connected" | "reconnecting" | "away";
+  isReady?: boolean;
   commanders?: CommanderCard[] | null;
   commander?: CommanderCard | null;
   stats?: GameStats | null;
@@ -247,6 +248,18 @@ function truncateLabel(value: string, maxLength = 26)
   return `${trimmed.slice(0, maxLength - 1).trimEnd()}…`;
 }
 
+function normalizeStreamIdentity(value?: string | null)
+{
+  const normalized = String(value ?? "").trim().toLowerCase();
+
+  if (!normalized || normalized === "null" || normalized === "undefined")
+  {
+    return "";
+  }
+
+  return normalized;
+}
+
 function formatTurnDuration(totalSeconds: number)
 {
   const safeSeconds = Math.max(0, Math.floor(totalSeconds));
@@ -287,6 +300,8 @@ export default function GamePage()
     finalOrder: [],
   });
   const [timerNow, setTimerNow] = useState(() => Date.now());
+  const [focusedSeatNumber, setFocusedSeatNumber] = useState<number | null>(null);
+  const [flippedSeatNumbers, setFlippedSeatNumbers] = useState<number[]>([]);
 
   const shuffleIntervalRef = useRef<number | null>(null);
   const shuffleTimeoutRef = useRef<number | null>(null);
@@ -872,6 +887,8 @@ export default function GamePage()
       experience?: number;
       commanderDamage?: Record<string, number>;
       commanders?: CommanderCard[];
+      isReady?: boolean;
+      connectionStatus?: "connected" | "away";
     }
   )
   {
@@ -976,6 +993,53 @@ export default function GamePage()
     const userId = getStoredUserId();
     return Boolean((game?.spectators ?? []).some((spectator) => spectator.userId === userId));
   }, [game]);
+
+  const selfSeat = useMemo(() =>
+  {
+    const userId = getStoredUserId();
+    return game?.seats?.find((seat) => seat.userId === userId) ?? null;
+  }, [game]);
+
+  const allOccupiedSeatsReady = useMemo(() =>
+  {
+    const occupiedSeats = (game?.seats ?? []).filter((seat) => Boolean(seat.userId));
+
+    if (occupiedSeats.length === 0)
+    {
+      return false;
+    }
+
+    return occupiedSeats.every((seat) => Boolean(seat.isReady));
+  }, [game?.seats]);
+
+  async function handleToggleReady()
+  {
+    if (!selfSeat) return;
+    await updateSeatState(selfSeat.seatNumber, { isReady: !selfSeat.isReady });
+  }
+
+  async function handleToggleAway()
+  {
+    if (!selfSeat) return;
+    await updateSeatState(selfSeat.seatNumber,
+    {
+      connectionStatus: selfSeat.connectionStatus === "away" ? "connected" : "away",
+    });
+  }
+
+  function handleToggleFlipSeat(seatNumber: number)
+  {
+    setFlippedSeatNumbers((current) =>
+      current.includes(seatNumber)
+        ? current.filter((value) => value !== seatNumber)
+        : [...current, seatNumber]
+    );
+  }
+
+  function handleToggleExpandedSeat(seatNumber: number)
+  {
+    setFocusedSeatNumber((current) => current === seatNumber ? null : seatNumber);
+  }
 
   async function handleRandomizePlayerOrder()
   {
@@ -1334,6 +1398,12 @@ export default function GamePage()
   {
     if (!gameId || !isSeatedPlayer || advancingTurnRef.current) return;
 
+    if (!game?.gameStartedAt && !allOccupiedSeatsReady)
+    {
+      console.error("Cannot start game until all seated players are ready.");
+      return;
+    }
+
     advancingTurnRef.current = true;
 
     try
@@ -1364,15 +1434,26 @@ export default function GamePage()
   const seatSlots = useMemo(() =>
   {
     const selfUserId = getStoredUserId();
-    const remoteByUsername = new Map(
-      Object.values(mediaSession.remoteMedia)
-        .map((remote) => [String(remote.username).toLowerCase(), remote])
-    );
+    const remoteEntries = Object.values(mediaSession.remoteMedia);
+    const remoteByUsername = new Map<string, (typeof remoteEntries)[number]>();
+
+    for (const remote of remoteEntries)
+    {
+      const normalizedRemoteUsername = normalizeStreamIdentity(remote.username);
+
+      if (!normalizedRemoteUsername || remoteByUsername.has(normalizedRemoteUsername))
+      {
+        continue;
+      }
+
+      remoteByUsername.set(normalizedRemoteUsername, remote);
+    }
 
     const orderedSeats = [...(game?.seats ?? [])].sort(
       (a, b) => a.seatNumber - b.seatNumber
     );
 
+    const matchedRemotePeerIds = new Set<string>();
     const defaultLife = getStartingLife(game?.settings?.format);
 
     return [1, 2, 3, 4].map((seatNumber) =>
@@ -1403,10 +1484,27 @@ export default function GamePage()
       }
 
       const isSelf = seat.userId === selfUserId;
-      const remote =
-        !isSelf
-          ? remoteByUsername.get(seat.username.toLowerCase()) ?? null
-          : null;
+      let remote = null;
+
+      if (!isSelf)
+      {
+        const normalizedSeatUsername = normalizeStreamIdentity(seat.username);
+
+        if (normalizedSeatUsername)
+        {
+          remote = remoteByUsername.get(normalizedSeatUsername) ?? null;
+        }
+
+        if (!remote)
+        {
+          remote = remoteEntries.find((entry) => !matchedRemotePeerIds.has(entry.peerId)) ?? null;
+        }
+
+        if (remote?.peerId)
+        {
+          matchedRemotePeerIds.add(remote.peerId);
+        }
+      }
 
       const commanderDamageMap = seat.stats?.commanderDamage ?? {};
 
@@ -1436,6 +1534,7 @@ export default function GamePage()
         hasMonarch: game?.monarchSeatNumber === seatNumber,
         hasInitiative: game?.initiativeSeatNumber === seatNumber,
         isSaving: savingSeatNumbers.includes(seatNumber),
+        isReady: Boolean(seat.isReady),
       };
     });
   }, [game, mediaSession.localStream, mediaSession.remoteMedia, savingSeatNumbers]);
@@ -1451,6 +1550,29 @@ export default function GamePage()
       .map((seatNumber) => seatSlotMap.get(seatNumber))
       .filter((slot): slot is (typeof seatSlots)[number] => Boolean(slot));
   }, [game?.boardOrder, isCommanderGame, seatSlots]);
+
+  const visibleSeatSlots = useMemo(() =>
+  {
+    if (!focusedSeatNumber)
+    {
+      return displaySeatSlots;
+    }
+
+    return displaySeatSlots.filter((slot) => slot.seatNumber === focusedSeatNumber);
+  }, [displaySeatSlots, focusedSeatNumber]);
+
+  useEffect(() =>
+  {
+    if (!focusedSeatNumber)
+    {
+      return;
+    }
+
+    if (!displaySeatSlots.some((slot) => slot.seatNumber === focusedSeatNumber && slot.userId))
+    {
+      setFocusedSeatNumber(null);
+    }
+  }, [displaySeatSlots, focusedSeatNumber]);
 
   const activeTurnSeat = useMemo(() =>
   {
@@ -1560,7 +1682,7 @@ export default function GamePage()
       <header className="sticky top-0 z-40 border-b border-white/10 bg-slate-950/78 backdrop-blur-xl">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(45,212,191,0.10),transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0))]" />
 
-        <div className="relative flex w-full items-center justify-between gap-4 px-5 py-2.5">
+        <div className="relative flex w-full items-center justify-between gap-4 px-5 py-2">
           <div className="min-w-0 flex flex-1 items-center gap-3">
             <h1 className="truncate text-lg font-semibold tracking-tight text-white drop-shadow-[0_1px_10px_rgba(255,255,255,0.08)] sm:text-xl">
               {roomTitle}
@@ -1641,16 +1763,18 @@ export default function GamePage()
         </div>
       </header>
 
-      <div className="relative h-[calc(100dvh-74px)] w-full overflow-hidden">
-        <main className="h-full w-full px-4 py-3">
+      <div className="relative h-[calc(100dvh-70px)] w-full overflow-hidden">
+        <main className="h-full w-full px-1.5 py-1">
           <div
-            className={`grid h-full gap-2.5 ${
-              isCommanderGame
-                ? "grid-cols-2 grid-rows-2"
-                : "mx-auto max-w-[1200px] grid-cols-1 grid-rows-2"
+            className={`grid h-full gap-0.5 ${
+              focusedSeatNumber
+                ? "grid-cols-1 grid-rows-1"
+                : isCommanderGame
+                  ? "grid-cols-2 grid-rows-2"
+                  : "mx-auto max-w-[1200px] grid-cols-1 grid-rows-2"
             }`}
           >
-            {displaySeatSlots.map((slot) => (
+            {visibleSeatSlots.map((slot) => (
               <PlayerTile
                 key={slot.seatNumber}
                 seatNumber={slot.seatNumber}
@@ -1659,6 +1783,10 @@ export default function GamePage()
                 title={slot.title}
                 stream={slot.stream}
                 status={slot.status}
+                isReady={Boolean(slot.isReady)}
+                showSeatStateOverlay={!Boolean(game?.gameStartedAt)}
+                isFlipped={flippedSeatNumbers.includes(slot.seatNumber)}
+                isExpanded={focusedSeatNumber === slot.seatNumber}
                 life={slot.life}
                 poison={slot.poison}
                 energy={slot.energy}
@@ -1703,6 +1831,16 @@ export default function GamePage()
                       ? () => { void handleKickPlayer(slot.seatNumber); }
                       : undefined
                   }
+                onToggleFlip={
+                  !slot.isSelf && slot.userId
+                    ? () => { handleToggleFlipSeat(slot.seatNumber); }
+                    : undefined
+                }
+                onToggleExpand={
+                  !slot.isSelf && slot.userId
+                    ? () => { handleToggleExpandedSeat(slot.seatNumber); }
+                    : undefined
+                }
                 onLifeChange={
                   slot.isSelf
                     ? (nextLife) => { void handleLifeChange(slot.seatNumber, nextLife); }
@@ -1778,6 +1916,9 @@ export default function GamePage()
           resettingGame={resettingGame}
           endingGame={endingGame}
           dayNightState={game?.dayNightState ?? null}
+          showSeatStateControls={Boolean(selfSeat && !isSpectator)}
+          isReady={Boolean(selfSeat?.isReady)}
+          isAway={selfSeat?.connectionStatus === "away"}
           micEnabled={mediaSession.micEnabled}
           camEnabled={mediaSession.camEnabled}
           onRandomizePlayerOrder={() => { void handleRandomizePlayerOrder(); }}
@@ -1788,6 +1929,8 @@ export default function GamePage()
               ? () => { void handleToggleDayNight(); }
               : undefined
           }
+          onToggleReady={selfSeat ? () => { void handleToggleReady(); } : undefined}
+          onToggleAway={selfSeat ? () => { void handleToggleAway(); } : undefined}
           onToggleSelfMic={isSpectator ? undefined : handleToggleSelfMic}
           onToggleSelfCam={isSpectator ? undefined : handleToggleSelfCam}
           onCopyPrivateCode={() => { void handleCopyPrivateCode(); }}

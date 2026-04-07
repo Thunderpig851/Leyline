@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { clearAuthSession } from "../../lib/api";
+import { apiGet, clearAuthSession } from "../../lib/api";
 import { useEffect, useRef, useState } from "react";
 
 type MeResponse =
@@ -20,7 +20,7 @@ export default function NavBar()
 
   useEffect(() =>
   {
-    async function LoadUser(token: string)
+    async function loadUser()
     {
       try
       {
@@ -40,14 +40,11 @@ export default function NavBar()
         if (data.ok && data.user) setUsername(data.user.username);
         else setUsername(null);
       }
-      catch (err)
-      {
-        console.error("Error loading user:", err);
-        setUsername(null);
-      }
+
+      setUsername(null);
     }
 
-    LoadUser(sessionStorage.getItem("accessToken") || "");
+    loadUser();
   }, []);
 
   useEffect(() =>

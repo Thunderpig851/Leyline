@@ -56,7 +56,7 @@ export default function RegisterPage()
     password === confirm &&
     !loading;
 
-async function onSubmit(e: React.SubmitEvent)
+  async function onSubmit(e: React.FormEvent)
   {
     e.preventDefault();
     setServerError(null);
@@ -87,15 +87,16 @@ async function onSubmit(e: React.SubmitEvent)
 
     const { token, user } = result.data;
 
-    if (!token || !user)
+    if (token && user)
     {
-      setServerError("Account created, but login could not be completed.");
+      setAuthSession(token, user);
+      setSuccessMsg("Account created. Logging you in...");
+      navigate("/lobby");
       return;
     }
 
-    setAuthSession(token, user);
-    setSuccessMsg("Account created. Logging you in...");
-    navigate("/lobby");
+    setSuccessMsg("Account created. Redirecting to login...");
+    navigate("/login", { replace: true, state: { registered: true, username: username.trim() } });
   }
 
   const ReqItem = ({ label, ok }: { label: string; ok: boolean }) => (

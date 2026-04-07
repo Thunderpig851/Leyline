@@ -73,11 +73,11 @@ function createApp()
 {
   const app = express();
 
-  // Middleware
   app.use(express.json());
   app.use(cookieParser());
   app.use(
     cors({
+      origin: createCorsOriginHandler(),
       origin: createCorsOriginHandler(),
       credentials: true,
     })
@@ -90,10 +90,12 @@ function createApp()
   app.use("/api/auth", authRoutes);
   app.use("/api/account", requireAuth, accountRoutes);
   app.use("/api/rooms", roomsRoutes);
+  app.use("/api/rooms", roomsRoutes);
   app.use("/api/live-games", requireAuth, liveGamesRoutes);
   app.use("/api/chat", requireAuth, chatRoutes);
   app.use("/api/lfg", requireAuth, lfgRoutes);
 
+  app.use((req, res) =>
   app.use((req, res) =>
   {
     res.status(404).json({ error: "Not found" });
@@ -102,4 +104,4 @@ function createApp()
   return app;
 }
 
-module.exports = { createApp };
+module.exports = { createApp, buildAllowedOrigins, createCorsOriginHandler };
