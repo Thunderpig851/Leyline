@@ -22,23 +22,20 @@ export default function NavBar()
   {
     async function loadUser()
     {
-      try
+      const token = sessionStorage.getItem("accessToken") || "";
+
+      if (!token)
       {
-        const API_BASE =
-        import.meta.env.VITE_API_URL?.replace(/\/$/, "") || "";
+        setUsername(null);
+        return;
+      }
 
-        const response = await fetch(`${API_BASE}/api/account/me`, {
-          method: "GET",
-          headers: {
-            Accept: "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-        });
+      const result = await apiGet<MeResponse>("/api/account/me");
 
-        const data: MeResponse = await response.json();
-
-        if (data.ok && data.user) setUsername(data.user.username);
-        else setUsername(null);
+      if (result.ok && result.data.ok && result.data.user)
+      {
+        setUsername(result.data.user.username);
+        return;
       }
 
       setUsername(null);
@@ -90,8 +87,7 @@ export default function NavBar()
               <button
                 type="button"
                 onClick={() => setOpenMenu((v) => !v)}
-                className="rounded-xl border border-teal-300/30 bg-teal-500/10 px-3 py-2 text-sm text-slate-200
-                           hover:bg-teal-500/20 hover:border-teal-200 transition-colors duration-150"
+                className="rounded-xl border border-teal-300/30 bg-teal-500/10 px-3 py-2 text-sm text-slate-200 transition-colors duration-150 hover:border-teal-200 hover:bg-teal-500/20"
                 aria-haspopup="menu"
                 aria-expanded={openMenu}
               >
@@ -101,8 +97,7 @@ export default function NavBar()
               {openMenu && (
                 <div
                   role="menu"
-                  className="absolute right-0 mt-2 w-56 overflow-hidden rounded-2xl border border-white/10 bg-slate-950/90
-                             ring-1 ring-white/5 shadow-xl shadow-black/40 backdrop-blur"
+                  className="absolute right-0 mt-2 w-56 overflow-hidden rounded-2xl border border-white/10 bg-slate-950/90 shadow-xl shadow-black/40 ring-1 ring-white/5 backdrop-blur"
                 >
                   <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/10 via-white/5 to-transparent" />
 
@@ -147,7 +142,9 @@ export default function NavBar()
             </div>
           ) : (
             <div className="ml-2 text-xs text-slate-400">
-              <Link to="/login" className="text-teal-400 hover:underline">Login</Link>
+              <Link to="/login" className="text-teal-400 hover:underline">
+                Login
+              </Link>
             </div>
           )}
         </nav>
