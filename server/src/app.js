@@ -23,7 +23,7 @@ function getAllowedOrigins()
     return configured;
   }
 
-  return ["http://localhost:5173", "http://localhost"];
+  return ["http://localhost:5173", "http://127.0.0.1:5173"];
 }
 
 function createCorsOriginHandler()
@@ -33,34 +33,6 @@ function createCorsOriginHandler()
   return function corsOriginHandler(origin, callback)
   {
     if (!origin || allowedOrigins.includes(origin))
-    {
-      return callback(null, true);
-    }
-
-    return callback(new Error("Origin not allowed by CORS"));
-  };
-}
-
-function buildAllowedOrigins()
-{
-  return String(process.env.CLIENT_ORIGIN || "http://localhost:5173")
-    .split(",")
-    .map((origin) => origin.trim())
-    .filter(Boolean);
-}
-
-function createCorsOriginHandler()
-{
-  const allowedOrigins = buildAllowedOrigins();
-
-  return function corsOriginHandler(origin, callback)
-  {
-    if (!origin)
-    {
-      return callback(null, true);
-    }
-
-    if (allowedOrigins.includes(origin))
     {
       return callback(null, true);
     }
@@ -78,24 +50,22 @@ function createApp()
   app.use(
     cors({
       origin: createCorsOriginHandler(),
-      origin: createCorsOriginHandler(),
       credentials: true,
     })
   );
 
-  app.get("/health", (req, res) => {
+  app.get("/health", (req, res) =>
+  {
     res.status(200).json({ ok: true });
   });
 
   app.use("/api/auth", authRoutes);
   app.use("/api/account", requireAuth, accountRoutes);
   app.use("/api/rooms", roomsRoutes);
-  app.use("/api/rooms", roomsRoutes);
   app.use("/api/live-games", requireAuth, liveGamesRoutes);
   app.use("/api/chat", requireAuth, chatRoutes);
   app.use("/api/lfg", requireAuth, lfgRoutes);
 
-  app.use((req, res) =>
   app.use((req, res) =>
   {
     res.status(404).json({ error: "Not found" });
@@ -104,4 +74,4 @@ function createApp()
   return app;
 }
 
-module.exports = { createApp, buildAllowedOrigins, createCorsOriginHandler };
+module.exports = { createApp, getAllowedOrigins, createCorsOriginHandler };
