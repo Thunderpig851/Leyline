@@ -1,7 +1,5 @@
-import { useMemo, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import {
-  Check,
-  Coffee,
   Copy,
   KeyRound,
   Mic,
@@ -14,7 +12,6 @@ import {
   SunMoon,
   Video,
   VideoOff,
-  X,
 } from "lucide-react";
 import SidePanel from "./SidePanel";
 
@@ -32,21 +29,16 @@ type LeftSidePanelProps =
   spectatorCount?: number;
   maxSpectators?: number;
   showLocalMediaControls?: boolean;
-  showSeatStateControls?: boolean;
   randomizingOrder?: boolean;
   resettingGame?: boolean;
   endingGame?: boolean;
   dayNightState?: "day" | "night" | null;
-  isReady?: boolean;
-  isAway?: boolean;
   micEnabled: boolean;
   camEnabled: boolean;
   onRandomizePlayerOrder?: () => void;
   onResetGame?: () => void;
   onEndGame?: () => void;
   onToggleDayNight?: () => void;
-  onToggleReady?: () => void;
-  onToggleAway?: () => void;
   onToggleSelfMic?: () => void;
   onToggleSelfCam?: () => void;
   onCopyPrivateCode?: () => void;
@@ -65,21 +57,16 @@ export default function LeftSidePanel({
   spectatorCount = 0,
   maxSpectators = 4,
   showLocalMediaControls = true,
-  showSeatStateControls = false,
   randomizingOrder = false,
   resettingGame = false,
   endingGame = false,
   dayNightState = null,
-  isReady = false,
-  isAway = false,
   micEnabled,
   camEnabled,
   onRandomizePlayerOrder,
   onResetGame,
   onEndGame,
   onToggleDayNight,
-  onToggleReady,
-  onToggleAway,
   onToggleSelfMic,
   onToggleSelfCam,
   onCopyPrivateCode,
@@ -90,19 +77,6 @@ export default function LeftSidePanel({
     : dayNightState === "night"
       ? <Moon className="h-4 w-4" />
       : <SunMoon className="h-4 w-4" />;
-
-  const readyTone = useMemo(() =>
-  {
-    if (isAway)
-    {
-      return "away" as const;
-    }
-
-    return isReady ? "active" as const : "danger" as const;
-  }, [isAway, isReady]);
-
-  const readyLabel = isReady ? "Ready" : "Not Ready";
-  const awayLabel = isAway ? "Back at Table" : "Step Away";
 
   return (
     <SidePanel
@@ -197,25 +171,6 @@ export default function LeftSidePanel({
           </div>
 
           <div className="grid grid-cols-3 gap-2">
-            {showSeatStateControls ? (
-              <>
-                <IconActionButton
-                  label={readyLabel}
-                  icon={isReady ? <Check className="h-4 w-4" /> : <X className="h-4 w-4" />}
-                  disabled={!onToggleReady}
-                  onClick={onToggleReady}
-                  tone={readyTone}
-                />
-                <IconActionButton
-                  label={awayLabel}
-                  icon={<Coffee className="h-4 w-4" />}
-                  disabled={!onToggleAway}
-                  onClick={onToggleAway}
-                  tone={isAway ? "away" : "default"}
-                />
-              </>
-            ) : null}
-
             <IconActionButton
               label={dayNightState === "day" ? "Day" : dayNightState === "night" ? "Night" : "Day / Night"}
               icon={dayNightIcon}
@@ -247,7 +202,6 @@ export default function LeftSidePanel({
               </div>
             )}
           </div>
-
         </section>
       </div>
     </SidePanel>
@@ -265,7 +219,7 @@ function IconActionButton({
   icon: ReactNode;
   disabled: boolean;
   onClick?: () => void;
-  tone?: "default" | "active" | "danger" | "sun" | "night" | "away";
+  tone?: "default" | "active" | "danger" | "sun" | "night";
 })
 {
   const toneClass =
@@ -277,9 +231,7 @@ function IconActionButton({
           ? "bg-amber-400/12 text-amber-100 hover:bg-amber-400/20 hover:border-amber-300/45 hover:shadow-[0_14px_28px_rgba(251,191,36,0.18)]"
           : tone === "night"
             ? "bg-indigo-400/12 text-indigo-100 hover:bg-indigo-400/20 hover:border-indigo-300/45 hover:shadow-[0_14px_28px_rgba(99,102,241,0.18)]"
-            : tone === "away"
-              ? "bg-amber-500/10 text-amber-100 hover:bg-amber-500/18 hover:border-amber-300/45 hover:shadow-[0_14px_28px_rgba(245,158,11,0.18)]"
-              : "bg-slate-900/74 text-slate-100 hover:bg-teal-400/12 hover:border-teal-300/45 hover:shadow-[0_14px_28px_rgba(20,184,166,0.18)]";
+            : "bg-slate-900/74 text-slate-100 hover:bg-teal-400/12 hover:border-teal-300/45 hover:shadow-[0_14px_28px_rgba(20,184,166,0.18)]";
 
   return (
     <div className="group relative">
