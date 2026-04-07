@@ -1,10 +1,8 @@
-import { io } from 'socket.io-client';
+import { io } from "socket.io-client";
+import { API_BASE } from "./api";
 
-const API_BASE =
-  import.meta.env.VITE_API_URL?.replace(/\/$/, '') ?? 'http://localhost:3001';
-
-export const socket = io(API_BASE, 
+export const socket = io(API_BASE,
 {
-  transports: ['websocket'],
-  withCredentials: true,    
+  transports: ["websocket"],
+  withCredentials: true,
 });

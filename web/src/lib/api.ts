@@ -1,5 +1,28 @@
-const API_BASE =
-  import.meta.env.VITE_API_URL?.replace(/\/$/, "") || "http://localhost:3001";
+function resolveApiBase()
+{
+  const explicitBase = import.meta.env.VITE_API_URL?.trim().replace(/\/$/, "");
+
+  if (explicitBase)
+  {
+    return explicitBase;
+  }
+
+  if (typeof window !== "undefined")
+  {
+    const { origin, hostname } = window.location;
+
+    if (hostname === "localhost" || hostname === "127.0.0.1")
+    {
+      return "http://localhost:3001";
+    }
+
+    return origin;
+  }
+
+  return "http://localhost:3001";
+}
+
+export const API_BASE = resolveApiBase();
 
 const TOKEN_KEY = "accessToken";
 const USERNAME_KEY = "username";

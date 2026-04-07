@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { clearAuthSession } from "../../lib/api";
+import { apiGet, clearAuthSession } from "../../lib/api";
 import { useEffect, useRef, useState } from "react";
 
 type MeResponse =
@@ -20,33 +20,28 @@ export default function NavBar()
 
   useEffect(() =>
   {
-    async function LoadUser(token: string)
+    async function loadUser()
     {
-      try
-      {
-        const response = await fetch("http://localhost:3001/api/account/me",
-        {
-          method: "GET",
-          headers:
-          {
-            Accept: "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-        });
+      const token = sessionStorage.getItem("accessToken") || "";
 
-        const data: MeResponse = await response.json();
-
-        if (data.ok && data.user) setUsername(data.user.username);
-        else setUsername(null);
-      }
-      catch (err)
+      if (!token)
       {
-        console.error("Error loading user:", err);
         setUsername(null);
+        return;
       }
+
+      const result = await apiGet<MeResponse>("/api/account/me");
+
+      if (result.ok && result.data.ok && result.data.user)
+      {
+        setUsername(result.data.user.username);
+        return;
+      }
+
+      setUsername(null);
     }
 
-    LoadUser(sessionStorage.getItem("accessToken") || "");
+    loadUser();
   }, []);
 
   useEffect(() =>

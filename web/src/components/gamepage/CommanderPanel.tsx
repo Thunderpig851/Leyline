@@ -307,33 +307,9 @@ const CommanderPanel = forwardRef<HTMLElement, CommanderPanelProps>(function Com
     ? `overflow-y-auto px-3 py-3 ${placement === "top" ? "max-h-[calc(100%-3.25rem)]" : "max-h-[calc(100%-3.25rem)]"}`
     : "flex-1 overflow-y-auto px-4 py-4";
 
-  const headerSubtitle = seatTitle
-    ? `${seatTitle} commander selection`
-    : "Commander selection";
-
   return (
     <aside ref={ref} className={shellClassName}>
       <div className="flex h-full flex-col">
-        <div className={`flex items-center justify-between border-b border-white/10 ${isOverlay ? "px-3 py-2.5" : "px-4 py-3"}`}>
-          <div className="min-w-0">
-            <div className="text-sm font-semibold text-slate-100">
-              Commander Search
-            </div>
-            <div className="truncate text-[11px] text-slate-400">
-              {headerSubtitle}
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg border border-white/10 bg-slate-900/80 p-2 text-slate-300 transition hover:border-white/20 hover:bg-slate-800"
-            aria-label="Close commander panel"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
         <div className={bodyClassName}>
           <div className={`rounded-2xl border border-white/10 bg-slate-900/60 ${isOverlay ? "p-3" : "p-4"}`}>
             <div className="text-[11px] font-medium uppercase tracking-[0.18em] text-slate-500">

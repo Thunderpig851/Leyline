@@ -58,7 +58,7 @@ export default function RightSidePanel({
           />
         </div>
 
-        <div className="min-h-0 overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-b from-white/[0.06] to-white/[0.03] shadow-[0_12px_32px_rgba(0,0,0,0.32)]">
+        <div className="min-h-0 overflow-hidden rounded-3xl border border-teal-400/15 bg-gradient-to-b from-teal-400/[0.06] to-slate-950/72 shadow-[0_12px_32px_rgba(0,0,0,0.28)]">
           {activeTab === "card-log" && <CardLogPlaceholder />}
           {activeTab === "chat" && <RoomChatWidget roomId={roomId} />}
           {activeTab === "search" && <ScryfallSearchPanel />}
@@ -84,17 +84,17 @@ function WidgetTile({
     <button
       type="button"
       onClick={onClick}
-      className={`group flex aspect-[1.05/1] flex-col items-center justify-center rounded-2xl border p-3 text-center transition-all duration-150 ${
+      className={`group flex aspect-[1.05/1] flex-col items-center justify-center rounded-2xl border p-3 text-center transition-all duration-150 hover:-translate-y-0.5 hover:scale-[1.01] ${
         active
-          ? "border-teal-300/40 bg-teal-400/15 text-teal-100 shadow-lg shadow-teal-950/30"
-          : "border-white/10 bg-white/[0.04] text-slate-300 hover:border-white/20 hover:bg-white/[0.07] hover:text-slate-100"
+          ? "border-teal-300/34 bg-teal-400/15 text-teal-100 shadow-lg shadow-teal-950/24"
+          : "border-teal-400/18 bg-slate-950/62 text-slate-300 hover:border-teal-300/38 hover:bg-teal-400/12 hover:text-slate-100 hover:shadow-[0_14px_28px_rgba(20,184,166,0.16)]"
       }`}
     >
       <div
         className={`mb-3 inline-flex h-14 w-14 items-center justify-center rounded-2xl border transition-all ${
           active
-            ? "border-teal-300/30 bg-teal-400/10"
-            : "border-white/10 bg-black/20 group-hover:border-white/20"
+            ? "border-teal-300/24 bg-teal-400/10"
+            : "border-teal-400/16 bg-black/24 group-hover:border-teal-300/34 group-hover:bg-teal-400/10"
         }`}
       >
         {icon}
@@ -109,7 +109,7 @@ function CardLogPlaceholder()
 {
   return (
     <div className="p-5">
-      <div className="rounded-3xl border border-dashed border-white/10 bg-black/20 p-6">
+      <div className="rounded-3xl border border-dashed border-teal-400/16 bg-black/20 p-6">
         <div className="text-sm font-semibold text-slate-100">Card Log</div>
         <div className="mt-2 text-sm leading-6 text-slate-400">
           Coming soon . . .
