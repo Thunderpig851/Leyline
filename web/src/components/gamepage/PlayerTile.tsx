@@ -23,6 +23,7 @@ type PlayerTileProps =
   stream?: MediaStream | null;
   isSelf?: boolean;
   status?: "connected" | "reconnecting" | "away" | "empty";
+  isAway?: boolean;
   isReady?: boolean;
   showSeatStateOverlay?: boolean;
   isFlipped?: boolean;
@@ -239,6 +240,7 @@ export default function PlayerTile({
   stream = null,
   isSelf = false,
   status = "connected",
+  isAway = false,
   isReady = false,
   showSeatStateOverlay = true,
   isFlipped = false,
@@ -618,7 +620,7 @@ export default function PlayerTile({
 
       {showSeatStateOverlay && status !== "empty" ? (
         <div className="pointer-events-none absolute inset-0 z-[2] flex items-center justify-center px-6">
-          {status === "away" ? (
+          {isAway ? (
             <CenteredSeatStateOverlay
               tone="away"
               icon={<Coffee className="h-10 w-10" />}

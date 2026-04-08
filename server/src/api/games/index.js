@@ -852,6 +852,7 @@ router.post("/:gameId/seats/:seatNumber/state", requireAuth, async (req, res) =>
       commanders,
       commander,
       isReady,
+      isAway,
       connectionStatus,
     } = req.body || {};
 
@@ -894,13 +895,29 @@ router.post("/:gameId/seats/:seatNumber/state", requireAuth, async (req, res) =>
       seat.isReady = Boolean(isReady);
     }
 
+    if (isAway !== undefined)
+    {
+      seat.awaySinceAt = Boolean(isAway) ? new Date() : null;
+      seat.lastSeenAt = new Date();
+      seat.lastActiveAt = new Date();
+
+      if (seat.connectionStatus === "away")
+      {
+        seat.connectionStatus = "connected";
+      }
+    }
+
     if (connectionStatus !== undefined)
     {
-      seat.connectionStatus = connectionStatus === "away" ? "away" : "connected";
-      seat.awaySinceAt = seat.connectionStatus === "away" ? new Date() : null;
-      seat.lastActiveAt = new Date();
+      if (!["connected", "away"].includes(connectionStatus))
+      {
+        return res.status(400).json({ ok: false, error: "Invalid connection status." });
+      }
+
+      seat.connectionStatus = connectionStatus;
+      seat.awaySinceAt = connectionStatus === "away" ? new Date() : null;
       seat.lastSeenAt = new Date();
-      seat.disconnectDeadlineAt = null;
+      seat.lastActiveAt = new Date();
     }
 
     await game.save();
@@ -1356,9 +1373,14 @@ router.post("/:gameId/reset", requireAuth, async (req, res) =>
         energy: 0,
         experience: 0,
       };
-
       seat.commanders = [];
       seat.isReady = false;
+      seat.awaySinceAt = null;
+
+      if (seat.connectionStatus === "away")
+      {
+        seat.connectionStatus = "connected";
+      }
     }
 
     game.boardOrder = normalizeBoardOrder(game);
@@ -1382,7 +1404,7 @@ router.post("/:gameId/reset", requireAuth, async (req, res) =>
     console.error("Error resetting game:", err);
     return res.status(500).json({ ok: false, error: err.message || "Failed to reset game." });
   }
-});
+}); 
 
 router.post("/:gameId/transfer-host", requireAuth, async (req, res) =>
 {

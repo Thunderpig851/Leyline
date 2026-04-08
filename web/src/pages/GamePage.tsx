@@ -31,6 +31,7 @@ type GameSeat =
   userId: string;
   username: string;
   connectionStatus: "connected" | "reconnecting" | "away";
+  awaySinceAt?: string | null;
   isReady?: boolean;
   commanders?: CommanderCard[] | null;
   commander?: CommanderCard | null;
@@ -876,6 +877,7 @@ export default function GamePage()
       commanderDamage?: Record<string, number>;
       commanders?: CommanderCard[];
       isReady?: boolean;
+      isAway?: boolean;
       connectionStatus?: "connected" | "away";
     }
   )
@@ -997,10 +999,7 @@ export default function GamePage()
   async function handleToggleAway()
   {
     if (!selfSeat) return;
-    await updateSeatState(selfSeat.seatNumber,
-    {
-      connectionStatus: selfSeat.connectionStatus === "away" ? "connected" : "away",
-    });
+    await updateSeatState(selfSeat.seatNumber, { isAway: !Boolean(selfSeat.awaySinceAt) });
   }
 
   function handleToggleFlipSeat(seatNumber: number)
@@ -1437,6 +1436,7 @@ export default function GamePage()
           commanders: [] as CommanderCard[],
           commanderDamageOptions: [] as CommanderDamageOption[],
           isReady: false,
+          isAway: false,
           hasMonarch: false,
           hasInitiative: false,
           isSaving: false,
@@ -1466,6 +1466,8 @@ export default function GamePage()
         stream: isSelf ? mediaSession.localStream : remote?.stream ?? null,
         isSelf,
         status: seat.connectionStatus,
+        isAway: Boolean(seat.awaySinceAt),
+        isReady: Boolean(seat.isReady),
         life: seat.stats?.life ?? defaultLife,
         poison: seat.stats?.poison ?? 0,
         energy: seat.stats?.energy ?? 0,
@@ -1474,7 +1476,6 @@ export default function GamePage()
         trackExperience: Boolean(game?.settings?.trackExperience),
         commanders: getSeatCommanders(seat),
         commanderDamageOptions,
-        isReady: Boolean(seat.isReady),
         hasMonarch: game?.monarchSeatNumber === seatNumber,
         hasInitiative: game?.initiativeSeatNumber === seatNumber,
         isSaving: savingSeatNumbers.includes(seatNumber),
@@ -1726,8 +1727,9 @@ export default function GamePage()
                 title={slot.title}
                 stream={slot.stream}
                 status={slot.status}
+                isAway={Boolean(slot.isAway)}
                 isReady={Boolean(slot.isReady)}
-                showSeatStateOverlay={!game?.gameStartedAt}
+                showSeatStateOverlay={!Boolean(game?.gameStartedAt)}
                 isFlipped={flippedSeatNumbers.includes(slot.seatNumber)}
                 isExpanded={focusedSeatNumber === slot.seatNumber}
                 life={slot.life}
@@ -1853,7 +1855,7 @@ export default function GamePage()
           endingGame={endingGame}
           dayNightState={game?.dayNightState ?? null}
           isReady={Boolean(selfSeat?.isReady)}
-          isAway={selfSeat?.connectionStatus === "away"}
+          isAway={Boolean(selfSeat?.awaySinceAt)}
           micEnabled={mediaSession.micEnabled}
           camEnabled={mediaSession.camEnabled}
           onRandomizePlayerOrder={() => { void handleRandomizePlayerOrder(); }}
