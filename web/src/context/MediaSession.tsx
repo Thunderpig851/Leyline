@@ -74,6 +74,52 @@ type MediaSessionContextType =
 
 const MediaSessionContext = createContext<MediaSessionContextType | undefined>(undefined);
 
+const PREFERRED_VIDEO_CONSTRAINTS: MediaTrackConstraints = {
+  width: { ideal: 1920 },
+  height: { ideal: 1080 },
+  aspectRatio: { ideal: 16 / 9 },
+  frameRate: { ideal: 30, max: 30 },
+};
+
+function buildVideoConstraints(selectedVideoId: string): MediaTrackConstraints | true
+{
+  if (!selectedVideoId)
+  {
+    return { ...PREFERRED_VIDEO_CONSTRAINTS };
+  }
+
+  return {
+    ...PREFERRED_VIDEO_CONSTRAINTS,
+    deviceId: { exact: selectedVideoId },
+  };
+}
+
+function buildAudioConstraints(selectedAudioId: string): MediaTrackConstraints | true
+{
+  if (!selectedAudioId)
+  {
+    return true;
+  }
+
+  return {
+    deviceId: { exact: selectedAudioId },
+  };
+}
+
+async function tuneVideoTrackForDetail(track: MediaStreamTrack)
+{
+  track.contentHint = "detail";
+
+  try
+  {
+    await track.applyConstraints(PREFERRED_VIDEO_CONSTRAINTS);
+  }
+  catch (error)
+  {
+    console.warn("[MediaSession] could not raise video track detail constraints", error);
+  }
+}
+
 export function MediaSessionProvider({ children }: { children: React.ReactNode })
 {
   const { session, setPrefs, setPlayer } = useGameSession();
@@ -172,9 +218,15 @@ export function MediaSessionProvider({ children }: { children: React.ReactNode }
 
       const stream = await navigator.mediaDevices.getUserMedia(
       {
-        video: selectedVideoId ? { deviceId: selectedVideoId } : true,
-        audio: selectedAudioId ? { deviceId: selectedAudioId } : true,
+        video: buildVideoConstraints(selectedVideoId),
+        audio: buildAudioConstraints(selectedAudioId),
       });
+
+      const videoTrack = stream.getVideoTracks()[0];
+      if (videoTrack)
+      {
+        await tuneVideoTrackForDetail(videoTrack);
+      }
 
       stream.getVideoTracks().forEach((t) => { t.enabled = camEnabled; });
       stream.getAudioTracks().forEach((t) => { t.enabled = micEnabled; });

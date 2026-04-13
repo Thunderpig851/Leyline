@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { MouseEvent as ReactMouseEvent } from "react";
 import { Moon, Sun } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useMediaSession } from "../context/MediaSession";
@@ -9,6 +10,13 @@ import LeftSidePanel from "../components/gamepage/LeftSidePanel";
 import RightSidePanel from "../components/gamepage/RightSidePanel";
 import PlayerTile from "../components/gamepage/PlayerTile";
 import PlayerOrderShuffleOverlay from "../components/gamepage/PlayerOrderShuffleOverlay";
+import CardCropDebugModal from "../components/CardCropDebugModal";
+import { createDebugClickCrop } from "../card-id/debugClickCrop";
+import { refineCardCrop } from "../card-id/refineCardCrop";
+import { identifyCapturedCard } from "../card-id/identifyCard";
+import type { CardIdentificationPreview } from "../card-id/identifyCard";
+import type { IdentifiedCardCandidate } from "../card-id/identifyCard";
+
 
 type CommanderCard =
 {
@@ -288,6 +296,20 @@ export default function GamePage()
   });
   const [timerNow, setTimerNow] = useState(() => Date.now());
 
+  const [cardCropOpen, setCardCropOpen] = useState(false);
+  const [cardFrameUrl, setCardFrameUrl] = useState<string | null>(null);
+  const [cardRoiDebugUrl, setCardRoiDebugUrl] = useState<string | null>(null);
+  const [cardCandidateUrl, setCardCandidateUrl] = useState<string | null>(null);
+  const [cardOcrPreviews, setCardOcrPreviews] = useState<CardIdentificationPreview[]>([]);
+  const [cardStatusText, setCardStatusText] = useState<string>("Click a card to capture it");
+  const [cardTitleSignal, setCardTitleSignal] = useState<string>("");
+  const [cardTypeSignal, setCardTypeSignal] = useState<string>("");
+  const [cardSignalsSummary, setCardSignalsSummary] = useState<string>("");
+  const [cardCandidates, setCardCandidates] = useState<IdentifiedCardCandidate[]>([]);
+  const [cardCropBusy, setCardCropBusy] = useState(false);
+  const [cardCropLoading, setCardCropLoading] = useState(false);
+  const [cardIdentifyLoading, setCardIdentifyLoading] = useState(false);
+
   const shuffleIntervalRef = useRef<number | null>(null);
   const shuffleTimeoutRef = useRef<number | null>(null);
   const shuffleCloseTimeoutRef = useRef<number | null>(null);
@@ -311,6 +333,151 @@ export default function GamePage()
   const maxPlayers = isCommanderGame ? 4 : 2;
   const playerCount = game?.seats?.filter((seat) => Boolean(seat.userId)).length ?? 0;
   const spectatorCount = game?.spectators?.length ?? 0;
+
+  const cardObjectUrlsRef = useRef<string[]>([]);
+
+  const revokeCardObjectUrls = useCallback((urls: string[]) =>
+  {
+    for (const url of urls)
+    {
+      if (!url) continue;
+      try
+      {
+        URL.revokeObjectURL(url);
+      }
+      catch
+      {
+      }
+    }
+  }, []);
+
+  const resetCardCropState = useCallback((closeModal = true) =>
+  {
+    revokeCardObjectUrls(cardObjectUrlsRef.current);
+    cardObjectUrlsRef.current = [];
+    setCardFrameUrl(null);
+    setCardRoiDebugUrl(null);
+    setCardCandidateUrl(null);
+    setCardOcrPreviews([]);
+    setCardStatusText("Click a card to capture it");
+    setCardTitleSignal("");
+    setCardTypeSignal("");
+    setCardSignalsSummary("");
+    setCardCandidates([]);
+    setCardCropLoading(false);
+    setCardIdentifyLoading(false);
+
+    if (closeModal)
+    {
+      setCardCropOpen(false);
+    }
+  }, [revokeCardObjectUrls]);
+
+  const waitForNextFrame = () =>
+    new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+  const handleCardCropDebugClick = useCallback(
+    async (
+      event: ReactMouseEvent<HTMLVideoElement>,
+      videoEl: HTMLVideoElement | null
+    ) =>
+    {
+      if (!videoEl || cardCropBusy) return;
+      if (!videoEl.videoWidth || !videoEl.videoHeight) return;
+
+      const createdUrls: string[] = [];
+
+      try
+      {
+        setCardCropBusy(true);
+        resetCardCropState(false);
+        setCardCropOpen(true);
+        setCardCropLoading(true);
+        setCardStatusText("Capturing local region");
+
+        await waitForNextFrame();
+
+        const crop = await createDebugClickCrop(
+          videoEl,
+          event.clientX,
+          event.clientY,
+          {
+            maxDimension: 960,
+            cropWidth: 420,
+            cropHeight: 600,
+            previewMaxWidth: 540,
+          }
+        );
+
+        createdUrls.push(crop.frameUrl, crop.roiUrl);
+        cardObjectUrlsRef.current = [...createdUrls];
+        setCardFrameUrl(crop.frameUrl);
+        setCardRoiDebugUrl(crop.roiUrl);
+        setCardStatusText("Refining likely card candidate");
+
+        await waitForNextFrame();
+
+        const refined = await refineCardCrop(
+          crop.roiImageData,
+          crop.localClickX,
+          crop.localClickY
+        );
+
+        createdUrls.push(refined.roiDebugUrl, refined.candidateUrl);
+        cardObjectUrlsRef.current = [...createdUrls];
+        setCardRoiDebugUrl(refined.roiDebugUrl);
+        setCardCandidateUrl(refined.candidateUrl);
+        setCardStatusText(refined.statusText);
+        setCardIdentifyLoading(true);
+        setCardStatusText(`${refined.statusText} • reading name and type`);
+
+        await waitForNextFrame();
+
+        try
+        {
+          const identification = await identifyCapturedCard(refined.candidateUrl);
+          createdUrls.push(...identification.objectUrls);
+          cardObjectUrlsRef.current = [...createdUrls];
+          setCardOcrPreviews(identification.previews);
+          setCardTitleSignal(identification.title.text);
+          setCardTypeSignal(identification.typeLine.text);
+          setCardSignalsSummary(identification.signalsSummary);
+          setCardCandidates(identification.candidates);
+          setCardStatusText(identification.signalsSummary || refined.statusText);
+        }
+        catch (identificationError)
+        {
+          console.error("Card identification failed", identificationError);
+          setCardStatusText(`${refined.statusText} • identification failed`);
+        }
+        finally
+        {
+          setCardIdentifyLoading(false);
+        }
+      }
+      catch (error)
+      {
+        revokeCardObjectUrls(createdUrls);
+        console.error("Card crop debug failed", error);
+        setCardStatusText("Capture failed");
+      }
+      finally
+      {
+        setCardCropLoading(false);
+        setCardCropBusy(false);
+      }
+    },
+    [cardCropBusy, resetCardCropState, revokeCardObjectUrls]
+  );
+
+  useEffect(() =>
+  {
+    return () =>
+    {
+      revokeCardObjectUrls(cardObjectUrlsRef.current);
+      cardObjectUrlsRef.current = [];
+    };
+  }, [revokeCardObjectUrls]);
 
   useEffect(() =>
   {
@@ -1749,6 +1916,8 @@ export default function GamePage()
                     }
                     : undefined
                 }
+
+                onCardCropDebugClick={handleCardCropDebugClick}
               />
             ))}
           </div>
@@ -1799,6 +1968,22 @@ export default function GamePage()
           roomId={roomId}
         />
       </div>
+
+        <CardCropDebugModal
+          open={cardCropOpen}
+          frameUrl={cardFrameUrl}
+          roiDebugUrl={cardRoiDebugUrl}
+          candidateUrl={cardCandidateUrl}
+          ocrPreviews={cardOcrPreviews}
+          statusText={cardStatusText}
+          titleSignal={cardTitleSignal}
+          typeSignal={cardTypeSignal}
+          signalsSummary={cardSignalsSummary}
+          candidates={cardCandidates}
+          loading={cardCropLoading}
+          identifying={cardIdentifyLoading}
+          onClose={() => resetCardCropState()}
+        />
     </div>
   );
 }

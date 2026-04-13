@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, ReactNode } from "react";
+import type { CSSProperties, ReactNode, MouseEvent as ReactMouseEvent } from "react";
 import { Check, Coffee, Crown, FlipVertical2, Maximize2, Minimize2, Pencil, Swords, X } from "lucide-react";
 import CommanderPanel from "./CommanderPanel";
 
@@ -55,6 +55,11 @@ type PlayerTileProps =
   onKickPlayer?: () => void;
   onToggleFlip?: () => void;
   onToggleExpand?: () => void;
+
+  onCardCropDebugClick?: (
+    event: ReactMouseEvent<HTMLVideoElement>,
+    videoEl: HTMLVideoElement | null
+  ) => void | Promise<void>;
 };
 
 type CommanderVisual =
@@ -271,6 +276,8 @@ export default function PlayerTile({
   onKickPlayer,
   onToggleFlip,
   onToggleExpand,
+
+  onCardCropDebugClick
 }: PlayerTileProps)
 {
   const tileSectionRef = useRef<HTMLElement | null>(null);
@@ -595,6 +602,9 @@ export default function PlayerTile({
             <video
               ref={videoRef}
               className={`h-full w-full object-cover transition-transform duration-200 ${isFlipped ? "rotate-180" : ""}`}
+              onClick={(event)=> {
+                void onCardCropDebugClick?.(event, videoRef.current);
+              }}
               autoPlay
               playsInline
               muted={isSelf}

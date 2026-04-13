@@ -5,6 +5,8 @@ services:
       dockerfile: Dockerfile.dev
     env_file:
       - ./server/.env
+    environment:
+      - OCR_SERVICE_URL=http://ocr-service:8000
     ports:
       - "3001:3001"
       - "40000-40100:40000-40100/udp"
@@ -13,6 +15,8 @@ services:
       - ./server:/app
       - /app/node_modules
     command: ["npm", "run", "dev"]
+    depends_on:
+      - ocr-service
     restart: unless-stopped
 
   web:
@@ -31,5 +35,16 @@ services:
       - server
     restart: unless-stopped
 
-
-
+  ocr-service:
+    build:
+      context: ./ocr-service
+      dockerfile: Dockerfile
+    environment:
+      - PORT=8000
+      - PADDLEOCR_MODEL_NAME=en_PP-OCRv5_mobile_rec
+      - PADDLEOCR_DEVICE=cpu
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./ocr-service:/app
+    restart: unless-stopped

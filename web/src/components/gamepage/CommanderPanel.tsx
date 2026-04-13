@@ -83,13 +83,13 @@ async function fetchNamedCard(name: string): Promise<ScryfallCard | null>
 const CommanderPanel = forwardRef<HTMLElement, CommanderPanelProps>(function CommanderPanel(
 {
   open,
-  seatTitle,
+  seatTitle: _seatTitle,
   commanders,
   canEdit = false,
   variant = "drawer",
   placement = "bottom",
   className = "",
-  onClose,
+  onClose: _onClose,
   onChange,
 }: CommanderPanelProps, ref)
 {

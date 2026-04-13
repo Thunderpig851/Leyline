@@ -10,6 +10,7 @@ const roomsRoutes = require("./api/rooms");
 const liveGamesRoutes = require("./api/games");
 const chatRoutes = require("./api/chat");
 const lfgRoutes = require("./api/lfg");
+const cardIdRoutes = require("./api/card-id");
 
 function buildAllowedOrigins()
 {
@@ -43,7 +44,7 @@ function createApp()
 {
   const app = express();
 
-  app.use(express.json());
+  app.use(express.json({ limit: "10mb" }));
   app.use(cookieParser());
   app.use(
     cors({
@@ -62,6 +63,7 @@ function createApp()
   app.use("/api/live-games", requireAuth, liveGamesRoutes);
   app.use("/api/chat", requireAuth, chatRoutes);
   app.use("/api/lfg", requireAuth, lfgRoutes);
+  app.use("/api/card-id", cardIdRoutes);
 
   app.use((req, res) =>
   {

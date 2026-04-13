@@ -15,6 +15,7 @@
     "lucide-react": "^0.577.0",
     "mediasoup-client": "^3.18.7",
     "mongodb": "^7.1.0",
+    "onnxruntime-web": "^1.24.3",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.13.0",
