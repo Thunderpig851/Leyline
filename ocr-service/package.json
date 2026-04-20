@@ -1,0 +1,13 @@
+{
+  "name": "leyline-ocr-service",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch index.js",
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@gutenye/ocr-node": "^1.4.8",
+    "express": "^5.1.0"
+  }
+}

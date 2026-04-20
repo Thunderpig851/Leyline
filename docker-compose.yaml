@@ -25,6 +25,8 @@ services:
       dockerfile: Dockerfile.dev
     env_file:
       - ./web/.env
+    environment:
+      - API_PROXY_TARGET=http://server:3001
     ports:
       - "5173:5173"
     volumes:
@@ -38,13 +40,14 @@ services:
   ocr-service:
     build:
       context: ./ocr-service
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.dev
     environment:
       - PORT=8000
-      - PADDLEOCR_MODEL_NAME=en_PP-OCRv5_mobile_rec
-      - PADDLEOCR_DEVICE=cpu
+      - REQUEST_BODY_LIMIT=25mb
     ports:
       - "8000:8000"
     volumes:
       - ./ocr-service:/app
+      - /app/node_modules
+    command: ["npm", "run", "dev"]
     restart: unless-stopped

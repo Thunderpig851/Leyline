@@ -42,6 +42,8 @@ export async function createDebugClickCrop(
 ): Promise<DebugClickCropResult> {
   const requestedCropWidth = Math.max(180, Math.round(options?.cropWidth ?? 560));
   const requestedCropHeight = Math.max(260, Math.round(options?.cropHeight ?? 800));
+  const requestedCropSize = Math.max(requestedCropWidth, requestedCropHeight);
+  const maxDimension = Math.max(480, Math.round(options?.maxDimension ?? 960));
   const previewMaxWidth = Math.max(320, Math.round(options?.previewMaxWidth ?? 560));
 
   const rect = videoEl.getBoundingClientRect();
@@ -53,25 +55,10 @@ export async function createDebugClickCrop(
   }
 
   const shortSide = Math.min(sourceWidth, sourceHeight);
-  const cropWidth = Math.min(
-    sourceWidth,
-    Math.max(requestedCropWidth, Math.round(shortSide * 0.6))
+  const cropSize = Math.min(
+    shortSide,
+    Math.max(requestedCropSize, Math.round(shortSide * 0.54))
   );
-  const cropHeight = Math.min(
-    sourceHeight,
-    Math.max(requestedCropHeight, Math.round(shortSide * 0.82))
-  );
-
-  const frameCanvas = document.createElement('canvas');
-  frameCanvas.width = sourceWidth;
-  frameCanvas.height = sourceHeight;
-
-  const frameCtx = frameCanvas.getContext('2d', { willReadFrequently: true });
-  if (!frameCtx) {
-    throw new Error('Could not create frame canvas context');
-  }
-
-  frameCtx.drawImage(videoEl, 0, 0, sourceWidth, sourceHeight);
 
   const clickX = clamp(
     Math.round(((clientX - rect.left) / Math.max(1, rect.width)) * sourceWidth),
@@ -84,8 +71,8 @@ export async function createDebugClickCrop(
     sourceHeight - 1
   );
 
-  const safeCropWidth = Math.min(cropWidth, sourceWidth);
-  const safeCropHeight = Math.min(cropHeight, sourceHeight);
+  const safeCropWidth = Math.min(cropSize, sourceWidth);
+  const safeCropHeight = Math.min(cropSize, sourceHeight);
   const halfW = Math.floor(safeCropWidth / 2);
   const halfH = Math.floor(safeCropHeight / 2);
 
@@ -93,6 +80,8 @@ export async function createDebugClickCrop(
   const sy = clamp(clickY - halfH, 0, Math.max(0, sourceHeight - safeCropHeight));
   const sw = Math.min(safeCropWidth, sourceWidth - sx);
   const sh = Math.min(safeCropHeight, sourceHeight - sy);
+  const localClickX = clamp(clickX - sx, 0, sw - 1);
+  const localClickY = clamp(clickY - sy, 0, sh - 1);
 
   const roiCanvas = document.createElement('canvas');
   roiCanvas.width = sw;
@@ -103,18 +92,13 @@ export async function createDebugClickCrop(
     throw new Error('Could not create ROI canvas context');
   }
 
-  roiCtx.drawImage(frameCanvas, sx, sy, sw, sh, 0, 0, sw, sh);
+  roiCtx.imageSmoothingEnabled = true;
+  roiCtx.imageSmoothingQuality = 'high';
+  roiCtx.drawImage(videoEl, sx, sy, sw, sh, 0, 0, sw, sh);
+  const roiImageData = roiCtx.getImageData(0, 0, sw, sh);
 
-  frameCtx.strokeStyle = '#00ff99';
-  frameCtx.lineWidth = Math.max(3, Math.round(sourceWidth / 420));
-  frameCtx.strokeRect(sx, sy, sw, sh);
-
-  frameCtx.fillStyle = '#ff3366';
-  frameCtx.beginPath();
-  frameCtx.arc(clickX, clickY, Math.max(7, Math.round(sourceWidth / 220)), 0, Math.PI * 2);
-  frameCtx.fill();
-
-  const previewScale = Math.min(1, previewMaxWidth / sourceWidth);
+  const longSideScale = Math.min(1, maxDimension / Math.max(sourceWidth, sourceHeight));
+  const previewScale = Math.min(1, previewMaxWidth / sourceWidth, longSideScale);
   const previewCanvas = document.createElement('canvas');
   previewCanvas.width = Math.max(1, Math.round(sourceWidth * previewScale));
   previewCanvas.height = Math.max(1, Math.round(sourceHeight * previewScale));
@@ -126,7 +110,26 @@ export async function createDebugClickCrop(
 
   previewCtx.imageSmoothingEnabled = true;
   previewCtx.imageSmoothingQuality = 'high';
-  previewCtx.drawImage(frameCanvas, 0, 0, previewCanvas.width, previewCanvas.height);
+  previewCtx.drawImage(videoEl, 0, 0, previewCanvas.width, previewCanvas.height);
+  previewCtx.strokeStyle = '#00ff99';
+  previewCtx.lineWidth = Math.max(2, Math.round(previewCanvas.width / 180));
+  previewCtx.strokeRect(
+    Math.round(sx * previewScale),
+    Math.round(sy * previewScale),
+    Math.max(1, Math.round(sw * previewScale)),
+    Math.max(1, Math.round(sh * previewScale))
+  );
+
+  previewCtx.fillStyle = '#ff3366';
+  previewCtx.beginPath();
+  previewCtx.arc(
+    clickX * previewScale,
+    clickY * previewScale,
+    Math.max(4, Math.round(previewCanvas.width / 90)),
+    0,
+    Math.PI * 2
+  );
+  previewCtx.fill();
 
   const [frameUrl, roiUrl] = await Promise.all([
     canvasToObjectUrl(previewCanvas, 'image/jpeg', 0.9),
@@ -136,10 +139,10 @@ export async function createDebugClickCrop(
   return {
     frameUrl,
     roiUrl,
-    roiImageData: roiCtx.getImageData(0, 0, sw, sh),
+    roiImageData,
     roiWidth: sw,
     roiHeight: sh,
-    localClickX: clamp(clickX - sx, 0, sw - 1),
-    localClickY: clamp(clickY - sy, 0, sh - 1),
+    localClickX,
+    localClickY,
   };
 }

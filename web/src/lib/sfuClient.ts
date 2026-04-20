@@ -2,6 +2,18 @@ import * as mediasoupClient from "mediasoup-client";
 import { getStoredUsername } from "./api";
 import { socket } from "./socket";
 
+const HIGH_DETAIL_VIDEO_ENCODINGS: RTCRtpEncodingParameters[] = [
+  {
+    scaleResolutionDownBy: 1,
+    maxBitrate: 6_000_000,
+    maxFramerate: 30,
+  },
+];
+
+const HIGH_DETAIL_VIDEO_CODEC_OPTIONS = {
+  videoGoogleStartBitrate: 2_500,
+};
+
 function emitAcknowledge<TRes>(event: string, payload: any): Promise<TRes>
 {
   return new Promise((resolve, reject) =>
@@ -89,6 +101,16 @@ export async function produceTrack(
   appData: any = {}
 ): Promise<mediasoupClient.types.Producer>
 {
+  if (track.kind === "video")
+  {
+    return await sendTransport.produce({
+      track,
+      appData,
+      encodings: HIGH_DETAIL_VIDEO_ENCODINGS,
+      codecOptions: HIGH_DETAIL_VIDEO_CODEC_OPTIONS,
+    });
+  }
+
   return await sendTransport.produce({ track, appData });
 }
 

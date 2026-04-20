@@ -12,6 +12,8 @@ const chatRoutes = require("./api/chat");
 const lfgRoutes = require("./api/lfg");
 const cardIdRoutes = require("./api/card-id");
 
+const REQUEST_BODY_LIMIT = process.env.REQUEST_BODY_LIMIT || "25mb";
+
 function buildAllowedOrigins()
 {
   return String(process.env.CLIENT_ORIGIN || "http://localhost:5173")
@@ -44,7 +46,8 @@ function createApp()
 {
   const app = express();
 
-  app.use(express.json({ limit: "10mb" }));
+  app.use(express.json({ limit: REQUEST_BODY_LIMIT }));
+  app.use(express.urlencoded({ extended: true, limit: REQUEST_BODY_LIMIT }));
   app.use(cookieParser());
   app.use(
     cors({
@@ -64,6 +67,19 @@ function createApp()
   app.use("/api/chat", requireAuth, chatRoutes);
   app.use("/api/lfg", requireAuth, lfgRoutes);
   app.use("/api/card-id", cardIdRoutes);
+
+  app.use((error, req, res, next) =>
+  {
+    if (error?.type === "entity.too.large")
+    {
+      return res.status(413).json({
+        ok: false,
+        error: "Card OCR payload too large",
+      });
+    }
+
+    return next(error);
+  });
 
   app.use((req, res) =>
   {

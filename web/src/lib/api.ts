@@ -13,7 +13,7 @@ function resolveApiBase()
 
     if (hostname === "localhost" || hostname === "127.0.0.1")
     {
-      return "http://localhost:3001";
+      return "";
     }
 
     return origin;

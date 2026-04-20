@@ -57,7 +57,7 @@ type PlayerTileProps =
   onToggleExpand?: () => void;
 
   onCardCropDebugClick?: (
-    event: ReactMouseEvent<HTMLVideoElement>,
+    event: ReactMouseEvent<HTMLElement>,
     videoEl: HTMLVideoElement | null
   ) => void | Promise<void>;
 };
@@ -592,8 +592,28 @@ export default function PlayerTile({
     setHoveredCommanderName((current) => current === name ? null : current);
   }
 
+  function handlePanelClick(event: ReactMouseEvent<HTMLElement>)
+  {
+    if (!stream || !videoRef.current || !onCardCropDebugClick)
+    {
+      return;
+    }
+
+    const target = event.target as HTMLElement | null;
+    if (target?.closest("button, a, input, textarea, select, label, [role='button']"))
+    {
+      return;
+    }
+
+    void onCardCropDebugClick(event, videoRef.current);
+  }
+
   return (
-    <section ref={tileSectionRef} className="group relative h-full min-h-0 rounded-[1.65rem]">
+    <section
+      ref={tileSectionRef}
+      className="group relative h-full min-h-0 rounded-[1.65rem]"
+      onClick={handlePanelClick}
+    >
       <div className="absolute inset-0 overflow-hidden rounded-[1.65rem] border border-white/10 bg-slate-900 shadow-[0_18px_60px_rgba(0,0,0,0.45)]">
         <div className="absolute inset-0 bg-gradient-to-br from-white/[0.06] via-white/[0.025] to-transparent" />
 
@@ -602,9 +622,6 @@ export default function PlayerTile({
             <video
               ref={videoRef}
               className={`h-full w-full object-cover transition-transform duration-200 ${isFlipped ? "rotate-180" : ""}`}
-              onClick={(event)=> {
-                void onCardCropDebugClick?.(event, videoRef.current);
-              }}
               autoPlay
               playsInline
               muted={isSelf}

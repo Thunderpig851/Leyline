@@ -2,6 +2,9 @@ import { Server, Socket } from "socket.io";
 import { getOrCreateRoom } from "./rooms";
 import type { types as MsTypes } from "mediasoup";
 
+const INITIAL_OUTGOING_BITRATE = Number(process.env.MEDIASOUP_INITIAL_OUTGOING_BITRATE || 6_000_000);
+const MAX_INCOMING_BITRATE = Number(process.env.MEDIASOUP_MAX_INCOMING_BITRATE || 6_000_000);
+
 const peerTransports = new Map<string, Map<string, MsTypes.WebRtcTransport>>();
 const peerProducers = new Map<string, Map<string, MsTypes.Producer>>();
 const peerConsumers = new Map<string, Map<string, MsTypes.Consumer>>();
@@ -105,7 +108,20 @@ export function registerSFUSignaling(io: Server): void
           enableUdp: true,
           enableTcp: true,
           preferUdp: true,
+          initialAvailableOutgoingBitrate: INITIAL_OUTGOING_BITRATE,
         });
+
+        if (Number.isFinite(MAX_INCOMING_BITRATE) && MAX_INCOMING_BITRATE > 0)
+        {
+          try
+          {
+            await transport.setMaxIncomingBitrate(MAX_INCOMING_BITRATE);
+          }
+          catch (bitrateError)
+          {
+            console.warn("Failed to raise transport incoming bitrate:", bitrateError);
+          }
+        }
 
         const peerTransportMap = getPeerTransportMap(socket.id);
         peerTransportMap.set(transport.id, transport);

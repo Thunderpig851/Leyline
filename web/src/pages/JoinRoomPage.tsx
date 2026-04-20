@@ -536,12 +536,12 @@ export default function JoinRoomPage()
               ? "bg-gradient-to-r from-amber-200 via-yellow-200 to-amber-300"
               : "bg-gradient-to-r from-emerald-300 via-teal-300 to-cyan-200"
           }`}>
-            {isRejoinIntent ? "Rejoin Room" : "Join Room"}
+            {isRejoinIntent ? "Rejoin Game" : "Join Game"}
           </span>
         </h1>
 
         <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-300">
-          <span className="text-slate-400">Room:</span>
+          <span className="text-slate-400">Game:</span>
           <span>{roomTitle || "…"}</span>
 
           <span className="rounded-full border border-white/10 bg-slate-900/70 px-2 py-0.5 text-[11px] uppercase tracking-[0.18em] text-slate-300">
@@ -796,7 +796,7 @@ export default function JoinRoomPage()
                 >
                   {loading && session.viewerMode !== "spectator"
                     ? isRejoinIntent ? "Rejoining..." : "Joining..."
-                    : isRejoinIntent ? "Rejoin" : "Join Room"}
+                    : isRejoinIntent ? "Rejoin" : "Join Game"}
                 </button>
               </div>
             </div>

@@ -12,10 +12,12 @@ import PlayerTile from "../components/gamepage/PlayerTile";
 import PlayerOrderShuffleOverlay from "../components/gamepage/PlayerOrderShuffleOverlay";
 import CardCropDebugModal from "../components/CardCropDebugModal";
 import { createDebugClickCrop } from "../card-id/debugClickCrop";
-import { refineCardCrop } from "../card-id/refineCardCrop";
+import { refineCardCropOpenCv } from "../card-id/refineCardCrop";
+import { warmupOpenCvWorker } from "../card-id/opencvWorkerClient";
 import { identifyCapturedCard } from "../card-id/identifyCard";
 import type { CardIdentificationPreview } from "../card-id/identifyCard";
 import type { IdentifiedCardCandidate } from "../card-id/identifyCard";
+import type { CardIdentificationProgress } from "../card-id/identifyCard";
 
 
 type CommanderCard =
@@ -303,7 +305,6 @@ export default function GamePage()
   const [cardOcrPreviews, setCardOcrPreviews] = useState<CardIdentificationPreview[]>([]);
   const [cardStatusText, setCardStatusText] = useState<string>("Click a card to capture it");
   const [cardTitleSignal, setCardTitleSignal] = useState<string>("");
-  const [cardTypeSignal, setCardTypeSignal] = useState<string>("");
   const [cardSignalsSummary, setCardSignalsSummary] = useState<string>("");
   const [cardCandidates, setCardCandidates] = useState<IdentifiedCardCandidate[]>([]);
   const [cardCropBusy, setCardCropBusy] = useState(false);
@@ -335,6 +336,7 @@ export default function GamePage()
   const spectatorCount = game?.spectators?.length ?? 0;
 
   const cardObjectUrlsRef = useRef<string[]>([]);
+  const cardCropRequestIdRef = useRef(0);
 
   const revokeCardObjectUrls = useCallback((urls: string[]) =>
   {
@@ -351,8 +353,13 @@ export default function GamePage()
     }
   }, []);
 
-  const resetCardCropState = useCallback((closeModal = true) =>
+  const resetCardCropState = useCallback((closeModal = true, cancelPending = true) =>
   {
+    if (cancelPending)
+    {
+      cardCropRequestIdRef.current += 1;
+    }
+
     revokeCardObjectUrls(cardObjectUrlsRef.current);
     cardObjectUrlsRef.current = [];
     setCardFrameUrl(null);
@@ -361,7 +368,6 @@ export default function GamePage()
     setCardOcrPreviews([]);
     setCardStatusText("Click a card to capture it");
     setCardTitleSignal("");
-    setCardTypeSignal("");
     setCardSignalsSummary("");
     setCardCandidates([]);
     setCardCropLoading(false);
@@ -376,21 +382,63 @@ export default function GamePage()
   const waitForNextFrame = () =>
     new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
+  const waitForNextTask = () =>
+    new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+
   const handleCardCropDebugClick = useCallback(
     async (
-      event: ReactMouseEvent<HTMLVideoElement>,
+      event: ReactMouseEvent<HTMLElement>,
       videoEl: HTMLVideoElement | null
     ) =>
     {
       if (!videoEl || cardCropBusy) return;
       if (!videoEl.videoWidth || !videoEl.videoHeight) return;
 
+      const requestId = cardCropRequestIdRef.current + 1;
+      cardCropRequestIdRef.current = requestId;
       const createdUrls: string[] = [];
+      const registerUrl = (url: string | null | undefined) =>
+      {
+        if (!url || createdUrls.includes(url)) return;
+        createdUrls.push(url);
+      };
+      const syncObjectUrls = () =>
+      {
+        cardObjectUrlsRef.current = [...createdUrls];
+      };
+      const isCurrentRequest = () => cardCropRequestIdRef.current === requestId;
+      const disposeRefinedResult = (result: {
+        roiDebugUrl: string;
+        candidateUrl: string;
+        nameBandUrl: string;
+      }) =>
+      {
+        revokeCardObjectUrls([
+          result.roiDebugUrl,
+          result.candidateUrl,
+          result.nameBandUrl,
+        ]);
+      };
+      const applyRefinedResult = (refined: {
+        roiDebugUrl: string;
+        candidateUrl: string;
+        nameBandUrl: string;
+        statusText: string;
+      }) =>
+      {
+        registerUrl(refined.roiDebugUrl);
+        registerUrl(refined.candidateUrl);
+        syncObjectUrls();
+        setCardRoiDebugUrl(refined.roiDebugUrl);
+        setCardCandidateUrl(refined.candidateUrl);
+        setCardOcrPreviews([]);
+        setCardStatusText(refined.statusText);
+      };
 
       try
       {
         setCardCropBusy(true);
-        resetCardCropState(false);
+        resetCardCropState(false, false);
         setCardCropOpen(true);
         setCardCropLoading(true);
         setCardStatusText("Capturing local region");
@@ -409,51 +457,120 @@ export default function GamePage()
           }
         );
 
-        createdUrls.push(crop.frameUrl, crop.roiUrl);
-        cardObjectUrlsRef.current = [...createdUrls];
+        if (!isCurrentRequest())
+        {
+          revokeCardObjectUrls([crop.frameUrl, crop.roiUrl]);
+          return;
+        }
+
+        registerUrl(crop.frameUrl);
+        registerUrl(crop.roiUrl);
+        syncObjectUrls();
         setCardFrameUrl(crop.frameUrl);
         setCardRoiDebugUrl(crop.roiUrl);
         setCardStatusText("Refining likely card candidate");
 
         await waitForNextFrame();
 
-        const refined = await refineCardCrop(
+        const refined = await refineCardCropOpenCv(
           crop.roiImageData,
           crop.localClickX,
           crop.localClickY
         );
 
-        createdUrls.push(refined.roiDebugUrl, refined.candidateUrl);
-        cardObjectUrlsRef.current = [...createdUrls];
-        setCardRoiDebugUrl(refined.roiDebugUrl);
-        setCardCandidateUrl(refined.candidateUrl);
-        setCardStatusText(refined.statusText);
+        if (!refined)
+        {
+          throw new Error("OpenCV card detection failed");
+        }
+
+        if (!isCurrentRequest())
+        {
+          disposeRefinedResult(refined);
+          return;
+        }
+
+        applyRefinedResult(refined);
+        setCardCropLoading(false);
         setCardIdentifyLoading(true);
-        setCardStatusText(`${refined.statusText} • reading name and type`);
+        setCardStatusText(`${refined.statusText} • reading title`);
 
         await waitForNextFrame();
+        await waitForNextTask();
 
         try
         {
-          const identification = await identifyCapturedCard(refined.candidateUrl);
-          createdUrls.push(...identification.objectUrls);
-          cardObjectUrlsRef.current = [...createdUrls];
+          const identification = await identifyCapturedCard(
+            refined.candidateUrl,
+            refined.nameBandUrl,
+            (progress: CardIdentificationProgress) =>
+            {
+              if (!isCurrentRequest())
+              {
+                revokeCardObjectUrls(progress.objectUrls || []);
+                return;
+              }
+
+              for (const url of progress.objectUrls || [])
+              {
+                registerUrl(url);
+              }
+
+              if (progress.objectUrls?.length)
+              {
+                syncObjectUrls();
+              }
+
+              if (progress.previews)
+              {
+                setCardOcrPreviews(progress.previews);
+              }
+
+              if (progress.statusText)
+              {
+                setCardStatusText(`${refined.statusText} • ${progress.statusText.toLowerCase()}`);
+              }
+            }
+          );
+
+          if (!isCurrentRequest())
+          {
+            revokeCardObjectUrls(identification.objectUrls);
+            return;
+          }
+
+          for (const url of identification.objectUrls)
+          {
+            registerUrl(url);
+          }
+          syncObjectUrls();
           setCardOcrPreviews(identification.previews);
           setCardTitleSignal(identification.title.text);
-          setCardTypeSignal(identification.typeLine.text);
           setCardSignalsSummary(identification.signalsSummary);
           setCardCandidates(identification.candidates);
           setCardStatusText(identification.signalsSummary || refined.statusText);
+
+          if (identification.candidates.length > 0)
+          {
+            setCardIdentifyLoading(false);
+            return;
+          }
         }
         catch (identificationError)
         {
           console.error("Card identification failed", identificationError);
-          setCardStatusText(`${refined.statusText} • identification failed`);
+          const message =
+            identificationError instanceof Error && identificationError.message
+              ? identificationError.message
+              : "identification failed";
+          setCardStatusText(`${refined.statusText} • ${message}`);
         }
-        finally
-        {
-          setCardIdentifyLoading(false);
-        }
+
+        setCardStatusText((currentStatus) =>
+          currentStatus && currentStatus !== refined.statusText
+            ? currentStatus
+            : `${refined.statusText} • identification failed`
+        );
+        setCardIdentifyLoading(false);
       }
       catch (error)
       {
@@ -472,8 +589,17 @@ export default function GamePage()
 
   useEffect(() =>
   {
+    void warmupOpenCvWorker().catch((error) =>
+    {
+      console.warn("OpenCV worker warmup failed", error);
+    });
+  }, []);
+
+  useEffect(() =>
+  {
     return () =>
     {
+      cardCropRequestIdRef.current += 1;
       revokeCardObjectUrls(cardObjectUrlsRef.current);
       cardObjectUrlsRef.current = [];
     };
@@ -1977,7 +2103,6 @@ export default function GamePage()
           ocrPreviews={cardOcrPreviews}
           statusText={cardStatusText}
           titleSignal={cardTitleSignal}
-          typeSignal={cardTypeSignal}
           signalsSummary={cardSignalsSummary}
           candidates={cardCandidates}
           loading={cardCropLoading}

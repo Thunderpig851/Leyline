@@ -74,12 +74,42 @@ type MediaSessionContextType =
 
 const MediaSessionContext = createContext<MediaSessionContextType | undefined>(undefined);
 
+const HIGH_DETAIL_VIDEO_WIDTH = 2560;
+const HIGH_DETAIL_VIDEO_HEIGHT = 1440;
+
 const PREFERRED_VIDEO_CONSTRAINTS: MediaTrackConstraints = {
-  width: { ideal: 1920 },
-  height: { ideal: 1080 },
+  width: { ideal: HIGH_DETAIL_VIDEO_WIDTH },
+  height: { ideal: HIGH_DETAIL_VIDEO_HEIGHT },
   aspectRatio: { ideal: 16 / 9 },
   frameRate: { ideal: 30, max: 30 },
 };
+
+function clampCapability(value: number | undefined, min: number, max: number)
+{
+  if (!Number.isFinite(value))
+  {
+    return max;
+  }
+
+  return Math.max(min, Math.min(max, Math.round(value as number)));
+}
+
+function buildTrackDetailConstraints(track: MediaStreamTrack): MediaTrackConstraints
+{
+  const capabilities = typeof track.getCapabilities === "function"
+    ? track.getCapabilities()
+    : undefined;
+
+  const idealWidth = clampCapability(capabilities?.width?.max, 1280, HIGH_DETAIL_VIDEO_WIDTH);
+  const idealHeight = clampCapability(capabilities?.height?.max, 720, HIGH_DETAIL_VIDEO_HEIGHT);
+
+  return {
+    width: { ideal: idealWidth },
+    height: { ideal: idealHeight },
+    aspectRatio: { ideal: 16 / 9 },
+    frameRate: { ideal: 30, max: 30 },
+  };
+}
 
 function buildVideoConstraints(selectedVideoId: string): MediaTrackConstraints | true
 {
@@ -112,7 +142,7 @@ async function tuneVideoTrackForDetail(track: MediaStreamTrack)
 
   try
   {
-    await track.applyConstraints(PREFERRED_VIDEO_CONSTRAINTS);
+    await track.applyConstraints(buildTrackDetailConstraints(track));
   }
   catch (error)
   {
@@ -241,7 +271,7 @@ export function MediaSessionProvider({ children }: { children: React.ReactNode }
       setError(err instanceof Error ? err.message : "Failed to start preview.");
       setStatus("error");
     }
-  }, [selectedVideoId, selectedAudioId, stopPreview]);
+  }, [selectedVideoId, selectedAudioId, camEnabled, micEnabled, stopPreview]);
 
   useEffect(() =>
   {
@@ -359,37 +389,29 @@ export function MediaSessionProvider({ children }: { children: React.ReactNode }
 
   const toggleCam = useCallback(() =>
   {
-    setCamEnabled((prev) =>
+    const next = !camEnabled;
+    setCamEnabled(next);
+    setPrefs({ camEnabled: next });
+
+    const stream = localStreamRef.current;
+    if (stream)
     {
-      const next = !prev;
-      setPrefs({ camEnabled: next });
-
-      const stream = localStreamRef.current;
-      if (stream)
-      {
-        stream.getVideoTracks().forEach((t) => { t.enabled = next; });
-      }
-
-      return next;
-    });
-  }, [setPrefs]);
+      stream.getVideoTracks().forEach((t) => { t.enabled = next; });
+    }
+  }, [camEnabled, setPrefs]);
 
   const toggleMic = useCallback(() =>
   {
-    setMicEnabled((prev) =>
+    const next = !micEnabled;
+    setMicEnabled(next);
+    setPrefs({ micEnabled: next });
+
+    const stream = localStreamRef.current;
+    if (stream)
     {
-      const next = !prev;
-      setPrefs({ micEnabled: next });
-
-      const stream = localStreamRef.current;
-      if (stream)
-      {
-        stream.getAudioTracks().forEach((t) => { t.enabled = next; });
-      }
-
-      return next;
-    });
-  }, [setPrefs]);
+      stream.getAudioTracks().forEach((t) => { t.enabled = next; });
+    }
+  }, [micEnabled, setPrefs]);
 
   const setSelectedVideoId = useCallback((deviceId: string) =>
   {
