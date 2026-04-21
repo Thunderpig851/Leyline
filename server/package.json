@@ -4,7 +4,7 @@
   "main": "index.js",
   "scripts": {
     "dev": "nodemon --watch src --ext ts,js --exec tsx src/index.js",
-    "start": "node src/index.js"
+    "start": "tsx src/index.js"
   },
   "keywords": [],
   "author": "",
@@ -19,13 +19,15 @@
     "jsonwebtoken": "^9.0.3",
     "mediasoup": "^3.19.3",
     "mongoose": "^9.2.1",
-    "socket.io": "^4.8.3"
+    "socket.io": "^4.8.3",
+    "tsx": "^4.21.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
     "@types/node": "^25.3.3",
     "nodemon": "^3.1.11",
     "tsx": "^4.21.0",
+    "ts-node": "^10.9.2",
     "typescript": "^5.9.3"
   }
 }

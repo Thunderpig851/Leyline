@@ -3,13 +3,18 @@ FROM node:20-bookworm-slim
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y \
-  python3 python3-pip make g++ \
+  python3 \
+  make \
+  g++ \
   && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./
 RUN npm ci
 
 COPY . .
-CMD ["npm", "run", "dev"]
 
+ENV NODE_ENV=production
 
+EXPOSE 3001
+
+CMD ["npm", "start"]

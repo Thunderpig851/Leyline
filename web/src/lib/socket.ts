@@ -1,8 +1,9 @@
 import { io } from "socket.io-client";
-import { API_BASE } from "./api";
 
-export const socket = io(API_BASE,
-{
+const API_BASE =
+  import.meta.env.VITE_API_URL?.replace(/\/$/, "") || window.location.origin;
+
+export const socket = io(API_BASE, {
   transports: ["websocket"],
   withCredentials: true,
 });

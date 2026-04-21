@@ -3,7 +3,7 @@ const mongoose = require("mongoose");
 const http = require("http");
 const { Server } = require("socket.io");
 
-const { createApp, createCorsOriginHandler } = require("./app");
+const { createApp, getAllowedOrigins } = require("./app");
 const { registerSFUSignaling, getWorker } = require("./sfu");
 const { registerLiveGamePresence } = require("./middleware/liveGamePresence");
 
@@ -32,8 +32,8 @@ async function start()
     {
       cors:
       {
-        origin: createCorsOriginHandler(),
-        credentials: true
+        origin: getAllowedOrigins(),
+        credentials: true,
       }
     });
 
@@ -73,3 +73,4 @@ async function start()
 }
 
 start();
+

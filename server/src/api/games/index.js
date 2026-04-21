@@ -852,6 +852,7 @@ router.post("/:gameId/seats/:seatNumber/state", requireAuth, async (req, res) =>
       commanders,
       commander,
       isReady,
+      isAway,
       connectionStatus,
     } = req.body || {};
 
@@ -892,6 +893,18 @@ router.post("/:gameId/seats/:seatNumber/state", requireAuth, async (req, res) =>
     if (isReady !== undefined)
     {
       seat.isReady = Boolean(isReady);
+    }
+
+    if (isAway !== undefined)
+    {
+      seat.awaySinceAt = Boolean(isAway) ? new Date() : null;
+      seat.lastSeenAt = new Date();
+      seat.lastActiveAt = new Date();
+
+      if (seat.connectionStatus === "away")
+      {
+        seat.connectionStatus = "connected";
+      }
     }
 
     if (connectionStatus !== undefined)
@@ -1023,17 +1036,18 @@ router.post("/:gameId/turn/advance", requireAuth, async (req, res) =>
       ? occupiedTurnOrder[0]
       : occupiedTurnOrder[(currentIndex + 1) % occupiedTurnOrder.length];
 
-    const occupiedSeats = (game.seats || []).filter((seat) => Boolean(seat.userId));
-
-    if (!game.gameStartedAt && occupiedSeats.some((seat) => !seat.isReady))
-    {
-      return res.status(400).json({ ok: false, error: "All seated players must be ready before the game can start." });
-    }
-
     const now = new Date();
 
     if (!game.gameStartedAt)
     {
+      const occupiedSeats = game.seats.filter((seat) => Boolean(seat.userId));
+      const allReady = occupiedSeats.length > 0 && occupiedSeats.every((seat) => seat.isReady);
+
+      if (!allReady)
+      {
+        return res.status(400).json({ ok: false, error: "All seated players must be ready before the game can start." });
+      }
+
       game.gameStartedAt = now;
     }
 
@@ -1360,6 +1374,13 @@ router.post("/:gameId/reset", requireAuth, async (req, res) =>
         experience: 0,
       };
       seat.commanders = [];
+      seat.isReady = false;
+      seat.awaySinceAt = null;
+
+      if (seat.connectionStatus === "away")
+      {
+        seat.connectionStatus = "connected";
+      }
     }
 
     game.boardOrder = normalizeBoardOrder(game);
@@ -1367,6 +1388,7 @@ router.post("/:gameId/reset", requireAuth, async (req, res) =>
     game.initiativeSeatNumber = null;
     game.activeTurnSeatNumber = null;
     game.turnStartedAt = null;
+    game.gameStartedAt = null;
     game.dayNightState = null;
 
     await game.save();

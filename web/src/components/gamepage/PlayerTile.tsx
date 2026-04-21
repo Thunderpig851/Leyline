@@ -23,6 +23,7 @@ type PlayerTileProps =
   stream?: MediaStream | null;
   isSelf?: boolean;
   status?: "connected" | "reconnecting" | "away" | "empty";
+  isAway?: boolean;
   isReady?: boolean;
   showSeatStateOverlay?: boolean;
   isFlipped?: boolean;
@@ -275,6 +276,7 @@ export default function PlayerTile({
   stream = null,
   isSelf = false,
   status = "connected",
+  isAway = false,
   isReady = false,
   showSeatStateOverlay = true,
   isFlipped = false,
@@ -385,6 +387,7 @@ export default function PlayerTile({
   );
 
   const canManageHostActions = Boolean(canPromoteToHost || canKickPlayer);
+  const canShowViewActions = status !== "empty" && Boolean(onToggleFlip || onToggleExpand);
 
   const canOpenCounters =
     compactCounters.length > 0 ||
@@ -754,27 +757,25 @@ export default function PlayerTile({
         <div className="pointer-events-none absolute inset-[4px] z-[1] rounded-[1.4rem] ring-2 ring-emerald-400 shadow-[0_0_0_1px_rgba(16,185,129,0.35),0_0_28px_rgba(16,185,129,0.35)]" />
       ) : null}
 
-      {status !== "empty" && showSeatStateOverlay ? (
-        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-6">
-          {status === "away" ? (
-            <StatusOverlayBadge
+      {showSeatStateOverlay && status !== "empty" ? (
+        <div className="pointer-events-none absolute inset-0 z-[2] flex items-center justify-center px-6">
+          {isAway ? (
+            <CenteredSeatStateOverlay
               tone="away"
-              size="large"
               icon={<Coffee className="h-10 w-10" />}
               label="AFK"
             />
           ) : (
-            <StatusOverlayBadge
+            <CenteredSeatStateOverlay
               tone={isReady ? "ready" : "not-ready"}
-              size="large"
-              icon={isReady ? <Check className="h-10 w-10" /> : <X className="h-10 w-10" />}
+              icon={isReady ? <Check className="h-12 w-12" /> : <X className="h-12 w-12" />}
               label={isReady ? "Ready" : "Not Ready"}
             />
           )}
         </div>
       ) : null}
 
-      {(onToggleFlip || onToggleExpand) && status !== "empty" ? (
+      {canShowViewActions ? (
         <div className="absolute bottom-3 right-3 z-20 flex items-center gap-2 opacity-0 transition-all duration-150 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:opacity-100">
           {onToggleFlip ? (
             <TileViewActionButton
@@ -1194,34 +1195,27 @@ export default function PlayerTile({
   );
 }
 
-function StatusOverlayBadge({
+function CenteredSeatStateOverlay({
   tone,
   icon,
   label,
-  size = "default",
 }: {
   tone: "ready" | "not-ready" | "away";
   icon: ReactNode;
   label: string;
-  size?: "default" | "large";
 })
 {
   const toneClass =
     tone === "ready"
-      ? "border-emerald-300/35 bg-emerald-500/18 text-emerald-50 shadow-[0_10px_30px_rgba(16,185,129,0.26)]"
+      ? "border-emerald-300/35 bg-emerald-500/20 text-emerald-50 shadow-[0_16px_60px_rgba(16,185,129,0.32)]"
       : tone === "away"
-        ? "border-amber-300/35 bg-amber-500/18 text-amber-50 shadow-[0_10px_30px_rgba(245,158,11,0.22)]"
-        : "border-red-300/35 bg-red-500/18 text-red-50 shadow-[0_10px_30px_rgba(239,68,68,0.24)]";
-
-  const sizeClass =
-    size === "large"
-      ? "min-w-[9.5rem] justify-center gap-3 rounded-[1.65rem] px-6 py-4 text-base tracking-[0.18em]"
-      : "gap-1.5 rounded-full px-2.5 py-1 text-[10px] tracking-[0.12em]";
+        ? "border-amber-300/35 bg-amber-500/20 text-amber-50 shadow-[0_16px_60px_rgba(245,158,11,0.26)]"
+        : "border-red-300/35 bg-red-500/20 text-red-50 shadow-[0_16px_60px_rgba(239,68,68,0.3)]";
 
   return (
-    <div className={`inline-flex items-center border font-semibold uppercase backdrop-blur ${sizeClass} ${toneClass}`}>
-      {icon}
-      <span>{label}</span>
+    <div className={`inline-flex min-w-[10rem] flex-col items-center justify-center gap-3 rounded-[1.75rem] border px-7 py-6 text-center backdrop-blur-xl ${toneClass}`}>
+      <div className="drop-shadow-[0_0_18px_rgba(255,255,255,0.18)]">{icon}</div>
+      <div className="text-base font-semibold uppercase tracking-[0.22em]">{label}</div>
     </div>
   );
 }

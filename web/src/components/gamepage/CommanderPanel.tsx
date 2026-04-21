@@ -416,4 +416,4 @@ const CommanderPanel = forwardRef<HTMLElement, CommanderPanelProps>(function Com
   );
 });
 
-export default CommanderPanel
+export default CommanderPanel;

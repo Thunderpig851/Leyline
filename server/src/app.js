@@ -14,26 +14,28 @@ const cardIdRoutes = require("./api/card-id");
 
 const REQUEST_BODY_LIMIT = process.env.REQUEST_BODY_LIMIT || "25mb";
 
-function buildAllowedOrigins()
+function getAllowedOrigins()
 {
-  return String(process.env.CLIENT_ORIGIN || "http://localhost:5173")
+  const configured = String(process.env.CLIENT_ORIGIN || "")
     .split(",")
-    .map((origin) => origin.trim())
+    .map((value) => value.trim())
     .filter(Boolean);
+
+  if (configured.length > 0)
+  {
+    return configured;
+  }
+
+  return ["http://localhost:5173", "http://127.0.0.1:5173"];
 }
 
 function createCorsOriginHandler()
 {
-  const allowedOrigins = buildAllowedOrigins();
+  const allowedOrigins = getAllowedOrigins();
 
   return function corsOriginHandler(origin, callback)
   {
-    if (!origin)
-    {
-      return callback(null, true);
-    }
-
-    if (allowedOrigins.includes(origin))
+    if (!origin || allowedOrigins.includes(origin))
     {
       return callback(null, true);
     }
@@ -56,7 +58,8 @@ function createApp()
     })
   );
 
-  app.get("/health", (req, res) => {
+  app.get("/health", (req, res) =>
+  {
     res.status(200).json({ ok: true });
   });
 
@@ -89,4 +92,4 @@ function createApp()
   return app;
 }
 
-module.exports = { createApp, buildAllowedOrigins, createCorsOriginHandler };
+module.exports = { createApp, getAllowedOrigins, createCorsOriginHandler };
