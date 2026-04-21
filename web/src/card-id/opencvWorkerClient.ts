@@ -29,7 +29,6 @@ type DetectSuccess = {
   id: number;
   ok: true;
   cropBlob: Blob;
-  debugBlob: Blob;
   nameBandBlob?: Blob;
   sourceQuad?: Array<{ x: number; y: number }>;
 };

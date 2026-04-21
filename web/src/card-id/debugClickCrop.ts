@@ -1,6 +1,4 @@
 export type DebugClickCropResult = {
-  frameUrl: string;
-  roiUrl: string;
   roiImageData: ImageData;
   roiWidth: number;
   roiHeight: number;
@@ -11,23 +9,6 @@ export type DebugClickCropResult = {
   sourceWidth: number;
   sourceHeight: number;
 };
-
-function canvasToBlob(canvas: HTMLCanvasElement, type = 'image/jpeg', quality = 0.92): Promise<Blob> {
-  return new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => {
-      if (!blob) {
-        reject(new Error('Failed to encode canvas blob'));
-        return;
-      }
-      resolve(blob);
-    }, type, quality);
-  });
-}
-
-async function canvasToObjectUrl(canvas: HTMLCanvasElement, type = 'image/jpeg', quality = 0.92) {
-  const blob = await canvasToBlob(canvas, type, quality);
-  return URL.createObjectURL(blob);
-}
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
@@ -47,9 +28,6 @@ export async function createDebugClickCrop(
   const requestedCropWidth = Math.max(180, Math.round(options?.cropWidth ?? 560));
   const requestedCropHeight = Math.max(260, Math.round(options?.cropHeight ?? 800));
   const requestedCropSize = Math.max(requestedCropWidth, requestedCropHeight);
-  const maxDimension = Math.max(480, Math.round(options?.maxDimension ?? 960));
-  const previewMaxWidth = Math.max(320, Math.round(options?.previewMaxWidth ?? 560));
-
   const rect = videoEl.getBoundingClientRect();
   const sourceWidth = videoEl.videoWidth;
   const sourceHeight = videoEl.videoHeight;
@@ -101,48 +79,7 @@ export async function createDebugClickCrop(
   roiCtx.drawImage(videoEl, sx, sy, sw, sh, 0, 0, sw, sh);
   const roiImageData = roiCtx.getImageData(0, 0, sw, sh);
 
-  const longSideScale = Math.min(1, maxDimension / Math.max(sourceWidth, sourceHeight));
-  const previewScale = Math.min(1, previewMaxWidth / sourceWidth, longSideScale);
-  const previewCanvas = document.createElement('canvas');
-  previewCanvas.width = Math.max(1, Math.round(sourceWidth * previewScale));
-  previewCanvas.height = Math.max(1, Math.round(sourceHeight * previewScale));
-
-  const previewCtx = previewCanvas.getContext('2d');
-  if (!previewCtx) {
-    throw new Error('Could not create preview canvas context');
-  }
-
-  previewCtx.imageSmoothingEnabled = true;
-  previewCtx.imageSmoothingQuality = 'high';
-  previewCtx.drawImage(videoEl, 0, 0, previewCanvas.width, previewCanvas.height);
-  previewCtx.strokeStyle = '#00ff99';
-  previewCtx.lineWidth = Math.max(2, Math.round(previewCanvas.width / 180));
-  previewCtx.strokeRect(
-    Math.round(sx * previewScale),
-    Math.round(sy * previewScale),
-    Math.max(1, Math.round(sw * previewScale)),
-    Math.max(1, Math.round(sh * previewScale))
-  );
-
-  previewCtx.fillStyle = '#ff3366';
-  previewCtx.beginPath();
-  previewCtx.arc(
-    clickX * previewScale,
-    clickY * previewScale,
-    Math.max(4, Math.round(previewCanvas.width / 90)),
-    0,
-    Math.PI * 2
-  );
-  previewCtx.fill();
-
-  const [frameUrl, roiUrl] = await Promise.all([
-    canvasToObjectUrl(previewCanvas, 'image/jpeg', 0.9),
-    canvasToObjectUrl(roiCanvas, 'image/png'),
-  ]);
-
   return {
-    frameUrl,
-    roiUrl,
     roiImageData,
     roiWidth: sw,
     roiHeight: sh,

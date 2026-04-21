@@ -1,7 +1,6 @@
 import { detectAndRectifyCardInWorker } from "./opencvWorkerClient";
 
 export type RefinedCardCropResult = {
-  roiDebugUrl: string;
   candidateUrl: string;
   nameBandUrl: string;
   statusText: string;
@@ -48,18 +47,16 @@ export async function refineCardCropOpenCv(
       }
 
       const candidateUrl = URL.createObjectURL(cvResult.cropBlob);
-      const roiDebugUrl = URL.createObjectURL(cvResult.debugBlob);
       const nameBandUrl = cvResult.nameBandBlob
         ? URL.createObjectURL(cvResult.nameBandBlob)
         : "";
 
-      if (!candidateUrl || !roiDebugUrl)
+      if (!candidateUrl)
       {
         continue;
       }
 
       return {
-        roiDebugUrl,
         candidateUrl,
         nameBandUrl,
         statusText: "OpenCV multi-pass edge-locked candidate",

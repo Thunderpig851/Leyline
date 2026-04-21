@@ -380,6 +380,17 @@ function getCardImageUrl(card)
   );
 }
 
+function getCardTcgplayerUri(card)
+{
+  return card?.purchase_uris?.tcgplayer || "";
+}
+
+function getCardTcgplayerPrice(card)
+{
+  const prices = card?.prices || {};
+  return prices.usd || prices.usd_foil || prices.usd_etched || "";
+}
+
 function scoreCandidate(sourceText, candidateName)
 {
   const titleSimilarity = diceCoefficient(sourceText, candidateName || "");
@@ -403,6 +414,8 @@ function mapCardToCandidate(sourceText, card)
     name: card.name,
     imageUrl: getCardImageUrl(card),
     scryfallUri: card.scryfall_uri || "",
+    tcgplayerUri: getCardTcgplayerUri(card),
+    tcgplayerPrice: getCardTcgplayerPrice(card),
     typeLine: card.type_line || "",
     titleSimilarity: metrics.titleSimilarity,
     typeSimilarity: 0,

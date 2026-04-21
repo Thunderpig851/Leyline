@@ -5,6 +5,8 @@ export type IdentifiedCardCandidate = {
   name: string;
   imageUrl: string;
   scryfallUri: string;
+  tcgplayerUri?: string;
+  tcgplayerPrice?: string;
   titleSimilarity: number;
   typeSimilarity: number;
   score: number;

@@ -1404,37 +1404,17 @@ async function detectAndRectifyCardInWorker(cv, frame, options) {
       }
 
       cropCtx.putImageData(matToImageData(warped), 0, 0);
-      const debugCanvas = new OffscreenCanvas(frame.width, frame.height);
-      const debugCtx = debugCanvas.getContext("2d");
-
-      if (!debugCtx) {
-        throw new Error("Could not create detection debug canvas context.");
-      }
-
-      debugCtx.drawImage(source.canvas, 0, 0);
-      debugCtx.strokeStyle = "#00ff99";
-      debugCtx.lineWidth = Math.max(2, Math.round(frame.width / 180));
-      drawQuad(debugCtx, sourceQuad);
-      debugCtx.stroke();
-
-      debugCtx.fillStyle = "#ff3366";
-      debugCtx.beginPath();
-      debugCtx.arc(frame.clickX, frame.clickY, Math.max(4, Math.round(frame.width / 90)), 0, Math.PI * 2);
-      debugCtx.fill();
-
       const oriented = chooseOrientedCardAndTitleBand(rawCropCanvas);
       const finalCropCanvas = oriented?.canvas || rawCropCanvas;
       const finalNameBandCanvas = oriented?.bandCanvas || null;
 
-      const [cropBlob, debugBlob, nameBandBlob] = await Promise.all([
+      const [cropBlob, nameBandBlob] = await Promise.all([
         canvasToBlob(finalCropCanvas),
-        canvasToBlob(debugCanvas),
         finalNameBandCanvas ? canvasToBlob(finalNameBandCanvas) : Promise.resolve(undefined),
       ]);
 
       return {
         cropBlob,
-        debugBlob,
         nameBandBlob,
         sourceQuad,
       };
@@ -1509,7 +1489,6 @@ self.onmessage = async (event) => {
         ok: true,
         cropBlob: result.cropBlob,
         nameBandBlob: result.nameBandBlob,
-        debugBlob: result.debugBlob,
         sourceQuad: result.sourceQuad,
       });
   } catch (error) {

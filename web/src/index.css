@@ -1,3 +1,48 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@keyframes scan-indicator-fail-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.08;
+  }
+}
+
+@layer components {
+  .scan-indicator-fail-blink {
+    animation: scan-indicator-fail-blink 180ms steps(1, end) 6;
+  }
+
+  .panel-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(45, 212, 191, 0.42) rgba(2, 6, 23, 0.3);
+    scrollbar-gutter: stable;
+  }
+
+  .panel-scrollbar::-webkit-scrollbar {
+    width: 10px;
+  }
+
+  .panel-scrollbar::-webkit-scrollbar-track {
+    background: rgba(2, 6, 23, 0.3);
+    border-radius: 9999px;
+  }
+
+  .panel-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(45, 212, 191, 0.42);
+    border: 2px solid transparent;
+    border-radius: 9999px;
+    background-clip: padding-box;
+  }
+
+  .panel-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgba(94, 234, 212, 0.56);
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+}

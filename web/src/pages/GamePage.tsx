@@ -559,24 +559,20 @@ export default function GamePage()
       };
       const isCurrentRequest = () => cardCropRequestIdRef.current === requestId;
       const disposeRefinedResult = (result: {
-        roiDebugUrl: string;
         candidateUrl: string;
         nameBandUrl: string;
       }) =>
       {
         revokeCardObjectUrls([
-          result.roiDebugUrl,
           result.candidateUrl,
           result.nameBandUrl,
         ]);
       };
       const applyRefinedResult = (refined: {
-        roiDebugUrl: string;
         candidateUrl: string;
         nameBandUrl: string;
       }) =>
       {
-        registerUrl(refined.roiDebugUrl);
         registerUrl(refined.candidateUrl);
         syncObjectUrls();
       };
@@ -609,13 +605,8 @@ export default function GamePage()
 
         if (!isCurrentRequest())
         {
-          revokeCardObjectUrls([crop.frameUrl, crop.roiUrl]);
           return;
         }
-
-        registerUrl(crop.frameUrl);
-        registerUrl(crop.roiUrl);
-        syncObjectUrls();
 
         await waitForNextFrame();
 

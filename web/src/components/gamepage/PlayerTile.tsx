@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode, MouseEvent as ReactMouseEvent } from "react";
-import { Check, Coffee, Crown, FlipVertical2, Maximize2, Minimize2, Pencil, Swords, X } from "lucide-react";
+import { Check, Coffee, Crown, FlipVertical2, Maximize2, Minimize2, Pencil, RotateCw, Swords, X } from "lucide-react";
 import CommanderPanel from "./CommanderPanel";
 
 type CommanderCard =
@@ -729,7 +729,7 @@ export default function PlayerTile({
               style={cardScanIndicatorStyle}
             >
               <div
-                className={`rounded-full border px-3 py-1 text-[11px] font-semibold shadow-lg backdrop-blur-sm ${
+                className={`inline-flex h-9 w-9 items-center justify-center rounded-full border shadow-lg backdrop-blur-sm ${
                   cardScanIndicator.phase === "scanning"
                     ? "border-emerald-300/40 bg-slate-950/82 text-emerald-100"
                     : cardScanIndicator.phase === "success"
@@ -737,7 +737,13 @@ export default function PlayerTile({
                       : "border-rose-300/40 bg-slate-950/84 text-rose-100"
                 }`}
               >
-                {cardScanIndicator.text}
+                {cardScanIndicator.phase === "scanning" ? (
+                  <RotateCw className="h-4 w-4 animate-spin" />
+                ) : cardScanIndicator.phase === "success" ? (
+                  <Check className="h-4 w-4" />
+                ) : (
+                  <X className="scan-indicator-fail-blink h-4 w-4" />
+                )}
               </div>
             </div>
           ) : null}
