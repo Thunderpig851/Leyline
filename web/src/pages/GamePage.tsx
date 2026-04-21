@@ -826,7 +826,12 @@ export default function GamePage()
       && session.roomId === roomId
       && (mediaSession.status === "idle" || mediaSession.status === "connecting");
 
-    if (mediaSession.status !== "connected" && !allowPassiveSpectatorBoot)
+    const allowTransientPlayerPreview =
+      session.viewerMode !== "spectator"
+      && session.roomId === roomId
+      && mediaSession.status === "previewing";
+
+    if (mediaSession.status !== "connected" && !allowPassiveSpectatorBoot && !allowTransientPlayerPreview)
     {
       if (forcedExitRef.current)
       {

@@ -757,7 +757,7 @@ export default function PlayerTile({
         <div className="pointer-events-none absolute inset-[4px] z-[1] rounded-[1.4rem] ring-2 ring-emerald-400 shadow-[0_0_0_1px_rgba(16,185,129,0.35),0_0_28px_rgba(16,185,129,0.35)]" />
       ) : null}
 
-      {showSeatStateOverlay && status !== "empty" ? (
+      {(status !== "empty" && (isAway || showSeatStateOverlay)) ? (
         <div className="pointer-events-none absolute inset-0 z-[2] flex items-center justify-center px-6">
           {isAway ? (
             <CenteredSeatStateOverlay
@@ -765,13 +765,13 @@ export default function PlayerTile({
               icon={<Coffee className="h-10 w-10" />}
               label="AFK"
             />
-          ) : (
+          ) : showSeatStateOverlay ? (
             <CenteredSeatStateOverlay
               tone={isReady ? "ready" : "not-ready"}
               icon={isReady ? <Check className="h-12 w-12" /> : <X className="h-12 w-12" />}
               label={isReady ? "Ready" : "Not Ready"}
             />
-          )}
+          ) : null}
         </div>
       ) : null}
 

@@ -172,6 +172,8 @@ export function MediaSessionProvider({ children }: { children: React.ReactNode }
   const [selfPeerId, setSelfPeerId] = useState<string | null>(null);
 
   const localStreamRef = useRef<MediaStream | null>(null);
+  const camEnabledRef = useRef(camEnabled);
+  const micEnabledRef = useRef(micEnabled);
   const peerIdRef = useRef<string | null>(null);
   const roomIdRef = useRef<string | null>(null);
 
@@ -258,12 +260,12 @@ export function MediaSessionProvider({ children }: { children: React.ReactNode }
         await tuneVideoTrackForDetail(videoTrack);
       }
 
-      stream.getVideoTracks().forEach((t) => { t.enabled = camEnabled; });
-      stream.getAudioTracks().forEach((t) => { t.enabled = micEnabled; });
+      stream.getVideoTracks().forEach((t) => { t.enabled = camEnabledRef.current; });
+      stream.getAudioTracks().forEach((t) => { t.enabled = micEnabledRef.current; });
 
       localStreamRef.current = stream;
       setLocalStream(stream);
-      setStatus("previewing");
+      setStatus((prev) => prev === "connected" ? "connected" : "previewing");
     }
     catch (err: unknown)
     {
@@ -271,7 +273,7 @@ export function MediaSessionProvider({ children }: { children: React.ReactNode }
       setError(err instanceof Error ? err.message : "Failed to start preview.");
       setStatus("error");
     }
-  }, [selectedVideoId, selectedAudioId, camEnabled, micEnabled, stopPreview]);
+  }, [selectedVideoId, selectedAudioId, stopPreview]);
 
   useEffect(() =>
   {
@@ -281,6 +283,16 @@ export function MediaSessionProvider({ children }: { children: React.ReactNode }
     stream.getVideoTracks().forEach((t) => { t.enabled = camEnabled; });
     stream.getAudioTracks().forEach((t) => { t.enabled = micEnabled; });
   }, [camEnabled, micEnabled, localStream]);
+
+  useEffect(() =>
+  {
+    camEnabledRef.current = camEnabled;
+  }, [camEnabled]);
+
+  useEffect(() =>
+  {
+    micEnabledRef.current = micEnabled;
+  }, [micEnabled]);
 
   const publishLocalTracks = useCallback(async () =>
   {

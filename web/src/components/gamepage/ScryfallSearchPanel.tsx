@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useState} from "react";
 import { ExternalLink, Search } from "lucide-react";
 
 type ScryfallCard =
@@ -38,7 +38,7 @@ export default function ScryfallSearchPanel()
   const [searchError, setSearchError] = useState<string | null>(null);
   const [searchResults, setSearchResults] = useState<ScryfallCard[]>([]);
 
-  async function handleCardSearch(e: FormEvent)
+  async function handleCardSearch(e: React.SubmitEvent)
   {
     e.preventDefault();
 
@@ -87,12 +87,7 @@ export default function ScryfallSearchPanel()
 
   return (
     <div className="flex h-[calc(100vh-210px)] min-h-0 flex-col">
-      <div className="border-b border-white/10 px-5 py-4">
-        <div className="text-sm font-semibold text-slate-100">Manual Card Search</div>
-        <div className="mt-1 text-xs text-slate-400">
-          Search Scryfall and click a card to open its page.
-        </div>
-      </div>
+
 
       <form onSubmit={handleCardSearch} className="border-b border-white/10 p-4">
         <div className="flex flex-col gap-2 sm:flex-row">
