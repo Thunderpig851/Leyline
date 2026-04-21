@@ -12,7 +12,7 @@ const chatRoutes = require("./api/chat");
 const lfgRoutes = require("./api/lfg");
 const cardIdRoutes = require("./api/card-id");
 
-const REQUEST_BODY_LIMIT = process.env.REQUEST_BODY_LIMIT || "25mb";
+const REQUEST_BODY_LIMIT = process.env.REQUEST_BODY_LIMIT || "50mb";
 
 function getAllowedOrigins()
 {

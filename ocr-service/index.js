@@ -7,7 +7,7 @@ import express from "express";
 import Ocr from "@gutenye/ocr-node";
 
 const PORT = Math.max(1, Number(process.env.PORT || 8000));
-const REQUEST_BODY_LIMIT = process.env.REQUEST_BODY_LIMIT || "25mb";
+const REQUEST_BODY_LIMIT = process.env.REQUEST_BODY_LIMIT || "50mb";
 const USE_DIRECTION_CLASSIFY = !["0", "false", "no"].includes(
   String(process.env.GUTEN_OCR_USE_DIRECTION_CLASSIFY || "1").toLowerCase()
 );
@@ -608,6 +608,20 @@ app.post("/identify", async (req, res) =>
       errorType: error?.name || "Error",
     });
   }
+});
+
+app.use((error, req, res, next) =>
+{
+  if (error?.type === "entity.too.large")
+  {
+    return res.status(413).json({
+      ok: false,
+      error: "Card OCR payload too large",
+      errorType: "entity.too.large",
+    });
+  }
+
+  return next(error);
 });
 
 app.use((req, res) =>

@@ -3,7 +3,7 @@ const router = require("express").Router();
 const SCRYFALL_BASE_URL = "https://api.scryfall.com";
 const SCRYFALL_CACHE_TTL_MS = Number(process.env.SCRYFALL_CACHE_TTL_MS || 1000 * 60 * 60 * 12);
 const SCRYFALL_NEGATIVE_CACHE_TTL_MS = Number(process.env.SCRYFALL_NEGATIVE_CACHE_TTL_MS || 1000 * 60 * 10);
-const OCR_PROXY_TIMEOUT_MS = Number(process.env.OCR_PROXY_TIMEOUT_MS || 15000);
+const OCR_PROXY_TIMEOUT_MS = Number(process.env.OCR_PROXY_TIMEOUT_MS || 30000);
 const scryfallCache = new Map();
 const scryfallInflight = new Map();
 
@@ -686,7 +686,7 @@ router.post("/identify", async (req, res) =>
 
     if (!upstream.ok || !payload?.ok)
     {
-      return res.status(503).json({
+      return res.status(upstream.status >= 400 ? upstream.status : 503).json({
         ok: false,
         error: payload?.error || "Card OCR service failed",
         errorType: payload?.errorType,
@@ -726,7 +726,7 @@ router.post("/identify", async (req, res) =>
   catch (error)
   {
     console.error("[card-id proxy] request failed:", error);
-    return res.status(503).json({
+    return res.status(error?.status || 503).json({
       ok: false,
       error: error?.message || "Card OCR service unreachable",
     });
