@@ -5,6 +5,7 @@ export type RefinedCardCropResult = {
   candidateUrl: string;
   nameBandUrl: string;
   statusText: string;
+  sourceQuad?: Array<{ x: number; y: number }>;
 };
 
 function yieldToBrowser()
@@ -62,6 +63,7 @@ export async function refineCardCropOpenCv(
         candidateUrl,
         nameBandUrl,
         statusText: "OpenCV multi-pass edge-locked candidate",
+        sourceQuad: cvResult.sourceQuad,
       };
     }
     catch (error)

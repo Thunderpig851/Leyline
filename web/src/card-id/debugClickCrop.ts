@@ -6,6 +6,10 @@ export type DebugClickCropResult = {
   roiHeight: number;
   localClickX: number;
   localClickY: number;
+  sourceX: number;
+  sourceY: number;
+  sourceWidth: number;
+  sourceHeight: number;
 };
 
 function canvasToBlob(canvas: HTMLCanvasElement, type = 'image/jpeg', quality = 0.92): Promise<Blob> {
@@ -144,5 +148,9 @@ export async function createDebugClickCrop(
     roiHeight: sh,
     localClickX,
     localClickY,
+    sourceX: sx,
+    sourceY: sy,
+    sourceWidth,
+    sourceHeight,
   };
 }

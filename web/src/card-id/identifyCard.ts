@@ -51,6 +51,7 @@ type BandCropConfig = {
   heightScale?: number;
   scale: number;
   maxOutputWidth?: number;
+  minOutputHeight?: number;
   contrast: number;
   brightness: number;
   sharpen: number;
@@ -81,11 +82,25 @@ type CardSide = "top" | "right" | "bottom" | "left";
 type SideBandVariantSpec = {
   name: string;
   topShift: number;
-  heightScale: number;
+  bottomShift: number;
   leftPad: number;
   rightPad: number;
   scale: number;
   maxOutputWidth?: number;
+  minOutputHeight?: number;
+  contrast: number;
+  brightness: number;
+  sharpen: number;
+  threshold?: number | null;
+  transportType?: "image/jpeg" | "image/png";
+  transportQuality?: number;
+};
+
+type ExistingBandVariantSpec = {
+  label: string;
+  scale: number;
+  maxOutputWidth?: number;
+  minOutputHeight?: number;
   contrast: number;
   brightness: number;
   sharpen: number;
@@ -103,53 +118,95 @@ const CARD_SIDE_QUARTER_TURNS: Record<CardSide, number> = {
   left: 1,
 };
 
-const CARD_SIDES: CardSide[] = ["top", "right", "bottom", "left"];
+const TITLE_SCAN_SIDES: CardSide[] = ["top", "bottom"];
 
 const SIDE_BAND_VARIANT_SPECS: SideBandVariantSpec[] = [
   {
     name: "loose",
-    topShift: -0.018,
-    heightScale: 1.24,
-    leftPad: 0.052,
-    rightPad: 0.088,
+    topShift: 0,
+    bottomShift: 0.02,
+    leftPad: 0.124,
+    rightPad: 0.118,
     scale: 1.76,
-    maxOutputWidth: 1980,
+    maxOutputWidth: 2480,
+    minOutputHeight: 170,
     contrast: 1.28,
     brightness: 14,
     sharpen: 0.22,
     threshold: null,
-    transportType: "image/jpeg",
-    transportQuality: 0.82,
+    transportType: "image/png",
+    transportQuality: 0.96,
   },
   {
     name: "wide",
-    topShift: -0.012,
-    heightScale: 1.14,
-    leftPad: 0.03,
-    rightPad: 0.05,
+    topShift: 0,
+    bottomShift: 0.016,
+    leftPad: 0.106,
+    rightPad: 0.092,
     scale: 1.9,
-    maxOutputWidth: 1880,
+    maxOutputWidth: 2440,
+    minOutputHeight: 182,
     contrast: 1.42,
     brightness: 12,
     sharpen: 0.28,
     threshold: null,
-    transportType: "image/jpeg",
-    transportQuality: 0.84,
+    transportType: "image/png",
+    transportQuality: 0.96,
   },
   {
     name: "tight",
-    topShift: -0.004,
-    heightScale: 0.94,
-    leftPad: 0.014,
-    rightPad: 0.028,
+    topShift: 0,
+    bottomShift: 0.008,
+    leftPad: 0.086,
+    rightPad: 0.07,
     scale: 2.02,
-    maxOutputWidth: 1760,
+    maxOutputWidth: 2360,
+    minOutputHeight: 194,
     contrast: 1.7,
     brightness: 10,
     sharpen: 0.36,
     threshold: null,
-    transportType: "image/jpeg",
-    transportQuality: 0.86,
+    transportType: "image/png",
+    transportQuality: 0.96,
+  },
+];
+
+const PRECOMPUTED_TITLE_BAND_SPECS: ExistingBandVariantSpec[] = [
+  {
+    label: "Name band (OpenCV)",
+    scale: 1.8,
+    maxOutputWidth: 2280,
+    minOutputHeight: 170,
+    contrast: 1.2,
+    brightness: 6,
+    sharpen: 0.18,
+    threshold: null,
+    transportType: "image/png",
+    transportQuality: 0.96,
+  },
+  {
+    label: "Name band enhanced (OpenCV)",
+    scale: 2.05,
+    maxOutputWidth: 2360,
+    minOutputHeight: 184,
+    contrast: 1.55,
+    brightness: 10,
+    sharpen: 0.28,
+    threshold: null,
+    transportType: "image/png",
+    transportQuality: 0.96,
+  },
+  {
+    label: "Name band binary (OpenCV)",
+    scale: 2.05,
+    maxOutputWidth: 2360,
+    minOutputHeight: 184,
+    contrast: 2.02,
+    brightness: 8,
+    sharpen: 0.32,
+    threshold: 158,
+    transportType: "image/png",
+    transportQuality: 0.96,
   },
 ];
 
@@ -163,15 +220,27 @@ function normalizeWhitespace(text: string)
   return text.replace(/\s+/g, " ").trim();
 }
 
+function stripTrailingTitleNoise(text: string)
+{
+  const normalized = normalizeWhitespace(text);
+  if (!/[A-Za-z]{4,}/.test(normalized))
+  {
+    return normalized;
+  }
+
+  const stripped = normalized.replace(/\s+\d{1,3}\s*$/, "").trim();
+  return stripped.length >= 4 ? stripped : normalized;
+}
+
 function normalizeNameText(text: string)
 {
-  return normalizeWhitespace(
+  return stripTrailingTitleNoise(normalizeWhitespace(
     text
       .replace(/[|]/g, "I")
       .replace(/[“”]/g, '"')
       .replace(/[‘’`]/g, "'")
       .replace(/[^A-Za-z0-9 ',:/\-]/g, " ")
-  );
+  ));
 }
 
 function buildCanvas(width: number, height: number): LoadedCanvas
@@ -531,9 +600,9 @@ function tightenCandidateCanvas(source: HTMLCanvasElement)
     cropTop = clamp(Math.round(centerY - cropHeight / 2), 0, source.height - cropHeight);
   }
 
-  const padX = Math.max(2, Math.round(cropWidth * 0.04));
-  const padTop = Math.max(3, Math.round(cropHeight * (cardAspect < 1 ? 0.065 : 0.045)));
-  const padBottom = Math.max(2, Math.round(cropHeight * (cardAspect < 1 ? 0.04 : 0.05)));
+  const padX = Math.max(4, Math.round(cropWidth * 0.07));
+  const padTop = Math.max(6, Math.round(cropHeight * (cardAspect < 1 ? 0.105 : 0.09)));
+  const padBottom = Math.max(5, Math.round(cropHeight * (cardAspect < 1 ? 0.08 : 0.07)));
 
   return cropCanvasRegion(
     source,
@@ -544,28 +613,6 @@ function tightenCandidateCanvas(source: HTMLCanvasElement)
   );
 }
 
-function enhanceCandidateCanvas(source: HTMLCanvasElement)
-{
-  const enhanced = buildCanvas(source.width, source.height);
-  enhanced.ctx.drawImage(source, 0, 0);
-
-  const imageData = enhanced.ctx.getImageData(0, 0, enhanced.canvas.width, enhanced.canvas.height);
-  const { data } = imageData;
-  const contrast = 1.08;
-  const brightness = 4;
-
-  for (let i = 0; i < data.length; i += 4)
-  {
-    data[i] = clamp(Math.round((data[i] - 128) * contrast + 128 + brightness), 0, 255);
-    data[i + 1] = clamp(Math.round((data[i + 1] - 128) * contrast + 128 + brightness), 0, 255);
-    data[i + 2] = clamp(Math.round((data[i + 2] - 128) * contrast + 128 + brightness), 0, 255);
-    data[i + 3] = 255;
-  }
-
-  enhanced.ctx.putImageData(sharpenImageData(imageData, 0.18), 0, 0);
-  return enhanced.canvas;
-}
-
 function cropAndEnhanceBand(source: HTMLCanvasElement, config: BandCropConfig): LoadedCanvas
 {
   const region = resolveBandRegion(source, config);
@@ -573,12 +620,16 @@ function cropAndEnhanceBand(source: HTMLCanvasElement, config: BandCropConfig): 
   const sy = clamp(Math.round(source.height * region.top), 0, source.height - 1);
   const sw = clamp(Math.round(source.width * region.width), 1, source.width - sx);
   const sh = clamp(Math.round(source.height * region.height), 1, source.height - sy);
-  const scaledWidth = Math.max(1, Math.round(sw * config.scale));
-  const cappedWidth = config.maxOutputWidth
+  const targetScale = Math.max(
+    config.scale,
+    config.minOutputHeight ? config.minOutputHeight / Math.max(1, sh) : 0
+  );
+  const scaledWidth = Math.max(1, Math.round(sw * targetScale));
+  const cappedWidth = Math.max(sw, config.maxOutputWidth
     ? Math.min(scaledWidth, config.maxOutputWidth)
-    : scaledWidth;
+    : scaledWidth);
   const effectiveScale = cappedWidth / Math.max(1, sw);
-  const out = buildCanvas(cappedWidth, sh * effectiveScale);
+  const out = buildCanvas(cappedWidth, Math.max(sh, Math.round(sh * effectiveScale)));
   out.ctx.imageSmoothingEnabled = true;
   out.ctx.imageSmoothingQuality = "high";
   out.ctx.drawImage(source, sx, sy, sw, sh, 0, 0, out.canvas.width, out.canvas.height);
@@ -605,6 +656,24 @@ function cropAndEnhanceBand(source: HTMLCanvasElement, config: BandCropConfig): 
 
   out.ctx.putImageData(sharpenImageData(imageData, config.sharpen), 0, 0);
   return out;
+}
+
+function addBandOcrMargin(source: HTMLCanvasElement): HTMLCanvasElement
+{
+  const leftPad = Math.max(10, Math.round(source.width * 0.07));
+  const rightPad = Math.max(6, Math.round(source.width * 0.028));
+  const topPad = Math.max(8, Math.round(source.height * 0.18));
+  const bottomPad = Math.max(6, Math.round(source.height * 0.07));
+  const padded = buildCanvas(
+    source.width + leftPad + rightPad,
+    source.height + topPad + bottomPad
+  );
+
+  padded.ctx.fillStyle = "#ffffff";
+  padded.ctx.fillRect(0, 0, padded.canvas.width, padded.canvas.height);
+  padded.ctx.drawImage(source, leftPad, topPad);
+
+  return padded.canvas;
 }
 
 function analyzeBandRegion(source: HTMLCanvasElement, region: BandRegion)
@@ -688,51 +757,68 @@ function detectTitleBandRegion(source: HTMLCanvasElement): BandRegion
     return cached;
   }
 
-  const left = 0.05;
-  const width = 0.84;
+  const left = 0.004;
+  const width = 0.944;
   let bestRegion: BandRegion = {
     left,
-    top: 0.028,
+    top: 0,
     width,
-    height: 0.094,
+    height: 0.072,
   };
   let bestScore = -Infinity;
 
-  for (const height of [0.072, 0.082, 0.092, 0.104, 0.118])
+  for (const height of [0.06, 0.066, 0.072, 0.08, 0.088])
   {
-    for (let top = 0.012; top <= 0.145; top += 0.008)
-    {
-      const region = {
+    const region = {
+      left,
+      top: 0,
+      width,
+      height,
+    } satisfies BandRegion;
+    const metrics = analyzeBandRegion(source, region);
+    const belowTop = height;
+    const belowHeight = Math.min(0.078, Math.max(0, 1 - belowTop));
+    const belowMetrics = belowHeight >= 0.02
+      ? analyzeBandRegion(source, {
         left,
-        top,
+        top: belowTop,
         width,
-        height,
-      } satisfies BandRegion;
-      const metrics = analyzeBandRegion(source, region);
-      const center = top + height * 0.5;
-      const brightnessScore = 1 - Math.min(1, Math.abs(metrics.mean - 188) / 188);
-      const contrastScore = Math.min(1, metrics.stdDev / 48);
-      const edgeScore = Math.min(1, metrics.normalizedEdgeEnergy / 16);
-      const centerBias = 1 - Math.min(1, Math.abs(center - 0.082) / 0.08);
-      const heightBias = 1 - Math.min(1, Math.abs(height - 0.094) / 0.05);
-      const darkPenalty = Math.max(0, metrics.darkRatio - 0.14) * 2.8;
-      const flatPenalty = Math.max(0, 0.16 - metrics.midToneRatio) * 2.0;
-      const score = (
-        brightnessScore * 0.24 +
-        contrastScore * 0.24 +
-        edgeScore * 0.22 +
-        metrics.midToneRatio * 0.18 +
-        centerBias * 0.15 +
-        heightBias * 0.12 -
-        darkPenalty -
-        flatPenalty
-      );
+        height: belowHeight,
+      })
+      : null;
+    const brightnessScore = 1 - Math.min(1, Math.abs(metrics.mean - 188) / 188);
+    const contrastScore = Math.min(1, metrics.stdDev / 48);
+    const edgeScore = Math.min(1, metrics.normalizedEdgeEnergy / 16);
+    const heightBias = 1 - Math.min(1, Math.abs(height - 0.072) / 0.024);
+    const bottomBias = 1 - Math.min(1, Math.max(0, belowTop - 0.09) / 0.046);
+    const belowTextPenalty = belowMetrics
+      ? Math.max(
+        0,
+        (
+          Math.min(1, belowMetrics.normalizedEdgeEnergy / 20) * 0.55 +
+          Math.min(1, belowMetrics.stdDev / 60) * 0.3 +
+          belowMetrics.midToneRatio * 0.15
+        ) - 0.56
+      ) * 1.32
+      : 0;
+    const darkPenalty = Math.max(0, metrics.darkRatio - 0.14) * 2.8;
+    const flatPenalty = Math.max(0, 0.16 - metrics.midToneRatio) * 2.0;
+    const score = (
+      brightnessScore * 0.24 +
+      contrastScore * 0.23 +
+      edgeScore * 0.23 +
+      metrics.midToneRatio * 0.16 +
+      heightBias * 0.18 +
+      bottomBias * 0.2 -
+      belowTextPenalty -
+      darkPenalty -
+      flatPenalty
+    );
 
-      if (score > bestScore)
-      {
-        bestScore = score;
-        bestRegion = region;
-      }
+    if (score > bestScore)
+    {
+      bestScore = score;
+      bestRegion = region;
     }
   }
 
@@ -787,13 +873,14 @@ function resolveOrientedSideBandRegion(
 ): { region: BandRegion; detectionScore: number }
 {
   const detected = detectTitleBandRegion(source);
-  const left = clamp(detected.left - spec.leftPad, 0.004, 0.18);
-  const right = clamp(detected.left + detected.width + spec.rightPad, left + 0.64, 0.995);
-  const top = clamp(detected.top + spec.topShift, 0.004, 0.18);
+  const left = clamp(detected.left - spec.leftPad, 0, 0.18);
+  const right = clamp(detected.left + detected.width + spec.rightPad, left + 0.72, 1);
+  const top = clamp(detected.top + spec.topShift, 0, 0.16);
+  const detectedBottom = detected.top + detected.height;
   const bottom = clamp(
-    top + detected.height * spec.heightScale,
-    top + 0.052,
-    0.27
+    detectedBottom + spec.bottomShift,
+    top + 0.058,
+    0.176
   );
 
   return {
@@ -821,6 +908,7 @@ function buildSideBandConfig(
     height: region.height,
     scale: spec.scale,
     maxOutputWidth: spec.maxOutputWidth,
+    minOutputHeight: spec.minOutputHeight,
     contrast: spec.contrast,
     brightness: spec.brightness,
     sharpen: spec.sharpen,
@@ -836,7 +924,7 @@ async function buildSideBandVariants(
 {
   const variants: PreparedBandVariant[] = [];
 
-  for (const side of CARD_SIDES)
+  for (const side of TITLE_SCAN_SIDES)
   {
     const orientedCanvas = rotateCanvasQuarterTurns(
       source,
@@ -848,26 +936,38 @@ async function buildSideBandVariants(
       const resolved = resolveOrientedSideBandRegion(orientedCanvas, spec);
       const config = buildSideBandConfig(side, spec, resolved.region);
       const band = cropAndEnhanceBand(orientedCanvas, config);
+      const transportCanvas = addBandOcrMargin(band.canvas);
       const transportType = config.transportType || "image/png";
       const transportQuality = config.transportQuality ?? 0.96;
+      const leftFit = 1 - Math.min(1, resolved.region.left / 0.035);
+      const widthFit = 1 - Math.min(1, Math.abs(resolved.region.width - 0.93) / 0.16);
+      const heightFit = 1 - Math.min(1, Math.abs(resolved.region.height - 0.07) / 0.024);
+      const topFit = 1 - Math.min(1, resolved.region.top / 0.012);
+      const bottomFit = 1 - Math.min(
+        1,
+        Math.abs((resolved.region.top + resolved.region.height) - 0.076) / 0.034
+      );
       const score = scoreBandRegionForText(band.canvas, {
         left: 0,
         top: 0,
         width: 1,
         height: 1,
       }) +
-        resolved.detectionScore * 0.45 +
-        resolved.region.width * 0.22 +
-        resolved.region.height * 0.08;
+        resolved.detectionScore * 0.48 +
+        leftFit * 0.24 +
+        widthFit * 0.1 +
+        heightFit * 0.26 +
+        topFit * 0.3 +
+        bottomFit * 0.22;
 
       await yieldToBrowser();
       const dataUrl = await blobToDataUrl(
-        await canvasToBlob(band.canvas, transportType, transportQuality)
+        await canvasToBlob(transportCanvas, transportType, transportQuality)
       );
 
       variants.push({
         label: config.label || `Name band (${side} side)`,
-        canvas: band.canvas,
+        canvas: transportCanvas,
         dataUrl,
         score,
         orientationQuarterTurns: CARD_SIDE_QUARTER_TURNS[side],
@@ -884,82 +984,58 @@ async function buildSideBandVariants(
     .slice(0, 10);
 }
 
-async function buildSideCardVariants(
+async function buildProvidedTitleBandVariants(
   source: HTMLCanvasElement
 ): Promise<PreparedBandVariant[]>
 {
   const variants: PreparedBandVariant[] = [];
 
-  for (const side of CARD_SIDES)
+  for (const spec of PRECOMPUTED_TITLE_BAND_SPECS)
   {
-    const orientedCanvas = rotateCanvasQuarterTurns(
-      source,
-      CARD_SIDE_QUARTER_TURNS[side]
-    );
-    const detectedRegion = detectTitleBandRegion(orientedCanvas);
-    const score = scoreBandRegionForText(orientedCanvas, detectedRegion);
+    const band = cropAndEnhanceBand(source, {
+      label: spec.label,
+      left: 0,
+      top: 0,
+      width: 1,
+      height: 1,
+      scale: spec.scale,
+      maxOutputWidth: spec.maxOutputWidth,
+      minOutputHeight: spec.minOutputHeight,
+      contrast: spec.contrast,
+      brightness: spec.brightness,
+      sharpen: spec.sharpen,
+      threshold: spec.threshold,
+      transportType: spec.transportType,
+      transportQuality: spec.transportQuality,
+    });
+    const transportCanvas = addBandOcrMargin(band.canvas);
+    const transportType = spec.transportType || "image/png";
+    const transportQuality = spec.transportQuality ?? 0.96;
+    const score = scoreBandRegionForText(band.canvas, {
+      left: 0,
+      top: 0,
+      width: 1,
+      height: 1,
+    });
+
+    await yieldToBrowser();
     const dataUrl = await blobToDataUrl(
-      await canvasToBlob(orientedCanvas, "image/jpeg", 0.9)
+      await canvasToBlob(transportCanvas, transportType, transportQuality)
     );
 
     variants.push({
-      label: `Card OCR (${side} side)`,
-      canvas: orientedCanvas,
+      label: spec.label,
+      canvas: transportCanvas,
       dataUrl,
-      score,
-      orientationQuarterTurns: CARD_SIDE_QUARTER_TURNS[side],
-      side,
-      sourceKind: "card",
+      score: score + 0.18,
+      side: "top",
+      sourceKind: "band",
     });
 
     await yieldToBrowser();
   }
 
   return variants.sort((left, right) => right.score - left.score);
-}
-
-async function buildPreviewBandFromCardVariant(
-  cardVariant: PreparedBandVariant
-): Promise<CardIdentificationPreview | null>
-{
-  const side = cardVariant.side || "top";
-  const orientedCanvas = cardVariant.canvas;
-  let bestBand: { label: string; canvas: HTMLCanvasElement; score: number } | null = null;
-
-  for (const spec of SIDE_BAND_VARIANT_SPECS)
-  {
-    const resolved = resolveOrientedSideBandRegion(orientedCanvas, spec);
-    const config = buildSideBandConfig(side, spec, resolved.region);
-    const band = cropAndEnhanceBand(orientedCanvas, config);
-    const score = scoreBandRegionForText(band.canvas, {
-      left: 0,
-      top: 0,
-      width: 1,
-      height: 1,
-    }) +
-      resolved.detectionScore * 0.45 +
-      resolved.region.width * 0.22 +
-      resolved.region.height * 0.08;
-
-    if (!bestBand || score > bestBand.score)
-    {
-      bestBand = {
-        label: config.label || `Name band (${side} side)`,
-        canvas: band.canvas,
-        score,
-      };
-    }
-  }
-
-  if (!bestBand)
-  {
-    return null;
-  }
-
-  return {
-    label: bestBand.label,
-    url: await canvasToObjectUrl(bestBand.canvas, "image/png", 0.96),
-  };
 }
 
 function buildSignalsSummary(
@@ -982,13 +1058,47 @@ function buildSignalsSummary(
   return signals.join(" • ");
 }
 
+function looksWeakTitleResult(
+  title: CardIdentificationText,
+  candidates: IdentifiedCardCandidate[]
+)
+{
+  const letterCount = (title.text.match(/[A-Za-z]/g) || []).length;
+  const bestCandidateScore = candidates[0]?.score || 0;
+  const normalizedConfidence = clamp(title.confidence, 0, 1);
+
+  return (
+    bestCandidateScore < 0.45 ||
+    (letterCount < 5 && normalizedConfidence < 0.62) ||
+    (letterCount < 8 && normalizedConfidence < 0.32)
+  );
+}
+
+function scoreTitleResultStrength(
+  title: CardIdentificationText,
+  candidates: IdentifiedCardCandidate[]
+)
+{
+  const letterCount = (title.text.match(/[A-Za-z]/g) || []).length;
+  const bestCandidateScore = candidates[0]?.score || 0;
+
+  return (
+    Math.min(1, letterCount / 10) * 0.4 +
+    clamp(title.confidence, 0, 1) * 0.25 +
+    bestCandidateScore * 1.1
+  );
+}
+
 async function prepareTitleBandsFromCandidateCanvas(candidateCanvas: HTMLCanvasElement)
 {
   const previewCanvas = tightenCandidateCanvas(candidateCanvas);
   await yieldToBrowser();
-  const ocrCanvas = enhanceCandidateCanvas(previewCanvas);
-  await yieldToBrowser();
-  const previewTitleBandVariants = (await buildSideBandVariants(previewCanvas))
+  const previewCandidateVariants = await buildSideBandVariants(previewCanvas);
+  const previewTitleBandVariants = (
+    previewCandidateVariants.filter((variant) => variant.side === "top").length > 0
+      ? previewCandidateVariants.filter((variant) => variant.side === "top")
+      : previewCandidateVariants
+  )
     .sort((a, b) => b.score - a.score)
     .slice(0, 1);
   await yieldToBrowser();
@@ -1000,25 +1110,21 @@ async function prepareTitleBandsFromCandidateCanvas(candidateCanvas: HTMLCanvasE
     ? [{ label: previewBand?.label || "Name band", url: previewTitleBandUrl }]
     : [];
   const previewObjectUrls = previewPreviews.map((preview) => preview.url);
-  const ocrTitleBandVariants = await buildSideBandVariants(ocrCanvas);
-  const ocrCardVariants = await buildSideCardVariants(ocrCanvas);
+  const ocrTitleBandVariants = previewCandidateVariants;
 
   return {
     previewPreviews,
     previewObjectUrls,
     ocrTitleBandVariants,
-    ocrCardVariants,
   };
 }
 
 async function requestTitleOcr(
-  ocrTitleBandVariants: PreparedBandVariant[],
-  ocrCardVariants: PreparedBandVariant[]
+  ocrTitleBandVariants: PreparedBandVariant[]
 ): Promise<{
   title: CardIdentificationText;
   candidates: IdentifiedCardCandidate[];
   titleVariantIndex: number;
-  titleSourceKind: "band" | "card";
   signalsSummary: string;
 }>
 {
@@ -1032,8 +1138,6 @@ async function requestTitleOcr(
       body: JSON.stringify({
         titleBandDataUrl: ocrTitleBandVariants[0]?.dataUrl || "",
         titleBandDataUrls: ocrTitleBandVariants.map((variant) => variant.dataUrl),
-        cardDataUrl: ocrCardVariants[0]?.dataUrl || "",
-        cardDataUrls: ocrCardVariants.map((variant) => variant.dataUrl),
       }),
     },
     15000
@@ -1056,17 +1160,13 @@ async function requestTitleOcr(
   const titleVariantIndex = clamp(
     Number(payload?.title?.variantIndex || 0),
     0,
-    Math.max(
-      0,
-      (payload?.title?.sourceKind === "card" ? ocrCardVariants : ocrTitleBandVariants).length - 1
-    )
+    Math.max(0, ocrTitleBandVariants.length - 1)
   );
 
   return {
     title,
     candidates,
     titleVariantIndex,
-    titleSourceKind: payload?.title?.sourceKind === "card" ? "card" : "band",
     signalsSummary: String(payload?.signalsSummary || buildSignalsSummary(title.text, candidates)),
   };
 }
@@ -1077,18 +1177,15 @@ export async function identifyCapturedCard(
   onProgress?: (progress: CardIdentificationProgress) => void
 ): Promise<CardIdentificationResult>
 {
-  void precomputedTitleBandUrl;
   let previewPreviews: CardIdentificationPreview[] = [];
   let previewObjectUrls: string[] = [];
-  let ocrTitleBandVariants: PreparedBandVariant[] = [];
-  let ocrCardVariants: PreparedBandVariant[] = [];
+  let scanTitleBandVariants: PreparedBandVariant[] = [];
 
   const loaded = await loadCanvasFromUrl(candidateUrl);
   const prepared = await prepareTitleBandsFromCandidateCanvas(loaded.canvas);
   previewPreviews = prepared.previewPreviews;
   previewObjectUrls = prepared.previewObjectUrls;
-  ocrTitleBandVariants = prepared.ocrTitleBandVariants;
-  ocrCardVariants = prepared.ocrCardVariants;
+  scanTitleBandVariants = prepared.ocrTitleBandVariants;
 
   if (previewPreviews.length > 0)
   {
@@ -1100,47 +1197,92 @@ export async function identifyCapturedCard(
   }
 
   onProgress?.({
-    statusText: "Sending title band to OCR",
+    statusText: "Scanning top title band",
   });
 
-  const initialOcr = await requestTitleOcr(ocrTitleBandVariants, ocrCardVariants);
+  const preferredTopVariants = scanTitleBandVariants.filter((variant) => variant.side === "top");
+  const hasBottomVariants = scanTitleBandVariants.some((variant) => variant.side === "bottom");
+  let activeTitleBandVariants = preferredTopVariants.length > 0
+    ? preferredTopVariants
+    : scanTitleBandVariants;
+  let initialOcr = await requestTitleOcr(activeTitleBandVariants);
+
+  if (
+    precomputedTitleBandUrl &&
+    looksWeakTitleResult(initialOcr.title, initialOcr.candidates)
+  )
+  {
+    try
+    {
+      const providedBand = await loadCanvasFromUrl(precomputedTitleBandUrl);
+      const providedVariants = await buildProvidedTitleBandVariants(providedBand.canvas);
+
+      if (providedVariants.length > 0)
+      {
+        onProgress?.({
+          previews: [{
+            label: "Name band (OpenCV)",
+            url: precomputedTitleBandUrl,
+          }],
+          objectUrls: [],
+          statusText: "Retrying title OCR with OpenCV band",
+        });
+
+        const fallbackOcr = await requestTitleOcr(providedVariants);
+        if (
+          scoreTitleResultStrength(fallbackOcr.title, fallbackOcr.candidates) >
+          scoreTitleResultStrength(initialOcr.title, initialOcr.candidates) + 0.08
+        )
+        {
+          initialOcr = fallbackOcr;
+          activeTitleBandVariants = providedVariants;
+        }
+      }
+    }
+    catch (error)
+    {
+      console.warn("Failed to use precomputed title band", error);
+    }
+  }
+
+  if (
+    hasBottomVariants &&
+    activeTitleBandVariants !== scanTitleBandVariants &&
+    looksWeakTitleResult(initialOcr.title, initialOcr.candidates)
+  )
+  {
+    onProgress?.({
+      statusText: "Retrying title OCR with bottom-edge fallback",
+    });
+
+    const bottomRetryOcr = await requestTitleOcr(scanTitleBandVariants);
+    if (
+      scoreTitleResultStrength(bottomRetryOcr.title, bottomRetryOcr.candidates) >
+      scoreTitleResultStrength(initialOcr.title, initialOcr.candidates) + 0.14
+    )
+    {
+      initialOcr = bottomRetryOcr;
+      activeTitleBandVariants = scanTitleBandVariants;
+    }
+  }
+
   const title = initialOcr.title;
   const candidates = initialOcr.candidates;
   const signalsSummary = initialOcr.signalsSummary;
+  const winningVariant =
+    activeTitleBandVariants[initialOcr.titleVariantIndex] ||
+    activeTitleBandVariants[0];
 
-  if (initialOcr.titleSourceKind === "card")
+  if (winningVariant)
   {
-    const winningCardVariant =
-      ocrCardVariants[initialOcr.titleVariantIndex] ||
-      ocrCardVariants[0];
-
-    if (winningCardVariant)
-    {
-      const preview = await buildPreviewBandFromCardVariant(winningCardVariant);
-      if (preview)
+    const winningPreviewUrl = await canvasToObjectUrl(winningVariant.canvas, "image/png", 0.96);
+    previewPreviews = [
       {
-        previewPreviews = [preview];
-        previewObjectUrls = [preview.url];
-      }
-    }
-  }
-  else
-  {
-    const winningVariant =
-      ocrTitleBandVariants[initialOcr.titleVariantIndex] ||
-      ocrTitleBandVariants[0];
-
-    if (winningVariant)
-    {
-      const winningPreviewUrl = await canvasToObjectUrl(winningVariant.canvas, "image/png", 0.96);
-      previewPreviews = [
-        {
-          label: winningVariant.label,
-          url: winningPreviewUrl,
-        },
-      ];
-      previewObjectUrls = [winningPreviewUrl];
-    }
+        label: winningVariant.label,
+        url: winningPreviewUrl,
+      },
+    ];
+    previewObjectUrls = [winningPreviewUrl];
   }
 
   const previews: CardIdentificationPreview[] = previewPreviews;

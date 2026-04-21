@@ -10,12 +10,10 @@ import LeftSidePanel from "../components/gamepage/LeftSidePanel";
 import RightSidePanel from "../components/gamepage/RightSidePanel";
 import PlayerTile from "../components/gamepage/PlayerTile";
 import PlayerOrderShuffleOverlay from "../components/gamepage/PlayerOrderShuffleOverlay";
-import CardCropDebugModal from "../components/CardCropDebugModal";
 import { createDebugClickCrop } from "../card-id/debugClickCrop";
 import { refineCardCropOpenCv } from "../card-id/refineCardCrop";
 import { warmupOpenCvWorker } from "../card-id/opencvWorkerClient";
 import { identifyCapturedCard } from "../card-id/identifyCard";
-import type { CardIdentificationPreview } from "../card-id/identifyCard";
 import type { IdentifiedCardCandidate } from "../card-id/identifyCard";
 import type { CardIdentificationProgress } from "../card-id/identifyCard";
 
@@ -150,6 +148,29 @@ type ShuffleOverlayState =
   phase: "rolling" | "result";
   rollingLabel: string;
   finalOrder: string[];
+};
+
+type DetectedCardLogEntry =
+{
+  entryId: string;
+  candidate: IdentifiedCardCandidate;
+  titleSignal: string;
+  signalsSummary: string;
+  detectedAt: number;
+};
+
+type DetectedCardHighlight =
+{
+  points: Array<{ x: number; y: number }>;
+  detectedAt: number;
+  fadeStartedAt?: number | null;
+};
+
+type CardScanIndicator =
+{
+  seatNumber: number;
+  x: number;
+  y: number;
 };
 
 type KickPlayerResponse =
@@ -298,24 +319,21 @@ export default function GamePage()
   });
   const [timerNow, setTimerNow] = useState(() => Date.now());
 
-  const [cardCropOpen, setCardCropOpen] = useState(false);
-  const [cardFrameUrl, setCardFrameUrl] = useState<string | null>(null);
-  const [cardRoiDebugUrl, setCardRoiDebugUrl] = useState<string | null>(null);
-  const [cardCandidateUrl, setCardCandidateUrl] = useState<string | null>(null);
-  const [cardOcrPreviews, setCardOcrPreviews] = useState<CardIdentificationPreview[]>([]);
-  const [cardStatusText, setCardStatusText] = useState<string>("Click a card to capture it");
-  const [cardTitleSignal, setCardTitleSignal] = useState<string>("");
-  const [cardSignalsSummary, setCardSignalsSummary] = useState<string>("");
-  const [cardCandidates, setCardCandidates] = useState<IdentifiedCardCandidate[]>([]);
   const [cardCropBusy, setCardCropBusy] = useState(false);
-  const [cardCropLoading, setCardCropLoading] = useState(false);
-  const [cardIdentifyLoading, setCardIdentifyLoading] = useState(false);
+  const [cardLogEntries, setCardLogEntries] = useState<DetectedCardLogEntry[]>([]);
+  const [cardLogFocusKey, setCardLogFocusKey] = useState(0);
+  const [cardScanBannerPhase, setCardScanBannerPhase] = useState<"hidden" | "scanning" | "success" | "failed">("hidden");
+  const [cardScanBannerTick, setCardScanBannerTick] = useState(0);
+  const [cardScanIndicator, setCardScanIndicator] = useState<CardScanIndicator | null>(null);
+  const [cardTileHighlights, setCardTileHighlights] = useState<Record<number, DetectedCardHighlight>>({});
 
   const shuffleIntervalRef = useRef<number | null>(null);
   const shuffleTimeoutRef = useRef<number | null>(null);
   const shuffleCloseTimeoutRef = useRef<number | null>(null);
   const advancingTurnRef = useRef(false);
   const forcedExitRef = useRef(false);
+  const cardScanBannerTimeoutRef = useRef<number | null>(null);
+  const cardHighlightFadeTimeoutsRef = useRef<Record<number, number>>({});
 
   const { session, reset } = useGameSession();
   const mediaSession = useMediaSession();
@@ -338,6 +356,150 @@ export default function GamePage()
   const cardObjectUrlsRef = useRef<string[]>([]);
   const cardCropRequestIdRef = useRef(0);
 
+  const clearCardHighlightFadeTimeout = useCallback((seatNumber: number) =>
+  {
+    const timeoutId = cardHighlightFadeTimeoutsRef.current[seatNumber];
+
+    if (timeoutId == null)
+    {
+      return;
+    }
+
+    window.clearTimeout(timeoutId);
+    delete cardHighlightFadeTimeoutsRef.current[seatNumber];
+  }, []);
+
+  const clearCardTileHighlight = useCallback((seatNumber: number) =>
+  {
+    if (seatNumber <= 0)
+    {
+      return;
+    }
+
+    clearCardHighlightFadeTimeout(seatNumber);
+    setCardTileHighlights((current) =>
+    {
+      if (!(seatNumber in current))
+      {
+        return current;
+      }
+
+      const next = { ...current };
+      delete next[seatNumber];
+      return next;
+    });
+  }, [clearCardHighlightFadeTimeout]);
+
+  const fadeOutCardTileHighlight = useCallback((seatNumber: number) =>
+  {
+    if (seatNumber <= 0)
+    {
+      return;
+    }
+
+    clearCardHighlightFadeTimeout(seatNumber);
+    setCardTileHighlights((current) =>
+    {
+      const highlight = current[seatNumber];
+
+      if (!highlight)
+      {
+        return current;
+      }
+
+      return {
+        ...current,
+        [seatNumber]: {
+          ...highlight,
+          fadeStartedAt: Date.now(),
+        },
+      };
+    });
+
+    cardHighlightFadeTimeoutsRef.current[seatNumber] = window.setTimeout(() =>
+    {
+      setCardTileHighlights((current) =>
+      {
+        if (!(seatNumber in current))
+        {
+          return current;
+        }
+
+        const next = { ...current };
+        delete next[seatNumber];
+        return next;
+      });
+      delete cardHighlightFadeTimeoutsRef.current[seatNumber];
+    }, 760);
+  }, [clearCardHighlightFadeTimeout]);
+
+  const clearCardScanBannerTimeout = useCallback(() =>
+  {
+    if (cardScanBannerTimeoutRef.current != null)
+    {
+      window.clearTimeout(cardScanBannerTimeoutRef.current);
+      cardScanBannerTimeoutRef.current = null;
+    }
+  }, []);
+
+  const showCardScanBanner = useCallback((phase: "scanning" | "success" | "failed") =>
+  {
+    clearCardScanBannerTimeout();
+    setCardScanBannerTick(0);
+    setCardScanBannerPhase(phase);
+
+    if (phase !== "scanning")
+    {
+      cardScanBannerTimeoutRef.current = window.setTimeout(() =>
+      {
+        setCardScanBannerPhase("hidden");
+        cardScanBannerTimeoutRef.current = null;
+      }, 2200);
+    }
+  }, [clearCardScanBannerTimeout]);
+
+  const logDetectedCard = useCallback((
+    candidate: IdentifiedCardCandidate,
+    titleSignal: string,
+    signalsSummary: string
+  ) =>
+  {
+    const detectedAt = Date.now();
+
+    setCardLogEntries((current) =>
+      [...current,
+        {
+          entryId: `${candidate.id}-${detectedAt}`,
+          candidate,
+          titleSignal,
+          signalsSummary,
+          detectedAt,
+        }].slice(-18)
+    );
+    setCardLogFocusKey(detectedAt);
+    setRightOpen(true);
+  }, []);
+
+  const cardScanBannerText = useMemo(() =>
+  {
+    if (cardScanBannerPhase === "scanning")
+    {
+      return `Scanning${".".repeat((cardScanBannerTick % 3) + 1)}`;
+    }
+
+    if (cardScanBannerPhase === "success")
+    {
+      return "Card found";
+    }
+
+    if (cardScanBannerPhase === "failed")
+    {
+      return "Scan failed";
+    }
+
+    return "";
+  }, [cardScanBannerPhase, cardScanBannerTick]);
+
   const revokeCardObjectUrls = useCallback((urls: string[]) =>
   {
     for (const url of urls)
@@ -353,7 +515,7 @@ export default function GamePage()
     }
   }, []);
 
-  const resetCardCropState = useCallback((closeModal = true, cancelPending = true) =>
+  const resetCardCropState = useCallback((cancelPending = true) =>
   {
     if (cancelPending)
     {
@@ -362,21 +524,6 @@ export default function GamePage()
 
     revokeCardObjectUrls(cardObjectUrlsRef.current);
     cardObjectUrlsRef.current = [];
-    setCardFrameUrl(null);
-    setCardRoiDebugUrl(null);
-    setCardCandidateUrl(null);
-    setCardOcrPreviews([]);
-    setCardStatusText("Click a card to capture it");
-    setCardTitleSignal("");
-    setCardSignalsSummary("");
-    setCardCandidates([]);
-    setCardCropLoading(false);
-    setCardIdentifyLoading(false);
-
-    if (closeModal)
-    {
-      setCardCropOpen(false);
-    }
   }, [revokeCardObjectUrls]);
 
   const waitForNextFrame = () =>
@@ -387,6 +534,7 @@ export default function GamePage()
 
   const handleCardCropDebugClick = useCallback(
     async (
+      seatNumber: number,
       event: ReactMouseEvent<HTMLElement>,
       videoEl: HTMLVideoElement | null
     ) =>
@@ -396,6 +544,9 @@ export default function GamePage()
 
       const requestId = cardCropRequestIdRef.current + 1;
       cardCropRequestIdRef.current = requestId;
+      const clickBounds = event.currentTarget.getBoundingClientRect();
+      const scanIndicatorX = Math.max(0, Math.min(1, (event.clientX - clickBounds.left) / Math.max(1, clickBounds.width)));
+      const scanIndicatorY = Math.max(0, Math.min(1, (event.clientY - clickBounds.top) / Math.max(1, clickBounds.height)));
       const createdUrls: string[] = [];
       const registerUrl = (url: string | null | undefined) =>
       {
@@ -423,25 +574,24 @@ export default function GamePage()
         roiDebugUrl: string;
         candidateUrl: string;
         nameBandUrl: string;
-        statusText: string;
       }) =>
       {
         registerUrl(refined.roiDebugUrl);
         registerUrl(refined.candidateUrl);
         syncObjectUrls();
-        setCardRoiDebugUrl(refined.roiDebugUrl);
-        setCardCandidateUrl(refined.candidateUrl);
-        setCardOcrPreviews([]);
-        setCardStatusText(refined.statusText);
       };
 
       try
       {
         setCardCropBusy(true);
-        resetCardCropState(false, false);
-        setCardCropOpen(true);
-        setCardCropLoading(true);
-        setCardStatusText("Capturing local region");
+        showCardScanBanner("scanning");
+        setCardScanIndicator({
+          seatNumber,
+          x: scanIndicatorX,
+          y: scanIndicatorY,
+        });
+        clearCardTileHighlight(seatNumber);
+        resetCardCropState(false);
 
         await waitForNextFrame();
 
@@ -466,9 +616,6 @@ export default function GamePage()
         registerUrl(crop.frameUrl);
         registerUrl(crop.roiUrl);
         syncObjectUrls();
-        setCardFrameUrl(crop.frameUrl);
-        setCardRoiDebugUrl(crop.roiUrl);
-        setCardStatusText("Refining likely card candidate");
 
         await waitForNextFrame();
 
@@ -489,10 +636,26 @@ export default function GamePage()
           return;
         }
 
+        if (seatNumber > 0 && Array.isArray(refined.sourceQuad) && refined.sourceQuad.length >= 4)
+        {
+          clearCardScanBannerTimeout();
+          setCardScanBannerPhase("hidden");
+          const points = refined.sourceQuad.map((point) => ({
+            x: Math.max(0, Math.min(1, (crop.sourceX + point.x) / Math.max(1, crop.sourceWidth))),
+            y: Math.max(0, Math.min(1, (crop.sourceY + point.y) / Math.max(1, crop.sourceHeight))),
+          }));
+
+          setCardTileHighlights((current) => ({
+            ...current,
+            [seatNumber]: {
+              points,
+              detectedAt: Date.now(),
+              fadeStartedAt: null,
+            },
+          }));
+        }
+
         applyRefinedResult(refined);
-        setCardCropLoading(false);
-        setCardIdentifyLoading(true);
-        setCardStatusText(`${refined.statusText} • reading title`);
 
         await waitForNextFrame();
         await waitForNextTask();
@@ -519,16 +682,6 @@ export default function GamePage()
               {
                 syncObjectUrls();
               }
-
-              if (progress.previews)
-              {
-                setCardOcrPreviews(progress.previews);
-              }
-
-              if (progress.statusText)
-              {
-                setCardStatusText(`${refined.statusText} • ${progress.statusText.toLowerCase()}`);
-              }
             }
           );
 
@@ -543,48 +696,55 @@ export default function GamePage()
             registerUrl(url);
           }
           syncObjectUrls();
-          setCardOcrPreviews(identification.previews);
-          setCardTitleSignal(identification.title.text);
-          setCardSignalsSummary(identification.signalsSummary);
-          setCardCandidates(identification.candidates);
-          setCardStatusText(identification.signalsSummary || refined.statusText);
 
           if (identification.candidates.length > 0)
           {
-            setCardIdentifyLoading(false);
+            logDetectedCard(
+              identification.candidates[0],
+              identification.title.text,
+              identification.signalsSummary
+            );
+            setCardScanIndicator({
+              seatNumber,
+              x: scanIndicatorX,
+              y: scanIndicatorY,
+            });
+            showCardScanBanner("success");
+            fadeOutCardTileHighlight(seatNumber);
             return;
           }
         }
         catch (identificationError)
         {
           console.error("Card identification failed", identificationError);
-          const message =
-            identificationError instanceof Error && identificationError.message
-              ? identificationError.message
-              : "identification failed";
-          setCardStatusText(`${refined.statusText} • ${message}`);
         }
 
-        setCardStatusText((currentStatus) =>
-          currentStatus && currentStatus !== refined.statusText
-            ? currentStatus
-            : `${refined.statusText} • identification failed`
-        );
-        setCardIdentifyLoading(false);
+        setCardScanIndicator({
+          seatNumber,
+          x: scanIndicatorX,
+          y: scanIndicatorY,
+        });
+        showCardScanBanner("failed");
+        fadeOutCardTileHighlight(seatNumber);
       }
       catch (error)
       {
         revokeCardObjectUrls(createdUrls);
         console.error("Card crop debug failed", error);
-        setCardStatusText("Capture failed");
+        setCardScanIndicator({
+          seatNumber,
+          x: scanIndicatorX,
+          y: scanIndicatorY,
+        });
+        showCardScanBanner("failed");
+        clearCardTileHighlight(seatNumber);
       }
       finally
       {
-        setCardCropLoading(false);
         setCardCropBusy(false);
       }
     },
-    [cardCropBusy, resetCardCropState, revokeCardObjectUrls]
+    [cardCropBusy, clearCardScanBannerTimeout, clearCardTileHighlight, fadeOutCardTileHighlight, logDetectedCard, resetCardCropState, revokeCardObjectUrls, showCardScanBanner]
   );
 
   useEffect(() =>
@@ -599,11 +759,43 @@ export default function GamePage()
   {
     return () =>
     {
+      clearCardScanBannerTimeout();
+      for (const timeoutId of Object.values(cardHighlightFadeTimeoutsRef.current))
+      {
+        window.clearTimeout(timeoutId);
+      }
+      cardHighlightFadeTimeoutsRef.current = {};
       cardCropRequestIdRef.current += 1;
       revokeCardObjectUrls(cardObjectUrlsRef.current);
       cardObjectUrlsRef.current = [];
     };
-  }, [revokeCardObjectUrls]);
+  }, [clearCardScanBannerTimeout, revokeCardObjectUrls]);
+
+  useEffect(() =>
+  {
+    if (cardScanBannerPhase !== "scanning")
+    {
+      return;
+    }
+
+    const intervalId = window.setInterval(() =>
+    {
+      setCardScanBannerTick((current) => (current + 1) % 3);
+    }, 380);
+
+    return () =>
+    {
+      window.clearInterval(intervalId);
+    };
+  }, [cardScanBannerPhase]);
+
+  useEffect(() =>
+  {
+    if (cardScanBannerPhase === "hidden")
+    {
+      setCardScanIndicator(null);
+    }
+  }, [cardScanBannerPhase]);
 
   useEffect(() =>
   {
@@ -2043,7 +2235,21 @@ export default function GamePage()
                     : undefined
                 }
 
-                onCardCropDebugClick={handleCardCropDebugClick}
+                cardDetectionHighlight={cardTileHighlights[slot.seatNumber] || null}
+                cardScanIndicator={
+                  cardScanIndicator && cardScanIndicator.seatNumber === slot.seatNumber
+                    ? {
+                      x: cardScanIndicator.x,
+                      y: cardScanIndicator.y,
+                      phase: cardScanBannerPhase,
+                      text: cardScanBannerText,
+                    }
+                    : null
+                }
+                onCardCropDebugClick={(event, videoEl) =>
+                {
+                  void handleCardCropDebugClick(slot.seatNumber, event, videoEl);
+                }}
               />
             ))}
           </div>
@@ -2092,23 +2298,10 @@ export default function GamePage()
           open={rightOpen}
           onToggle={() => setRightOpen((value) => !value)}
           roomId={roomId}
+          cardLogEntries={cardLogEntries}
+          focusCardLogKey={cardLogFocusKey}
         />
       </div>
-
-        <CardCropDebugModal
-          open={cardCropOpen}
-          frameUrl={cardFrameUrl}
-          roiDebugUrl={cardRoiDebugUrl}
-          candidateUrl={cardCandidateUrl}
-          ocrPreviews={cardOcrPreviews}
-          statusText={cardStatusText}
-          titleSignal={cardTitleSignal}
-          signalsSummary={cardSignalsSummary}
-          candidates={cardCandidates}
-          loading={cardCropLoading}
-          identifying={cardIdentifyLoading}
-          onClose={() => resetCardCropState()}
-        />
     </div>
   );
 }

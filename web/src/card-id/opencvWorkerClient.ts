@@ -31,6 +31,7 @@ type DetectSuccess = {
   cropBlob: Blob;
   debugBlob: Blob;
   nameBandBlob?: Blob;
+  sourceQuad?: Array<{ x: number; y: number }>;
 };
 
 type DetectFailure = {

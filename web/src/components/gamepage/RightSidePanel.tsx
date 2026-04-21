@@ -1,20 +1,31 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   BookOpen,
   MessageSquare,
   Search,
 } from "lucide-react";
+import type { IdentifiedCardCandidate } from "../../card-id/identifyCard";
 import SidePanel from "./SidePanel";
 import RoomChatWidget from "./RoomChatWidget";
 import ScryfallSearchPanel from "./ScryfallSearchPanel";
 
 type PanelTab = "card-log" | "chat" | "search";
 
+type CardLogEntry = {
+  entryId: string;
+  candidate: IdentifiedCardCandidate;
+  titleSignal: string;
+  signalsSummary: string;
+  detectedAt: number;
+};
+
 type RightSidePanelProps =
 {
   open: boolean;
   onToggle: () => void;
   roomId: string;
+  cardLogEntries?: CardLogEntry[];
+  focusCardLogKey?: number;
   width?: string;
 };
 
@@ -22,10 +33,20 @@ export default function RightSidePanel({
   open,
   onToggle,
   roomId,
+  cardLogEntries = [],
+  focusCardLogKey = 0,
   width = "clamp(280px, 22.7vw, 413px)",
 }: RightSidePanelProps)
 {
   const [activeTab, setActiveTab] = useState<PanelTab>("chat");
+
+  useEffect(() =>
+  {
+    if (focusCardLogKey > 0)
+    {
+      setActiveTab("card-log");
+    }
+  }, [focusCardLogKey]);
 
   return (
     <SidePanel
@@ -59,7 +80,7 @@ export default function RightSidePanel({
         </div>
 
         <div className="min-h-0 overflow-hidden rounded-3xl border border-teal-400/15 bg-gradient-to-b from-teal-400/[0.06] to-slate-950/72 shadow-[0_12px_32px_rgba(0,0,0,0.28)]">
-          {activeTab === "card-log" && <CardLogPlaceholder />}
+          {activeTab === "card-log" && <CardLogPanel entries={cardLogEntries} />}
           {activeTab === "chat" && <RoomChatWidget roomId={roomId} />}
           {activeTab === "search" && <ScryfallSearchPanel />}
         </div>
@@ -105,14 +126,72 @@ function WidgetTile({
   );
 }
 
-function CardLogPlaceholder()
+function CardLogPanel({ entries }: { entries: CardLogEntry[] })
 {
+  const [hoveredEntryId, setHoveredEntryId] = useState<string | null>(null);
+  const stackedEntries = [...entries];
+
+  if (entries.length === 0)
+  {
+    return (
+      <div className="p-5">
+        <div className="rounded-3xl border border-dashed border-teal-400/16 bg-black/20 p-6">
+          <div className="text-sm font-semibold text-slate-100">Card Log</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="p-5">
-      <div className="rounded-3xl border border-dashed border-teal-400/16 bg-black/20 p-6">
-        <div className="text-sm font-semibold text-slate-100">Card Log</div>
-        <div className="mt-2 text-sm leading-6 text-slate-400">
-          Coming soon . . .
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="border-b border-white/8 px-5 py-4">
+        <div className="flex items-center justify-center">
+          <div className="text-center text-sm font-semibold text-slate-100">Card Log</div>
+        </div>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+        <div className="relative mx-auto flex w-full max-w-[218px] flex-col items-center pb-8 pt-2">
+          {stackedEntries.map((entry, index) =>
+          {
+            const hovered = hoveredEntryId === entry.entryId;
+
+            return (
+              <a
+                key={entry.entryId}
+                href={entry.candidate.scryfallUri || undefined}
+                target="_blank"
+                rel="noreferrer"
+                onMouseEnter={() => setHoveredEntryId(entry.entryId)}
+                onMouseLeave={() => setHoveredEntryId((current) => current === entry.entryId ? null : current)}
+                onFocus={() => setHoveredEntryId(entry.entryId)}
+                onBlur={() => setHoveredEntryId((current) => current === entry.entryId ? null : current)}
+                className="relative block w-full overflow-hidden rounded-[1.55rem] border border-white/10 bg-slate-950/92 shadow-[0_18px_40px_rgba(0,0,0,0.38)] transition-all duration-200"
+                style={{
+                  marginTop: index === 0 ? 0 : -236,
+                  transform: hovered
+                    ? "translate3d(0, -10px, 0) scale(1.04)"
+                    : "translate3d(0, 0, 0) scale(1)",
+                  zIndex: hovered ? 200 : index + 1,
+                }}
+              >
+                {entry.candidate.imageUrl ? (
+                  <img
+                    src={entry.candidate.imageUrl}
+                    alt={entry.candidate.name}
+                    className="block aspect-[5/7] w-full object-cover"
+                  />
+                ) : (
+                  <div className="flex aspect-[5/7] w-full items-center justify-center bg-black/30 text-sm text-slate-500">
+                    No image
+                  </div>
+                )}
+                <div className="border-t border-white/8 bg-slate-950/94 px-3 py-1.5 text-center text-[11px] font-semibold text-slate-200">
+                  {Math.round(entry.candidate.score * 100)}% match
+                </div>
+              </a>
+            );
+          })}
         </div>
       </div>
     </div>

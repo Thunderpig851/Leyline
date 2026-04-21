@@ -34,11 +34,9 @@ export default function CardCropDebugModal({
 
   return (
     <div
-      onClick={onClose}
       className="fixed inset-0 z-[9999] bg-slate-950/72 p-1 md:p-1.5"
     >
       <div
-        onClick={(e) => e.stopPropagation()}
         className="mx-auto flex max-h-[calc(100vh-0.25rem)] w-full max-w-[980px] flex-col overflow-hidden rounded-xl border border-white/10 bg-slate-950/95 shadow-2xl backdrop-blur-xl"
       >
         <div className="flex items-start justify-between gap-2 border-b border-white/10 px-2 py-1.5">
@@ -73,9 +71,10 @@ export default function CardCropDebugModal({
             />
 
             <PreviewPane
-              title="ROI refinement"
+              title={candidateUrl ? "ROI refinement (OpenCV hit)" : "ROI refinement"}
               src={roiDebugUrl}
               alt="ROI refinement"
+              accent={candidateUrl ? "emerald" : "default"}
             />
 
             <PreviewPane
@@ -154,11 +153,13 @@ function PreviewPane({
   src,
   alt,
   emphasized = false,
+  accent = "default",
 }: {
   title: string;
   src: string | null;
   alt: string;
   emphasized?: boolean;
+  accent?: "default" | "emerald";
 })
 {
   return (
@@ -167,7 +168,13 @@ function PreviewPane({
         {title}
       </div>
 
-      <div className={`flex ${emphasized ? "min-h-[136px]" : "min-h-[92px]"} items-center justify-center overflow-hidden rounded-lg border border-white/10 bg-black/20`}>
+      <div
+        className={`flex ${emphasized ? "min-h-[136px]" : "min-h-[92px]"} items-center justify-center overflow-hidden rounded-lg border bg-black/20 ${
+          accent === "emerald"
+            ? "border-emerald-400/45 shadow-[0_0_0_1px_rgba(16,185,129,0.25),0_0_18px_rgba(16,185,129,0.18)]"
+            : "border-white/10"
+        }`}
+      >
         {src ? (
           <img
             src={src}

@@ -426,6 +426,7 @@ async function recognizeTitleBandVariant(dataUrl, variantIndex)
     const ocr = await getOcr();
     const result = await ocr.detect(filepath);
     const lines = extractRecognizedLines(result);
+    const variantOrderBonus = Math.max(0, 0.08 - variantIndex * 0.012);
     const candidates = lines
       .map((line) =>
       {
@@ -437,7 +438,7 @@ async function recognizeTitleBandVariant(dataUrl, variantIndex)
           confidence,
           variantIndex,
           sourceKind: "band",
-          rank: recognitionRank(text, confidence),
+          rank: recognitionRank(text, confidence) + variantOrderBonus,
         };
       })
       .filter((line) => line.text);
@@ -517,18 +518,18 @@ async function identifyPayload(payload)
     typeBandDataUrls.length
   );
 
-  if (titleBandDataUrls.length === 0 && cardDataUrls.length === 0)
+  if (titleBandDataUrls.length === 0)
   {
     return {
       status: 400,
       body: {
         ok: false,
-        error: "Missing OCR image payload",
+        error: "Missing title band payload",
       },
     };
   }
 
-  if ([...titleBandDataUrls, ...cardDataUrls, ...typeBandDataUrls].some((dataUrl) => !dataUrl.includes(",")))
+  if ([...titleBandDataUrls, ...typeBandDataUrls].some((dataUrl) => !dataUrl.includes(",")))
   {
     return {
       status: 400,
@@ -542,12 +543,8 @@ async function identifyPayload(payload)
   const titleCandidates = await Promise.all(
     titleBandDataUrls.map((dataUrl, variantIndex) => recognizeTitleBandVariant(dataUrl, variantIndex))
   );
-  const wholeCardCandidates = await Promise.all(
-    cardDataUrls.map((dataUrl, variantIndex) => recognizeWholeCardVariant(dataUrl, variantIndex))
-  );
-
-  const rankedCandidates = [...titleCandidates, ...wholeCardCandidates].sort((left, right) => right.rank - left.rank);
-  const bestTitle = rankedCandidates[0] || {
+  const rankedTitleCandidates = [...titleCandidates].sort((left, right) => right.rank - left.rank);
+  const bestTitle = rankedTitleCandidates[0] || {
     text: "",
     confidence: 0,
     variantIndex: 0,

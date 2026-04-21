@@ -81,6 +81,10 @@ function distance(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
+function clampValue(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
 function polygonCenter(points) {
   const total = points.reduce(
     (acc, point) => ({ x: acc.x + point.x, y: acc.y + point.y }),
@@ -172,6 +176,15 @@ function getQuadMetrics(points) {
   const ratio = Math.max(width, height) / Math.max(1, Math.min(width, height));
 
   return { top, right, bottom, left, width, height, ratio, area: width * height };
+}
+
+function expandQuadAroundCenter(points, boundsWidth, boundsHeight, scaleX = 1.05, scaleY = 1.06) {
+  const center = polygonCenter(points);
+
+  return orderQuadPoints(points.map((point) => ({
+    x: clampValue(center.x + (point.x - center.x) * scaleX, 0, boundsWidth - 1),
+    y: clampValue(center.y + (point.y - center.y) * scaleY, 0, boundsHeight - 1),
+  })));
 }
 
 function polygonArea(points) {
@@ -891,8 +904,8 @@ function scoreTitleBandRegion(source, region) {
     (Math.abs(metrics.mean - aboveMetrics.mean) + Math.abs(metrics.mean - belowMetrics.mean)) / 92
   );
   const center = region.top + region.height * 0.5;
-  const centerBias = 1 - Math.min(1, Math.abs(center - 0.068) / 0.08);
-  const heightBias = 1 - Math.min(1, Math.abs(region.height - 0.066) / 0.045);
+  const centerBias = 1 - Math.min(1, Math.abs(center - 0.074) / 0.082);
+  const heightBias = 1 - Math.min(1, Math.abs(region.height - 0.072) / 0.048);
   const darkPenalty = Math.max(0, metrics.darkRatio - 0.2) * 2.3;
   const flatPenalty = Math.max(0, 0.12 - metrics.midToneRatio) * 2.1;
   const textClusterScore = Math.max(0, 1 - Math.abs(metrics.activeClusters - 1) * 0.55);
@@ -900,6 +913,14 @@ function scoreTitleBandRegion(source, region) {
   const textCenterScore = 1 - Math.min(1, Math.abs(metrics.activeRowCenter - 0.5) / 0.24);
   const edgeCleanScore = 1 - Math.min(1, metrics.edgeActivity / 0.18);
   const rowPeakScore = Math.min(1, metrics.maxRowActivity / 0.42);
+  const belowTextPenalty =
+    Math.max(0, belowMetrics.activeRowRatio - 0.12) * 1.65 +
+    Math.max(0, belowMetrics.activeClusters - 1) * 0.18 +
+    Math.max(0, belowMetrics.maxRowActivity - 0.24) * 0.5;
+  const aboveTextPenalty =
+    Math.max(0, aboveMetrics.activeRowRatio - 0.08) * 0.85;
+  const belowCleanScore =
+    1 - Math.min(1, belowMetrics.activeRowRatio / 0.3);
 
   return (
     brightnessScore * 0.1 +
@@ -913,17 +934,20 @@ function scoreTitleBandRegion(source, region) {
     textRowRatioScore * 0.12 +
     textCenterScore * 0.1 +
     edgeCleanScore * 0.08 +
-    rowPeakScore * 0.06 -
+    rowPeakScore * 0.06 +
+    belowCleanScore * 0.12 -
+    belowTextPenalty -
+    aboveTextPenalty -
     darkPenalty -
     flatPenalty
   );
 }
 
 function expandTitleBandRegion(region) {
-  const padLeft = Math.max(0.012, region.width * 0.025);
-  const padRight = Math.max(0.018, region.width * 0.04);
-  const padTop = Math.max(0.008, region.height * 0.22);
-  const padBottom = Math.max(0.02, region.height * 0.65);
+  const padLeft = Math.max(0.036, region.width * 0.075);
+  const padRight = Math.max(0.026, region.width * 0.05);
+  const padTop = Math.max(0.012, region.height * 0.24);
+  const padBottom = Math.max(0.014, region.height * 0.28);
   const left = Math.max(0, region.left - padLeft);
   const top = Math.max(0, region.top - padTop);
   const right = Math.min(1, region.left + region.width + padRight);
@@ -938,18 +962,18 @@ function expandTitleBandRegion(region) {
 }
 
 function detectTitleBandRegion(source) {
-  const left = 0.038;
-  const width = 0.89;
+  const left = 0.016;
+  const width = 0.93;
   let bestRegion = {
     left,
-    top: 0.022,
+    top: 0.016,
     width,
-    height: 0.062,
+    height: 0.072,
   };
   let bestScore = -Infinity;
 
-  for (const height of [0.042, 0.05, 0.06, 0.072, 0.084, 0.096]) {
-    for (let top = 0.006; top <= 0.132; top += 0.006) {
+  for (const height of [0.052, 0.06, 0.072, 0.084, 0.096, 0.11]) {
+    for (let top = 0; top <= 0.138; top += 0.006) {
       const region = {
         left,
         top,
@@ -1021,17 +1045,16 @@ function chooseOrientedCardAndTitleBand(source) {
       oriented.height * region.height
     );
     const orientationScore = scoreCardBodyOrientation(oriented);
-    const quarterTurnPenalty = quarterTurns % 2 === 1 ? 0.26 : 0;
     const score =
-      detection.score +
-      orientationScore * 0.28 -
-      (quarterTurns === 2 ? 0.18 : 0) -
-      quarterTurnPenalty;
+      detection.score * 1.02 +
+      orientationScore * 0.94;
 
     candidates.push({
       quarterTurns,
       canvas: oriented,
       bandCanvas,
+      detectionScore: detection.score,
+      orientationScore,
       score,
     });
 
@@ -1040,34 +1063,6 @@ function chooseOrientedCardAndTitleBand(source) {
       bestCanvas = oriented;
       bestBandCanvas = bandCanvas;
     }
-  }
-
-  const uprightCandidate = candidates.find((candidate) => candidate.quarterTurns === 0);
-  const clockwiseCandidate = candidates.find((candidate) => candidate.quarterTurns === 1);
-  const flippedCandidate = candidates.find((candidate) => candidate.quarterTurns === 2);
-  const counterClockwiseCandidate = candidates.find((candidate) => candidate.quarterTurns === 3);
-  const bestQuarterTurnCandidate = [clockwiseCandidate, counterClockwiseCandidate]
-    .filter(Boolean)
-    .sort((a, b) => b.score - a.score)[0];
-
-  if (
-    bestQuarterTurnCandidate &&
-    uprightCandidate &&
-    bestCanvas === bestQuarterTurnCandidate.canvas &&
-    bestQuarterTurnCandidate.score < uprightCandidate.score + 0.52
-  ) {
-    bestCanvas = uprightCandidate.canvas;
-    bestBandCanvas = uprightCandidate.bandCanvas;
-  }
-
-  if (
-    flippedCandidate &&
-    uprightCandidate &&
-    bestCanvas === flippedCandidate.canvas &&
-    flippedCandidate.score < uprightCandidate.score + 0.4
-  ) {
-    bestCanvas = uprightCandidate.canvas;
-    bestBandCanvas = uprightCandidate.bandCanvas;
   }
 
   return {
@@ -1343,10 +1338,17 @@ async function detectAndRectifyCardInWorker(cv, frame, options) {
     const detectedQuad = bestQuad;
     const refinedQuad = refineQuadCornersSubPix(cv, gray, detectedQuad);
     const scaleBack = 1 / analysisScale;
-    const sourceQuad = refinedQuad.map((point) => ({
+    const refinedSourceQuad = refinedQuad.map((point) => ({
       x: point.x * scaleBack,
       y: point.y * scaleBack,
     }));
+    const sourceQuad = expandQuadAroundCenter(
+      refinedSourceQuad,
+      frame.width,
+      frame.height,
+      1.05,
+      1.06
+    );
 
     const [topLeft, topRight, bottomRight, bottomLeft] = sourceQuad;
     const topWidth = distance(topLeft, topRight);
@@ -1420,14 +1422,21 @@ async function detectAndRectifyCardInWorker(cv, frame, options) {
       debugCtx.arc(frame.clickX, frame.clickY, Math.max(4, Math.round(frame.width / 90)), 0, Math.PI * 2);
       debugCtx.fill();
 
-      const [cropBlob, debugBlob] = await Promise.all([
-        canvasToBlob(rawCropCanvas),
+      const oriented = chooseOrientedCardAndTitleBand(rawCropCanvas);
+      const finalCropCanvas = oriented?.canvas || rawCropCanvas;
+      const finalNameBandCanvas = oriented?.bandCanvas || null;
+
+      const [cropBlob, debugBlob, nameBandBlob] = await Promise.all([
+        canvasToBlob(finalCropCanvas),
         canvasToBlob(debugCanvas),
+        finalNameBandCanvas ? canvasToBlob(finalNameBandCanvas) : Promise.resolve(undefined),
       ]);
 
       return {
         cropBlob,
         debugBlob,
+        nameBandBlob,
+        sourceQuad,
       };
     } finally {
       srcMat.delete();
@@ -1501,6 +1510,7 @@ self.onmessage = async (event) => {
         cropBlob: result.cropBlob,
         nameBandBlob: result.nameBandBlob,
         debugBlob: result.debugBlob,
+        sourceQuad: result.sourceQuad,
       });
   } catch (error) {
     self.postMessage({

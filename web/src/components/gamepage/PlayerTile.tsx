@@ -55,6 +55,17 @@ type PlayerTileProps =
   onKickPlayer?: () => void;
   onToggleFlip?: () => void;
   onToggleExpand?: () => void;
+  cardDetectionHighlight?: {
+    points: Array<{ x: number; y: number }>;
+    detectedAt: number;
+    fadeStartedAt?: number | null;
+  } | null;
+  cardScanIndicator?: {
+    x: number;
+    y: number;
+    phase: "hidden" | "scanning" | "success" | "failed";
+    text: string;
+  } | null;
 
   onCardCropDebugClick?: (
     event: ReactMouseEvent<HTMLElement>,
@@ -237,6 +248,26 @@ function buildCommanderTextStyle(colors: string[]): CSSProperties
   };
 }
 
+function mapNormalizedPointToCoverFrame(
+  point: { x: number; y: number },
+  sourceWidth: number,
+  sourceHeight: number,
+  frameWidth: number,
+  frameHeight: number
+)
+{
+  const scale = Math.max(frameWidth / Math.max(1, sourceWidth), frameHeight / Math.max(1, sourceHeight));
+  const renderedWidth = sourceWidth * scale;
+  const renderedHeight = sourceHeight * scale;
+  const offsetX = (frameWidth - renderedWidth) / 2;
+  const offsetY = (frameHeight - renderedHeight) / 2;
+
+  return {
+    x: offsetX + point.x * renderedWidth,
+    y: offsetY + point.y * renderedHeight,
+  };
+}
+
 export default function PlayerTile({
   seatNumber = 0,
   mode = "commander",
@@ -276,6 +307,8 @@ export default function PlayerTile({
   onKickPlayer,
   onToggleFlip,
   onToggleExpand,
+  cardDetectionHighlight = null,
+  cardScanIndicator = null,
 
   onCardCropDebugClick
 }: PlayerTileProps)
@@ -524,6 +557,38 @@ export default function PlayerTile({
     return buildCommanderTextStyle(combinedColors);
   }, [commanders, commanderVisualMap]);
 
+  const highlightFrameWidth = videoRef.current?.clientWidth || tileSectionRef.current?.clientWidth || 0;
+  const highlightFrameHeight = videoRef.current?.clientHeight || tileSectionRef.current?.clientHeight || 0;
+  const sourceVideoWidth = videoRef.current?.videoWidth || 0;
+  const sourceVideoHeight = videoRef.current?.videoHeight || 0;
+  const cardHighlightPolygon =
+    cardDetectionHighlight &&
+    cardDetectionHighlight.points.length >= 4 &&
+    highlightFrameWidth > 0 &&
+    highlightFrameHeight > 0 &&
+    sourceVideoWidth > 0 &&
+    sourceVideoHeight > 0
+      ? cardDetectionHighlight.points.map((point) =>
+        {
+          const mapped = mapNormalizedPointToCoverFrame(
+            point,
+            sourceVideoWidth,
+            sourceVideoHeight,
+            highlightFrameWidth,
+            highlightFrameHeight
+          );
+          return `${mapped.x},${mapped.y}`;
+        }).join(" ")
+      : null;
+  const cardHighlightOpacity = cardDetectionHighlight?.fadeStartedAt ? 0 : 1;
+  const cardScanIndicatorStyle =
+    cardScanIndicator && cardScanIndicator.phase !== "hidden"
+      ? {
+        left: `${cardScanIndicator.x * 100}%`,
+        top: `${cardScanIndicator.y * 100}%`,
+      }
+      : null;
+
   function updateCommanderDamage(userId: string, amount: number)
   {
     if (!onCommanderDamageChange) return;
@@ -635,6 +700,47 @@ export default function PlayerTile({
           )}
 
           <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/25 to-transparent" />
+
+          {cardHighlightPolygon ? (
+            <svg
+              className={`pointer-events-none absolute inset-0 z-[2] ${isFlipped ? "rotate-180" : ""}`}
+              viewBox={`0 0 ${Math.max(1, highlightFrameWidth)} ${Math.max(1, highlightFrameHeight)}`}
+              preserveAspectRatio="none"
+              style={{
+                opacity: cardHighlightOpacity,
+                transition: "opacity 620ms ease-out",
+              }}
+            >
+              <polygon
+                points={cardHighlightPolygon}
+                fill="none"
+                stroke="rgba(52,211,153,0.98)"
+                strokeWidth={Math.max(2, highlightFrameWidth / 190)}
+                strokeLinejoin="round"
+                className="drop-shadow-[0_0_10px_rgba(16,185,129,0.45)]"
+              />
+            </svg>
+          ) : null}
+
+          {cardScanIndicator && cardScanIndicator.phase !== "hidden" && cardScanIndicatorStyle ? (
+            <div
+              aria-live="polite"
+              className="pointer-events-none absolute z-[3] -translate-x-1/2 -translate-y-1/2"
+              style={cardScanIndicatorStyle}
+            >
+              <div
+                className={`rounded-full border px-3 py-1 text-[11px] font-semibold shadow-lg backdrop-blur-sm ${
+                  cardScanIndicator.phase === "scanning"
+                    ? "border-emerald-300/40 bg-slate-950/82 text-emerald-100"
+                    : cardScanIndicator.phase === "success"
+                      ? "border-cyan-300/40 bg-slate-950/84 text-cyan-100"
+                      : "border-rose-300/40 bg-slate-950/84 text-rose-100"
+                }`}
+              >
+                {cardScanIndicator.text}
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
 

@@ -28,15 +28,164 @@ function normalizeWhitespace(text)
   return String(text || "").replace(/\s+/g, " ").trim();
 }
 
+function stripTrailingTitleNoise(text)
+{
+  const normalized = normalizeWhitespace(text);
+  if (!/[A-Za-z]{4,}/.test(normalized))
+  {
+    return normalized;
+  }
+
+  const stripped = normalized.replace(/\s+\d{1,3}\s*$/, "").trim();
+  return stripped.length >= 4 ? stripped : normalized;
+}
+
 function normalizeNameText(text)
 {
-  return normalizeWhitespace(
+  return stripTrailingTitleNoise(normalizeWhitespace(
     String(text || "")
       .replace(/[|]/g, "I")
       .replace(/[“”]/g, "\"")
       .replace(/[‘\\’`]/g, "'")
       .replace(/[^A-Za-z0-9 ',:/\-]/g, " ")
-  );
+  ));
+}
+
+const GENERIC_TYPE_TOKENS = new Set([
+  "advisor",
+  "angel",
+  "archer",
+  "artifact",
+  "assassin",
+  "aura",
+  "barbarian",
+  "basic",
+  "battle",
+  "bear",
+  "beast",
+  "berserker",
+  "bird",
+  "cat",
+  "citizen",
+  "cleric",
+  "construct",
+  "creature",
+  "demon",
+  "devil",
+  "dinosaur",
+  "dog",
+  "dragon",
+  "druid",
+  "dwarf",
+  "elf",
+  "elemental",
+  "enchantment",
+  "equipment",
+  "faerie",
+  "frog",
+  "giant",
+  "goblin",
+  "human",
+  "illusion",
+  "instant",
+  "knight",
+  "land",
+  "legendary",
+  "merfolk",
+  "monk",
+  "ogre",
+  "pirate",
+  "planeswalker",
+  "rat",
+  "rebel",
+  "rogue",
+  "samurai",
+  "saproling",
+  "scout",
+  "shaman",
+  "skeleton",
+  "soldier",
+  "spirit",
+  "sorcery",
+  "thopter",
+  "treefolk",
+  "vampire",
+  "warlock",
+  "warrior",
+  "wizard",
+  "wolf",
+  "zombie",
+]);
+
+function normalizedWordList(text)
+{
+  return normalizeNameText(text)
+    .toLowerCase()
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 2);
+}
+
+function genericTypeTokenHits(text)
+{
+  return normalizedWordList(text).filter((token) => GENERIC_TYPE_TOKENS.has(token)).length;
+}
+
+function looksLikeTypeLineText(text)
+{
+  const normalized = normalizeNameText(text);
+  if (!normalized)
+  {
+    return false;
+  }
+
+  if (/\s[-—]\s/.test(String(text || "")))
+  {
+    return true;
+  }
+
+  const tokens = normalizedWordList(normalized);
+  if (tokens.length < 2)
+  {
+    return false;
+  }
+
+  const typeHits = genericTypeTokenHits(normalized);
+  return typeHits === tokens.length || typeHits >= Math.max(2, Math.ceil(tokens.length * 0.67));
+}
+
+function candidateLooksLikeGenericTypeName(card)
+{
+  const nameTokens = normalizedWordList(card?.name || "");
+  if (nameTokens.length < 2)
+  {
+    return false;
+  }
+
+  if (!nameTokens.every((token) => GENERIC_TYPE_TOKENS.has(token)))
+  {
+    return false;
+  }
+
+  const typeTokens = wordSet(card?.type_line || "");
+  const mirroredTokenCount = nameTokens.filter((token) => typeTokens.has(token)).length;
+
+  return mirroredTokenCount === nameTokens.length;
+}
+
+function isAcceptableCandidateCard(card)
+{
+  if (!card?.id || !card?.name)
+  {
+    return false;
+  }
+
+  if (candidateLooksLikeGenericTypeName(card))
+  {
+    return false;
+  }
+
+  return true;
 }
 
 async function fetchWithTimeout(url, init, timeoutMs)
@@ -385,13 +534,13 @@ async function buildCandidates(titleText)
   const normalizedTitle = normalizeNameText(titleText);
   const queries = buildTitleQueries(normalizedTitle);
 
-  if (queries.length === 0)
+  if (queries.length === 0 || looksLikeTypeLineText(normalizedTitle))
   {
     return [];
   }
 
   const directFuzzyCard = await fetchNamedFuzzy(normalizedTitle);
-  if (directFuzzyCard?.id && directFuzzyCard?.name)
+  if (isAcceptableCandidateCard(directFuzzyCard))
   {
     const directCandidate = mapCardToCandidate(normalizedTitle, directFuzzyCard);
     if (directCandidate.score >= 0.72 || directCandidate.titleSimilarity >= 0.82)
@@ -431,7 +580,7 @@ async function buildCandidates(titleText)
 
   for (const card of [directFuzzyCard, ...exactCards, ...fuzzyCards])
   {
-    if (!card?.id || !card.name)
+    if (!isAcceptableCandidateCard(card))
     {
       continue;
     }
