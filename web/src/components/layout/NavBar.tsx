@@ -120,6 +120,15 @@ export default function NavBar()
                       Social
                     </Link>
 
+                    <Link
+                      to="/legal"
+                      role="menuitem"
+                      onClick={() => setOpenMenu(false)}
+                      className="block px-4 py-2 text-sm text-slate-200 hover:bg-white/5"
+                    >
+                      Legal
+                    </Link>
+
                     <div className="my-2 h-px bg-white/10" />
 
                     <Link to="/login">

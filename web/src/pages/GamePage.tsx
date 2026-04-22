@@ -40,6 +40,7 @@ type GameSeat =
   username: string;
   connectionStatus: "connected" | "reconnecting" | "away";
   awaySinceAt?: string | null;
+  isAway?: boolean;
   isReady?: boolean;
   commanders?: CommanderCard[] | null;
   commander?: CommanderCard | null;
@@ -297,8 +298,8 @@ function formatTurnDuration(totalSeconds: number)
 
 export default function GamePage()
 {
-  const [leftOpen, setLeftOpen] = useState(false);
-  const [rightOpen, setRightOpen] = useState(false);
+  const [leftOpen, setLeftOpen] = useState(true);
+  const [rightOpen, setRightOpen] = useState(true);
   const [game, setGame] = useState<ActiveGame | null>(null);
   const [gameId, setGameId] = useState("");
   const [currentHostUserId, setCurrentHostUserId] = useState("");
@@ -322,6 +323,7 @@ export default function GamePage()
   const [timerNow, setTimerNow] = useState(() => Date.now());
   const [focusedSeatNumber, setFocusedSeatNumber] = useState<number | null>(null);
   const [flippedSeatNumbers, setFlippedSeatNumbers] = useState<number[]>([]);
+  const [manualSeatAwayState, setManualSeatAwayState] = useState<Record<number, boolean>>({});
 
   const [cardCropBusy, setCardCropBusy] = useState(false);
   const [cardLogEntries, setCardLogEntries] = useState<DetectedCardLogEntry[]>([]);
@@ -1469,6 +1471,9 @@ export default function GamePage()
     const userId = getStoredUserId();
     return game?.seats?.find((seat) => seat.userId === userId) ?? null;
   }, [game]);
+  const selfSeatIsAway = selfSeat
+    ? (manualSeatAwayState[selfSeat.seatNumber] ?? Boolean(selfSeat.isAway))
+    : false;
 
   async function handleToggleReady()
   {
@@ -1479,7 +1484,14 @@ export default function GamePage()
   async function handleToggleAway()
   {
     if (!selfSeat) return;
-    await updateSeatState(selfSeat.seatNumber, { isAway: !Boolean(selfSeat.awaySinceAt) });
+    const nextAway = !(manualSeatAwayState[selfSeat.seatNumber] ?? Boolean(selfSeat.isAway));
+
+    setManualSeatAwayState((current) => ({
+      ...current,
+      [selfSeat.seatNumber]: nextAway,
+    }));
+
+    await updateSeatState(selfSeat.seatNumber, { isAway: nextAway });
   }
 
   function handleToggleFlipSeat(seatNumber: number)
@@ -1945,7 +1957,7 @@ export default function GamePage()
         stream: isSelf ? mediaSession.localStream : remote?.stream ?? null,
         isSelf,
         status: seat.connectionStatus,
-        isAway: Boolean(seat.awaySinceAt),
+        isAway: manualSeatAwayState[seatNumber] ?? Boolean(seat.isAway),
         isReady: Boolean(seat.isReady),
         life: seat.stats?.life ?? defaultLife,
         poison: seat.stats?.poison ?? 0,
@@ -1960,7 +1972,7 @@ export default function GamePage()
         isSaving: savingSeatNumbers.includes(seatNumber),
       };
     });
-  }, [game, mediaSession.localStream, mediaSession.remoteMedia, savingSeatNumbers]);
+  }, [game, manualSeatAwayState, mediaSession.localStream, mediaSession.remoteMedia, savingSeatNumbers]);
 
   const displaySeatSlots = useMemo(() =>
   {
@@ -2101,11 +2113,11 @@ export default function GamePage()
   }
 
   return (
-    <div className="h-[100dvh] w-screen overflow-hidden bg-slate-950 text-slate-100">
-      <header className="sticky top-0 z-40 border-b border-white/10 bg-slate-950/78 backdrop-blur-xl">
+    <div className="flex h-[100dvh] w-screen flex-col overflow-hidden bg-slate-950 text-slate-100">
+      <header className="sticky top-0 z-40 shrink-0 border-b border-white/10 bg-slate-950/78 backdrop-blur-xl">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(45,212,191,0.10),transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0))]" />
 
-        <div className="relative flex w-full items-center justify-between gap-4 px-5 py-2.5">
+        <div className="relative flex w-full items-center justify-between gap-4 px-4 py-2">
           <div className="min-w-0 flex flex-1 items-center gap-3">
             <h1 className="truncate text-lg font-semibold tracking-tight text-white drop-shadow-[0_1px_10px_rgba(255,255,255,0.08)] sm:text-xl">
               {roomTitle}
@@ -2118,9 +2130,9 @@ export default function GamePage()
             ) : null}
 
             {game?.gameStartedAt ? (
-              <div className="inline-flex shrink-0 items-center gap-2 rounded-full border border-cyan-300/30 bg-cyan-400/10 px-3 py-1 text-xs font-semibold text-cyan-100 shadow-lg">
+              <div className="inline-flex shrink-0 items-center gap-2 rounded-full border border-cyan-300/30 bg-cyan-400/10 px-3 py-0.5 text-xs font-semibold text-cyan-100 shadow-lg">
                 <span className="hidden sm:inline text-cyan-50/90">
-                  Game
+                  Game Clock:
                 </span>
                 <span className="font-mono tracking-wide">
                   {formatTurnDuration(gameElapsedSeconds)}
@@ -2132,7 +2144,7 @@ export default function GamePage()
           {game?.dayNightState || activeTurnSeat ? (
             <div className="pointer-events-none absolute left-1/2 top-1/2 flex max-w-[calc(100vw-18rem)] -translate-x-1/2 -translate-y-1/2 items-center gap-2">
               {activeTurnSeat ? (
-                <div className="inline-flex min-w-0 items-center gap-2 rounded-full border border-emerald-300/35 bg-emerald-400/12 px-3 py-1.5 text-xs font-semibold text-emerald-100 shadow-lg">
+                <div className="inline-flex min-w-0 items-center gap-2 rounded-full border border-emerald-300/35 bg-emerald-400/12 px-3 py-1 text-xs font-semibold text-emerald-100 shadow-lg">
                   <span className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-300 shadow-[0_0_18px_rgba(52,211,153,0.75)]" />
                   <span className="max-w-[8rem] truncate sm:max-w-[12rem]">
                     {activeTurnSeat.title}
@@ -2145,7 +2157,7 @@ export default function GamePage()
 
               {game?.dayNightState ? (
                 <div
-                  className={`inline-flex shrink-0 items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold shadow-lg ${
+                  className={`inline-flex shrink-0 items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold shadow-lg ${
                     game.dayNightState === "day"
                       ? "border-amber-300/35 bg-amber-400/12 text-amber-100"
                       : "border-indigo-300/35 bg-indigo-400/12 text-indigo-100"
@@ -2178,7 +2190,7 @@ export default function GamePage()
               type="button"
               onClick={() => { void handleLeaveGame(); }}
               disabled={leaving}
-              className="inline-flex shrink-0 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:border-red-400/40 hover:bg-red-500/12 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex shrink-0 rounded-xl border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-slate-300 transition hover:border-red-400/40 hover:bg-red-500/12 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {leaving ? "Leaving..." : "Leave Game "}
             </button>
@@ -2186,15 +2198,15 @@ export default function GamePage()
         </div>
       </header>
 
-      <div className="relative h-[calc(100dvh-74px)] w-full overflow-hidden">
-        <main className="h-full w-full px-4 py-3">
+      <div className="relative min-h-0 flex-1 w-full overflow-hidden">
+        <main className="h-full w-full px-1.5 py-1.5 sm:px-2 sm:py-2">
           <div
-            className={`grid h-full gap-2.5 ${
+            className={`grid h-full min-h-0 w-full gap-1.5 sm:gap-2 ${
               focusedSeatNumber
                 ? "grid-cols-1 grid-rows-1"
                 : isCommanderGame
                   ? "grid-cols-2 grid-rows-2"
-                  : "mx-auto max-w-[1200px] grid-cols-1 grid-rows-2"
+                  : "grid-cols-1 grid-rows-2"
             }`}
           >
             {visibleSeatSlots.map((slot) => (
@@ -2209,6 +2221,13 @@ export default function GamePage()
                 isAway={Boolean(slot.isAway)}
                 isReady={Boolean(slot.isReady)}
                 showSeatStateOverlay={!Boolean(game?.gameStartedAt)}
+                seatOverlayState={
+                  slot.isAway
+                    ? "away"
+                    : !game?.gameStartedAt
+                      ? (slot.isReady ? "ready" : "not-ready")
+                      : null
+                }
                 isFlipped={flippedSeatNumbers.includes(slot.seatNumber)}
                 isExpanded={focusedSeatNumber === slot.seatNumber}
                 life={slot.life}
@@ -2349,7 +2368,7 @@ export default function GamePage()
           endingGame={endingGame}
           dayNightState={game?.dayNightState ?? null}
           isReady={Boolean(selfSeat?.isReady)}
-          isAway={Boolean(selfSeat?.awaySinceAt)}
+          isAway={selfSeatIsAway}
           micEnabled={mediaSession.micEnabled}
           camEnabled={mediaSession.camEnabled}
           onRandomizePlayerOrder={() => { void handleRandomizePlayerOrder(); }}

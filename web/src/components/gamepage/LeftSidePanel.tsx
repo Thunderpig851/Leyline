@@ -166,7 +166,7 @@ export default function LeftSidePanel({
               <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-teal-100/70">
                 Host Actions
               </div>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-3 gap-x-3 gap-y-10">
                 <IconActionButton
                   label={randomizingOrder ? "Rolling..." : "Shuffle Order"}
                   icon={<Shuffle className="h-4 w-4" />}
@@ -192,11 +192,11 @@ export default function LeftSidePanel({
         </section>
 
         <section className="rounded-3xl border border-teal-400/15 bg-slate-950/52 p-4 shadow-[0_14px_40px_rgba(2,8,23,0.28)]">
-          <div className="mb-2 text-sm font-semibold text-slate-100">
+          <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-teal-100/70">
             Player Options
           </div>
 
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-3 gap-x-3 gap-y-10">
             {showSeatStateControls ? (
               <>
                 <IconActionButton

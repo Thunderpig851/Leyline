@@ -26,6 +26,7 @@ type PlayerTileProps =
   isAway?: boolean;
   isReady?: boolean;
   showSeatStateOverlay?: boolean;
+  seatOverlayState?: "ready" | "not-ready" | "away" | null;
   isFlipped?: boolean;
   isExpanded?: boolean;
   life?: number;
@@ -279,6 +280,7 @@ export default function PlayerTile({
   isAway = false,
   isReady = false,
   showSeatStateOverlay = true,
+  seatOverlayState = null,
   isFlipped = false,
   isExpanded = false,
   life = 40,
@@ -388,6 +390,14 @@ export default function PlayerTile({
 
   const canManageHostActions = Boolean(canPromoteToHost || canKickPlayer);
   const canShowViewActions = status !== "empty" && Boolean(onToggleFlip || onToggleExpand);
+  const resolvedSeatOverlayState =
+    seatOverlayState ?? (
+      isAway
+        ? "away"
+        : showSeatStateOverlay
+          ? (isReady ? "ready" : "not-ready")
+          : null
+    );
 
   const canOpenCounters =
     compactCounters.length > 0 ||
@@ -757,19 +767,19 @@ export default function PlayerTile({
         <div className="pointer-events-none absolute inset-[4px] z-[1] rounded-[1.4rem] ring-2 ring-emerald-400 shadow-[0_0_0_1px_rgba(16,185,129,0.35),0_0_28px_rgba(16,185,129,0.35)]" />
       ) : null}
 
-      {(status !== "empty" && (isAway || showSeatStateOverlay)) ? (
+      {(status !== "empty" && resolvedSeatOverlayState) ? (
         <div className="pointer-events-none absolute inset-0 z-[2] flex items-center justify-center px-6">
-          {isAway ? (
+          {resolvedSeatOverlayState === "away" ? (
             <CenteredSeatStateOverlay
               tone="away"
               icon={<Coffee className="h-10 w-10" />}
               label="AFK"
             />
-          ) : showSeatStateOverlay ? (
+          ) : resolvedSeatOverlayState ? (
             <CenteredSeatStateOverlay
-              tone={isReady ? "ready" : "not-ready"}
-              icon={isReady ? <Check className="h-12 w-12" /> : <X className="h-12 w-12" />}
-              label={isReady ? "Ready" : "Not Ready"}
+              tone={resolvedSeatOverlayState}
+              icon={resolvedSeatOverlayState === "ready" ? <Check className="h-12 w-12" /> : <X className="h-12 w-12" />}
+              label={resolvedSeatOverlayState === "ready" ? "Ready" : "Not Ready"}
             />
           ) : null}
         </div>

@@ -1,15 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Copy, Crown, KeyRound } from "lucide-react";
+import { Check, Copy, Crown, KeyRound, Mic, MicOff, Video, VideoOff, X } from "lucide-react";
 import { apiGet, apiPost, isAuthErrorMessage, isMissingRoomErrorMessage, isNetworkErrorMessage, isPrivateCodeErrorMessage } from "../lib/api";
 import ActionableErrorPanel from "../components/ActionableErrorPanel";
-
-import StatusOkIcon from "../components/icons/StatusOkIcon";
-import StatusBadIcon from "../components/icons/StatusBadIcon";
-import CamOnIcon from "../components/icons/CamOnIcon";
-import CamOffIcon from "../components/icons/CamOffIcon";
-import MicOnIcon from "../components/icons/MicOnIcon";
-import MicOffIcon from "../components/icons/MicOffIcon";
 
 import { useGameSession } from "../context/GameSession";
 import { useMediaSession } from "../context/MediaSession";
@@ -531,11 +524,7 @@ export default function JoinRoomPage()
     <div className="min-h-screen bg-slate-950 text-slate-100">
       <div className="mx-auto max-w-5xl px-6 py-10">
         <h1 className="text-2xl font-semibold tracking-tight">
-          <span className={`bg-clip-text text-transparent ${
-            isRejoinIntent
-              ? "bg-gradient-to-r from-amber-200 via-yellow-200 to-amber-300"
-              : "bg-gradient-to-r from-emerald-300 via-teal-300 to-cyan-200"
-          }`}>
+          <span className="bg-gradient-to-r from-emerald-300 via-teal-300 to-cyan-200 bg-clip-text text-transparent">
             {isRejoinIntent ? "Rejoin Game" : "Join Game"}
           </span>
         </h1>
@@ -549,11 +538,7 @@ export default function JoinRoomPage()
           </span>
 
           {roomFormat ? (
-            <span className={`rounded-full px-2 py-0.5 text-[11px] uppercase tracking-[0.18em] ${
-              isRejoinIntent
-                ? "border border-amber-300/20 bg-amber-500/10 text-amber-100"
-                : "border border-teal-300/20 bg-teal-500/10 text-teal-100"
-            }`}>
+            <span className="rounded-full border border-teal-300/20 bg-teal-500/10 px-2 py-0.5 text-[11px] uppercase tracking-[0.18em] text-teal-100">
               {roomFormat}
             </span>
           ) : null}
@@ -577,18 +562,8 @@ export default function JoinRoomPage()
           </div>
         ) : null}
 
-        {isRejoinIntent ? (
-          <div className="mt-4 inline-flex items-center rounded-full border border-amber-300/25 bg-amber-400/10 px-3 py-1 text-sm font-medium text-amber-100">
-            Would you like to rejoin?
-          </div>
-        ) : null}
-
         <div className="mt-6 grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
-          <aside className={`rounded-2xl p-4 lg:h-[620px] ${
-            isRejoinIntent
-              ? "border border-amber-300/15 bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.12),transparent_34%),rgba(2,6,23,0.4)]"
-              : "border border-white/10 bg-slate-950/40"
-          }`}>
+          <aside className="rounded-2xl border border-white/10 bg-slate-950/40 p-4 lg:h-[620px]">
 
             <div className="space-y-4">
               <label className="block">
@@ -660,19 +635,9 @@ export default function JoinRoomPage()
               ) : null}
 
               {isHost && roomVisibility === "private" && hostPrivateCode ? (
-                <div className={`overflow-hidden rounded-2xl shadow-[0_18px_50px_-30px_rgba(20,184,166,0.65)] ${
-                  isRejoinIntent
-                    ? "border border-amber-300/20 bg-amber-500/10 shadow-[0_18px_50px_-30px_rgba(245,158,11,0.5)]"
-                    : "border border-teal-300/20 bg-teal-500/10"
-                }`}>
-                  <div className={`border-b border-white/10 px-4 py-3 ${
-                    isRejoinIntent
-                      ? "bg-gradient-to-r from-amber-400/14 via-yellow-300/12 to-amber-200/10"
-                      : "bg-gradient-to-r from-emerald-400/14 via-teal-400/12 to-cyan-300/10"
-                  }`}>
-                    <div className={`flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.24em] ${
-                      isRejoinIntent ? "text-amber-100/90" : "text-teal-100/90"
-                    }`}>
+                <div className="overflow-hidden rounded-2xl border border-teal-300/20 bg-teal-500/10 shadow-[0_18px_50px_-30px_rgba(20,184,166,0.65)]">
+                  <div className="border-b border-white/10 bg-gradient-to-r from-emerald-400/14 via-teal-400/12 to-cyan-300/10 px-4 py-3">
+                    <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.24em] text-teal-100/90">
                       <Crown className="h-3.5 w-3.5" />
                       Access Code
                     </div>
@@ -680,7 +645,7 @@ export default function JoinRoomPage()
 
                   <div className="p-4">
                     <div className="flex items-center gap-2 text-xs text-slate-300">
-                      <KeyRound className={`h-3.5 w-3.5 ${isRejoinIntent ? "text-amber-200" : "text-teal-200"}`} />
+                      <KeyRound className="h-3.5 w-3.5 text-teal-200" />
                       Share this with invited players.
                     </div>
 
@@ -698,9 +663,7 @@ export default function JoinRoomPage()
                         Copy Code
                       </button>
 
-                      {copyMessage ? (
-                        <div className={`text-xs ${isRejoinIntent ? "text-amber-100" : "text-teal-100"}`}>{copyMessage}</div>
-                      ) : null}
+                      {copyMessage ? <div className="text-xs text-teal-100">{copyMessage}</div> : null}
                     </div>
                   </div>
                 </div>
@@ -708,11 +671,7 @@ export default function JoinRoomPage()
             </div>
           </aside>
 
-          <main className={`rounded-2xl p-4 lg:h-[620px] ${
-            isRejoinIntent
-              ? "border border-amber-300/15 bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.1),transparent_34%),rgba(2,6,23,0.4)]"
-              : "border border-white/10 bg-slate-950/40"
-          }`}>
+          <main className="rounded-2xl border border-white/10 bg-slate-950/40 p-4 lg:h-[620px]">
 
             <div className="flex h-full flex-col">
               <div className="flex items-end justify-between gap-3">
@@ -722,12 +681,12 @@ export default function JoinRoomPage()
                   </div>
                   <div className="mt-1 flex items-center gap-3 text-xs text-slate-400">
                     <div className="flex items-center gap-1.5">
-                      {selectedVideoId ? <StatusOkIcon /> : <StatusBadIcon />}
+                      {selectedVideoId ? <Check className="h-4 w-4 text-emerald-300" /> : <X className="h-4 w-4 text-red-300" />}
                       <span>Camera</span>
                     </div>
 
                     <div className="flex items-center gap-1.5">
-                      {selectedAudioId ? <StatusOkIcon /> : <StatusBadIcon />}
+                      {selectedAudioId ? <Check className="h-4 w-4 text-emerald-300" /> : <X className="h-4 w-4 text-red-300" />}
                       <span>Mic</span>
                     </div>
 
@@ -745,7 +704,7 @@ export default function JoinRoomPage()
                     aria-label={camEnabled ? "Disable camera" : "Enable camera"}
                     title={camEnabled ? "Disable camera" : "Enable camera"}
                   >
-                    {camEnabled ? <CamOnIcon /> : <CamOffIcon />}
+                    {camEnabled ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
                   </button>
 
                   <button
@@ -756,7 +715,7 @@ export default function JoinRoomPage()
                     aria-label={micEnabled ? "Mute microphone" : "Unmute microphone"}
                     title={micEnabled ? "Mute mic" : "Unmute mic"}
                   >
-                    {micEnabled ? <MicOnIcon /> : <MicOffIcon />}
+                    {micEnabled ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
                   </button>
                 </div>
               </div>
@@ -786,11 +745,7 @@ export default function JoinRoomPage()
                 <button
                   type="button"
                   disabled={loading || !roomId}
-                  className={`flex-1 rounded-xl px-4 py-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed ${
-                    isRejoinIntent
-                      ? "border border-amber-300/60 bg-gradient-to-r from-amber-400/25 via-yellow-300/20 to-amber-300/20 text-slate-100 hover:border-amber-200 hover:bg-amber-300 hover:text-slate-900"
-                      : "border border-teal-300/60 bg-gradient-to-r from-emerald-400/25 via-teal-400/20 to-cyan-300/20 text-slate-100 hover:border-teal-200 hover:bg-teal-300 hover:text-slate-900"
-                  }`}
+                  className="flex-1 rounded-xl border border-teal-300/60 bg-gradient-to-r from-emerald-400/25 via-teal-400/20 to-cyan-300/20 px-4 py-2 text-sm font-medium text-slate-100 disabled:cursor-not-allowed disabled:opacity-50 hover:border-teal-200 hover:bg-teal-300 hover:text-slate-900"
 
                   onClick={() => { void joinGame(); }}
                 >

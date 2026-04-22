@@ -95,6 +95,12 @@ const GameSeatSchema = new mongoose.Schema(
     default: false,
   },
 
+  isAway:
+  {
+    type: Boolean,
+    default: false,
+  },
+
   deck:
   {
     type: mongoose.Schema.Types.ObjectId,

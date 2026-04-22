@@ -535,6 +535,7 @@ router.post("/start", requireAuth, async (req, res) =>
           joinedAt: new Date(),
           connectionStatus: "connected",
           isReady: false,
+          isAway: false,
           deck: null,
           commanders: [],
           stats: {
@@ -717,6 +718,7 @@ router.post("/:gameId/join", requireAuth, async (req, res) =>
       lastSeenAt: new Date(),
       connectionStatus: "connected",
       isReady: false,
+      isAway: false,
       deck: null,
       commanders: [],
       stats: {
@@ -897,14 +899,7 @@ router.post("/:gameId/seats/:seatNumber/state", requireAuth, async (req, res) =>
 
     if (isAway !== undefined)
     {
-      seat.awaySinceAt = Boolean(isAway) ? new Date() : null;
-      seat.lastSeenAt = new Date();
-      seat.lastActiveAt = new Date();
-
-      if (seat.connectionStatus === "away")
-      {
-        seat.connectionStatus = "connected";
-      }
+      seat.isAway = Boolean(isAway);
     }
 
     if (connectionStatus !== undefined)
@@ -1375,12 +1370,6 @@ router.post("/:gameId/reset", requireAuth, async (req, res) =>
       };
       seat.commanders = [];
       seat.isReady = false;
-      seat.awaySinceAt = null;
-
-      if (seat.connectionStatus === "away")
-      {
-        seat.connectionStatus = "connected";
-      }
     }
 
     game.boardOrder = normalizeBoardOrder(game);

@@ -9,6 +9,7 @@ import NotFoundPage from "../pages/NotFoundPage";
 import AccountPage from "../pages/AccountPage";
 import GamePage from "../pages/GamePage";
 import LFGPage from "../pages/LFGPage";
+import LegalPage from "../pages/LegalPage";
 
 export const router = createBrowserRouter([
   {
@@ -20,6 +21,7 @@ export const router = createBrowserRouter([
       { path: "lobby", element: <LobbyPage /> },
       { path: "account", element: <AccountPage /> },
       { path: "lfg", element: <LFGPage /> },
+      { path: "legal", element: <LegalPage /> },
     ],
   },
   { path: "/login", element: <LoginPage /> },
