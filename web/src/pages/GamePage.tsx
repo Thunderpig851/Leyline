@@ -176,6 +176,8 @@ type CardScanIndicator =
   y: number;
 };
 
+type PendingGameAction = "leave" | "end" | null;
+
 type KickPlayerResponse =
 {
   ok: boolean;
@@ -332,6 +334,7 @@ export default function GamePage()
   const [cardScanBannerTick, setCardScanBannerTick] = useState(0);
   const [cardScanIndicator, setCardScanIndicator] = useState<CardScanIndicator | null>(null);
   const [cardTileHighlights, setCardTileHighlights] = useState<Record<number, DetectedCardHighlight>>({});
+  const [pendingGameAction, setPendingGameAction] = useState<PendingGameAction>(null);
 
   const shuffleIntervalRef = useRef<number | null>(null);
   const shuffleTimeoutRef = useRef<number | null>(null);
@@ -951,6 +954,25 @@ export default function GamePage()
   {
     if (!gameId || !roomId) return;
 
+    function exitToLobby()
+    {
+      forcedExitRef.current = true;
+      setPendingGameAction(null);
+
+      if (typeof mediaSession.disconnectFromSFU === "function")
+      {
+        mediaSession.disconnectFromSFU();
+      }
+
+      if (typeof mediaSession.stopPreview === "function")
+      {
+        mediaSession.stopPreview();
+      }
+
+      reset();
+      navigate("/lobby", { replace: true });
+    }
+
     function handlePlayerKicked(payload: PlayerKickedPayload)
     {
       const storedUserId = getStoredUserId();
@@ -969,20 +991,12 @@ export default function GamePage()
         });
       }
 
-      forcedExitRef.current = true;
-
-      if (typeof mediaSession.disconnectFromSFU === "function")
+      if (socket.connected)
       {
-        mediaSession.disconnectFromSFU();
+        socket.emit("room:leave", { roomId });
       }
 
-      if (typeof mediaSession.stopPreview === "function")
-      {
-        mediaSession.stopPreview();
-      }
-
-      reset();
-      navigate("/lobby", { replace: true });
+      exitToLobby();
     }
 
     socket.on("game:player-kicked", handlePlayerKicked);
@@ -1040,7 +1054,49 @@ export default function GamePage()
 
   useEffect(() =>
   {
+    if (!pendingGameAction)
+    {
+      return;
+    }
+
+    function handleKeyDown(event: KeyboardEvent)
+    {
+      if (event.key === "Escape")
+      {
+        setPendingGameAction(null);
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () =>
+    {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [pendingGameAction]);
+
+  useEffect(() =>
+  {
     if (!gameId) return;
+
+    function exitToLobby()
+    {
+      forcedExitRef.current = true;
+      setPendingGameAction(null);
+
+      if (typeof mediaSession.disconnectFromSFU === "function")
+      {
+        mediaSession.disconnectFromSFU();
+      }
+
+      if (typeof mediaSession.stopPreview === "function")
+      {
+        mediaSession.stopPreview();
+      }
+
+      reset();
+      navigate("/lobby", { replace: true });
+    }
 
     function handleGameUpdated(payload: { game?: ActiveGame })
     {
@@ -1065,18 +1121,12 @@ export default function GamePage()
           });
         }
 
-        if (typeof mediaSession.disconnectFromSFU === "function")
+        if (socket.connected)
         {
-          mediaSession.disconnectFromSFU();
+          socket.emit("room:leave", { roomId });
         }
 
-        if (typeof mediaSession.stopPreview === "function")
-        {
-          mediaSession.stopPreview();
-        }
-
-        reset();
-        navigate("/lobby", { replace: true });
+        exitToLobby();
         return;
       }
 
@@ -1190,6 +1240,25 @@ export default function GamePage()
   {
     if (!gameId || !roomId) return;
 
+    function exitToLobby()
+    {
+      forcedExitRef.current = true;
+      setPendingGameAction(null);
+
+      if (typeof mediaSession.disconnectFromSFU === "function")
+      {
+        mediaSession.disconnectFromSFU();
+      }
+
+      if (typeof mediaSession.stopPreview === "function")
+      {
+        mediaSession.stopPreview();
+      }
+
+      reset();
+      navigate("/lobby", { replace: true });
+    }
+
     function handleGameEnded(payload: { gameId?: string; roomId?: string })
     {
       if (payload?.gameId !== gameId) return;
@@ -1204,18 +1273,12 @@ export default function GamePage()
         });
       }
 
-      if (typeof mediaSession.disconnectFromSFU === "function")
+      if (socket.connected)
       {
-        mediaSession.disconnectFromSFU();
+        socket.emit("room:leave", { roomId });
       }
 
-      if (typeof mediaSession.stopPreview === "function")
-      {
-        mediaSession.stopPreview();
-      }
-
-      reset();
-      navigate("/lobby", { replace: true });
+      exitToLobby();
     }
 
     socket.on("game:ended", handleGameEnded);
@@ -1743,6 +1806,22 @@ export default function GamePage()
     }
   }
 
+  async function handleConfirmPendingGameAction()
+  {
+    const action = pendingGameAction;
+    if (!action) return;
+
+    setPendingGameAction(null);
+
+    if (action === "end")
+    {
+      await handleEndGame();
+      return;
+    }
+
+    await handleLeaveGame();
+  }
+
   function handleToggleSelfMic()
   {
     mediaSession.toggleMic();
@@ -2188,7 +2267,7 @@ export default function GamePage()
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => { void handleLeaveGame(); }}
+              onClick={() => setPendingGameAction("leave")}
               disabled={leaving}
               className="inline-flex shrink-0 rounded-xl border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-slate-300 transition hover:border-red-400/40 hover:bg-red-500/12 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -2349,6 +2428,21 @@ export default function GamePage()
           finalOrder={shuffleOverlay.finalOrder}
         />
 
+        <ConfirmGameActionModal
+          open={Boolean(pendingGameAction)}
+          title={pendingGameAction === "end" ? "End game?" : "Leave game?"}
+          message={
+            pendingGameAction === "end"
+              ? "This will end the current game for everyone and return players to the lobby."
+              : "You will leave this game and return to the lobby."
+          }
+          confirmLabel={pendingGameAction === "end" ? "End Game" : "Leave Game"}
+          tone={pendingGameAction === "end" ? "danger" : "default"}
+          busy={pendingGameAction === "end" ? endingGame : leaving}
+          onCancel={() => setPendingGameAction(null)}
+          onConfirm={() => { void handleConfirmPendingGameAction(); }}
+        />
+
         <LeftSidePanel
           open={leftOpen}
           onToggle={() => setLeftOpen((value) => !value)}
@@ -2373,7 +2467,7 @@ export default function GamePage()
           camEnabled={mediaSession.camEnabled}
           onRandomizePlayerOrder={() => { void handleRandomizePlayerOrder(); }}
           onResetGame={() => { void handleResetGame(); }}
-          onEndGame={() => { void handleEndGame(); }}
+          onEndGame={() => setPendingGameAction("end")}
           onToggleDayNight={
             isSeatedPlayer
               ? () => { void handleToggleDayNight(); }
@@ -2393,6 +2487,65 @@ export default function GamePage()
           cardLogEntries={cardLogEntries}
           focusCardLogKey={cardLogFocusKey}
         />
+      </div>
+    </div>
+  );
+}
+
+function ConfirmGameActionModal({
+  open,
+  title,
+  message,
+  confirmLabel,
+  tone,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  open: boolean;
+  title: string;
+  message: string;
+  confirmLabel: string;
+  tone: "default" | "danger";
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+})
+{
+  if (!open)
+  {
+    return null;
+  }
+
+  const confirmClass = tone === "danger"
+    ? "border-red-300/35 bg-red-500/18 text-red-50 hover:border-red-200/55 hover:bg-red-500/28"
+    : "border-teal-300/35 bg-teal-500/18 text-teal-50 hover:border-teal-200/55 hover:bg-teal-500/28";
+
+  return (
+    <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-950/72 px-4 backdrop-blur-sm">
+      <div className="w-full max-w-md rounded-3xl border border-white/10 bg-slate-950/96 p-5 shadow-[0_24px_80px_rgba(2,8,23,0.55)]">
+        <div className="text-lg font-semibold tracking-tight text-slate-50">{title}</div>
+        <div className="mt-2 text-sm leading-6 text-slate-300">{message}</div>
+
+        <div className="mt-5 flex items-center justify-end gap-3">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={busy}
+            className="rounded-xl border border-white/10 bg-slate-900/75 px-4 py-2 text-sm font-medium text-slate-200 transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Cancel
+          </button>
+
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={busy}
+            className={`rounded-xl border px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${confirmClass}`}
+          >
+            {busy ? "Working..." : confirmLabel}
+          </button>
+        </div>
       </div>
     </div>
   );
